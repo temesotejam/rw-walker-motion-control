@@ -7,7 +7,11 @@
 #if defined(WALK_SMOOTH_TRIAL) && WALK_SMOOTH_TRIAL
 #if defined(SYMMETRIC_RESCUE_TRIAL) && SYMMETRIC_RESCUE_TRIAL
 #if defined(EARLY_RESCUE_TRIAL) && EARLY_RESCUE_TRIAL
+#if defined(SWAY_BALANCE_TRIAL) && SWAY_BALANCE_TRIAL
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-balance-trim-v6"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-early-rescue-v5"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-symmetric-rescue-v4"
 #endif

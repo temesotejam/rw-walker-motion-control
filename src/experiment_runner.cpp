@@ -3895,6 +3895,17 @@ bool ExperimentRunner::tryTiltPriorityImpl(
   const uint16_t active_negative_extra=negative_recovery_enabled ?
       negative_cap_recovery_.extraCap(t_test_ms,in.hardware_healthy) : 0;
   auto choice=tilt_priority_.propose(in);
+#if defined(SWAY_BALANCE_TRIAL) && SWAY_BALANCE_TRIAL
+  if(!stall_rescue_event_ && !optional_early_event_ && choice.selected && !choice.coast) {
+    const uint16_t trim_cap=tilt_priority_.balanceTrimCap(t_test_ms,in.next_side,choice.width_ms);
+    if(trim_cap<choice.width_ms) {
+      event.sway_trim_before_ms=choice.width_ms;
+      event.sway_trim_cap_ms=trim_cap;
+      if(in.hardware_cap_ms>trim_cap)in.hardware_cap_ms=trim_cap;
+      choice=tilt_priority_.propose(in);
+    }
+  }
+#endif
   if(stall_rescue_event_)negative_cap_recovery_.interrupt();
   if((stall_rescue_event_ || optional_early_event_) && (!choice.selected || choice.coast))return false;
 #if ANGLE_EARLY_TRIAL

@@ -31,11 +31,30 @@ struct Choice {
   float target_deg=NAN;
 };
 
+// Conservative hypothesis: ease positive arrival slightly when recent
+// paired rocking peaks show a large positive/negative difference. The
+// response and physical foot mapping have not been identified.
+inline uint16_t balanceTrimCap(float plus,float minus,bool paired,bool fresh,
+    int side,float target,uint16_t width) {
+  if(!paired || !fresh || side!=1 || target!=8.f || width<=20 ||
+     !std::isfinite(plus) || !std::isfinite(minus) ||
+     plus<6.5f || minus>4.5f || minus<=0.f || plus-minus<2.f)return width;
+  return width>25 ? static_cast<uint16_t>(width-5) : 20;
+}
+
 class Controller {
  public:
   void reset() {*this=Controller{};}
   float target()const{return target_deg_;}
   uint16_t widthLimit(int side)const{return history_[index(side)].width_ms;}
+  uint16_t balanceTrimCap(uint32_t now,int side,uint16_t width) const {
+    const History& plus=history_[1];const History& minus=history_[0];
+    const bool paired=plus.peak_ms && minus.peak_ms &&
+        plus.paired_ms==plus.peak_ms && minus.paired_ms==minus.peak_ms;
+    const bool fresh=paired && now>=plus.peak_ms && now>=minus.peak_ms &&
+        now-plus.peak_ms<=1500 && now-minus.peak_ms<=1500;
+    return tilt_priority::balanceTrimCap(plus.peak_deg,minus.peak_deg,paired,fresh,side,target_deg_,width);
+  }
   // Optional ordinary-drive upward slew limit. It only ever lowers a cap;
   // safety reductions and coast remain free to take effect immediately.
   // Early, rescue and startup pulses are never entered into this history.

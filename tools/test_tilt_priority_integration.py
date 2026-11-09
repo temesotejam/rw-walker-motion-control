@@ -58,3 +58,6 @@ with tempfile.TemporaryDirectory(prefix='tilt_priority_runner_') as td:
  subprocess.run(['g++','-std=c++11','-O2','-Wall','-Wextra','-Werror',
                  '-I'+str(root/'src'),str(source),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)
+ subprocess.run(['g++','-std=c++11','-O2','-Wall','-Wextra','-Werror',
+                 '-DSWAY_BALANCE_TRIAL=1','-I'+str(root/'src'),str(source),'-o',str(exe)],check=True)
+ subprocess.run([str(exe)],check=True)

@@ -371,6 +371,7 @@ class PsramLogger {
     float startup_target_deg=NAN;
     uint16_t startup_positive_cap_ms=0;
     uint16_t wheel_guard_legacy_ms=0,wheel_guard_extra_ms=0;
+    uint16_t sway_trim_before_ms=0,sway_trim_cap_ms=0;
     bool wheel_guard_trial_eligible=false;
     bool weak_probe_executed=false;
     float foot_energy_bias=NAN,foot_energy_left_px=NAN,foot_energy_right_px=NAN;

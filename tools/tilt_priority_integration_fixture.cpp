@@ -31,6 +31,7 @@ struct EnergyControlAutonomousZeroCrossEvent {
  bool side_mismatch_diagnostic=false,energy_model_extrapolated=false,work_prediction_cross_condition=false;
  uint8_t work_control_branch=0,reason=0;uint16_t work_brake_cap_ms=0,solver_selected_integer_width_ms=0;
  uint16_t wheel_guard_legacy_ms=0,wheel_guard_extra_ms=0;bool wheel_guard_trial_eligible=false;
+ uint16_t sway_trim_before_ms=0,sway_trim_cap_ms=0;
  uint16_t weak_probe_baseline_ms=0,weak_probe_requested_ms=0;bool weak_probe_executed=false;
  float passive_energy_j=1,free_next_peak_amplitude_deg=1,predicted_energy_j=1,predicted_observed_energy_j=1;
  float predicted_next_peak_amplitude_deg=1,predicted_observed_next_peak_deg=1,predicted_wheel_work_j=1;
@@ -261,6 +262,22 @@ int main(){
   assert(r.negative_cap_recovery_.candidate(t,8.f,30,true,true));
   return t;
  };
+#if defined(SWAY_BALANCE_TRIAL) && SWAY_BALANCE_TRIAL
+ // Actual runner path: a paired asymmetric observation reduces only the
+ // ordinary positive proposal, and downstream guards cannot raise the cap.
+ {ExperimentRunner r;uint32_t t=prepare_negative(r);
+  for(int side:{1,-1}) {
+   tilt_priority::Choice c;c.selected=true;c.direction=static_cast<int8_t>(side);
+   c.width_ms=30;c.current_ma=1200;c.target_deg=8;
+   r.tilt_priority_.crossing(c.direction,t);r.tilt_priority_.confirm(c.direction,t,c,true);
+   r.tilt_priority_.peak(c.direction,t+100,side>0?7.25f:4.47f);t+=300;
+  }
+  Event e;e.physical_next_peak_side=1;bool healthy=false;
+  assert(r.tryTiltPriorityImpl(e,t,&healthy) && healthy && e.output_executed);
+  assert(e.sway_trim_before_ms>e.sway_trim_cap_ms && e.sway_trim_before_ms-e.sway_trim_cap_ms<=5);
+  assert(e.pulse_width_ms<=e.sway_trim_cap_ms);
+ }
+#endif
  // The production runner compares candidate and baseline through identical
  // guards, claims a trial only after a real accepted +1..5ms command, and
  // records a distinct audit marker. Fixture readings are constructed, not

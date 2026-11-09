@@ -455,6 +455,9 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
   json += "\"firmware_revision\":\"" RUNTIME_VERSION "\",";
 #if defined(FOOT_EARLY_TRIAL) && FOOT_EARLY_TRIAL
   json += "\"diagnostic_build_id\":\"" RUNTIME_DIAGNOSTIC_BUILD_ID "\",";
+#if defined(SWAY_BALANCE_TRIAL) && SWAY_BALANCE_TRIAL
+  json += "\"sway_balance_trial\":{\"policy\":\"target8;fresh_paired_positive_peak_ge6p5_negative_le4p5_gap_ge2;positive_ordinary_proposal_cap_reduced_up_to5ms;floor20ms;existing_guards;no_rescue_or_early_change\",\"physical_response_identified\":false},";
+#endif
 #if defined(ANGLE_EARLY_TRIAL) && ANGLE_EARLY_TRIAL
   json += "\"angle_early_trial\":{\"policy\":\"inward_abs_angle_gt_0p3_le_1p5_deg;rate_gt_5_dps;constant_rate_eta_gt_20_le_30_ms;max_pulse_15ms;one_per_peak;no_send_zero_reevaluation;ambiguous_write_estop\",\"camera_role\":\"diagnostic_and_existing_balance_only\",\"geometry_worker_enabled\":false,\"applies_during_startup_ramp\":true,\"configured_target_deg\":8,\"pulse_width_changes_alongside_timing\":true,\"physical_timing_validated\":false},";
 #else
@@ -1658,6 +1661,10 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
 #endif
     detail += ",\"event_kind\":\"" + String(e.event_kind == 1 ? "strong_start_kick" : e.event_kind == 2 ? "inward_stall_rescue" : e.event_kind == 3 ? early_kind : e.event_kind == 4 ? "early_inward_stall_rescue" : "energy_control_zero_cross") + "\"";
     detail += ",\"zero_cross_time_ms\":" + String(e.zero_cross_time_ms);
+#if defined(SWAY_BALANCE_TRIAL) && SWAY_BALANCE_TRIAL
+    detail += ",\"sway_trim_before_ms\":" + String(e.sway_trim_before_ms);
+    detail += ",\"sway_trim_cap_ms\":" + String(e.sway_trim_cap_ms);
+#endif
     auto appendAutonomousNullable = [&detail](const char* name, float value, uint8_t decimals) {
       detail += ",\""; detail += name; detail += "\":";
       if (isfinite(value)) detail += String(value, static_cast<unsigned int>(decimals)); else detail += "null";

@@ -16,6 +16,17 @@ static Choice step(Controller& c,int side,uint32_t cross,float peak,bool accepte
   c.peak(side,cross+elapsed,peak);return choice;
 }
 int main() {
+  using tilt_priority::balanceTrimCap;
+  assert(balanceTrimCap(7.25f,4.47f,true,true,1,8.f,36)==31);
+  assert(balanceTrimCap(7.25f,4.47f,true,true,1,8.f,23)==20);
+  assert(balanceTrimCap(7.25f,4.47f,true,true,1,8.f,20)==20);
+  assert(balanceTrimCap(7.25f,4.47f,true,false,1,8.f,36)==36);
+  assert(balanceTrimCap(7.25f,4.47f,false,true,1,8.f,36)==36);
+  assert(balanceTrimCap(7.25f,4.47f,true,true,-1,8.f,36)==36);
+  assert(balanceTrimCap(7.25f,4.47f,true,true,1,7.5f,36)==36);
+  assert(balanceTrimCap(6.4f,4.47f,true,true,1,8.f,36)==36);
+  assert(balanceTrimCap(7.25f,4.6f,true,true,1,8.f,36)==36);
+  assert(balanceTrimCap(NAN,4.f,true,true,1,8.f,36)==36);
   Controller smooth;
   assert(smooth.ordinaryRiseCap(1,100,150)==150);
   smooth.ordinaryResult(1,100,40,true);
