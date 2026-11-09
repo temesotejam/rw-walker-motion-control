@@ -9,7 +9,7 @@
 - v4 はビルド済み。2026-11-09 の前回確認時点で、ローカル書き込みページのマニフェストは `angle-symmetric-rescue-v4` を返した。サーバーの現在の稼働状態は再確認していない。
 - v4 の実機実行を、今回提供された `energy_control_autonomous_run_1_109138637.rwlog` の build ID で確認した。CRC 正常、30秒の測定は FINISHED、エラーなし。自然な歩行の30秒継続を意味するものではない。
 - v4 のビルド成果物と配信用 firmware の SHA-256 は `25B8A8690EF5E1A4B0B3C0415B24C27B0102B80C0A805ECA63F4E5879457DC78` で一致した。
-- 今回ユーザーが毎回の GitHub 同期を指示した。作業開始時の `origin/main` は `2e998c1` でローカル HEAD と一致していた。作業内容はローカルコミット `747ef4b` に保存した。`origin`（`https://github.com/temesotejam/rw-walker-motion-control.git`）への push は自動承認審査で拒否されており、GitHub は未同期。審査理由は、ソース・状況メモ・ツールをこの宛先へ送信する範囲の確認不足。動画、RWLOG、生成バイナリはコミット対象に含まれていない。ユーザーに宛先と送信内容を具体的に示し、明示的な承認を得るまで push を迂回しない。
+- ユーザーは毎回の GitHub 同期を指示。前回、ソース・状況メモ・ツールを `origin`（`https://github.com/temesotejam/rw-walker-motion-control.git`）へ送る push が自動承認審査で拒否されたが、宛先・送信内容を提示した後、ユーザーから明示的な許可を得た。2026-11-09 の再確認ではリモート main は `2e998c1`。動画、RWLOG、生成バイナリはコミット対象に含めていない。同期の成否は Git の最新状態で確認する。
 
 ## v6 試験（書き込み待ち）
 
