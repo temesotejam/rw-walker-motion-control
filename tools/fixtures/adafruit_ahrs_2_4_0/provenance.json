@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/adafruit/Adafruit_AHRS",
+  "version": "2.4.0",
+  "commit": "69fbb4021acbaccc55258ed8082d71c1968c8909",
+  "purpose": "Unmodified reference for pitch extraction only; not linked into firmware; filter update algorithm remains upstream.",
+  "sha256": {
+    "Adafruit_AHRS_FusionInterface.h": "582f6105ba8afb5f7d3938d5ac334051dd602246c3d63611d9ef32157d1f976e",
+    "Adafruit_AHRS_Madgwick.cpp": "75dfed2812359028393fa6597eacaaf211ac545e674361cc127a8d46fb2feeee",
+    "Adafruit_AHRS_Madgwick.h": "cac23dd27091f140dfc83bb8059137d83b10cc02b0f1b50c996081606060ced0"
+  }
+}

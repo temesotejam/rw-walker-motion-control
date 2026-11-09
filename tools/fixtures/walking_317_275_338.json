@@ -1,0 +1,161 @@
+{
+  "description": "held-out unpowered walking arrivals in latest three logs; no powered-gain inference",
+  "records": [
+    {
+      "run": "31767392",
+      "zero_ms": 14436,
+      "rate_dps": 21.2029,
+      "rpm": 305.41,
+      "vbat_mv": 7540.0,
+      "previous_deg": 7.00876,
+      "peak_ms": 14616,
+      "peak_deg": 2.44908,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "run": "31767392",
+      "zero_ms": 16107,
+      "rate_dps": 18.2199,
+      "rpm": 298.32,
+      "vbat_mv": 7540.0,
+      "previous_deg": 7.31173,
+      "peak_ms": 16263,
+      "peak_deg": 1.79003,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "run": "31767392",
+      "zero_ms": 17834,
+      "rate_dps": 15.1185,
+      "rpm": 274.92,
+      "vbat_mv": 7540.0,
+      "previous_deg": 7.63905,
+      "peak_ms": 17965,
+      "peak_deg": 1.11181,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "run": "27579224",
+      "zero_ms": 19573,
+      "rate_dps": 18.1513,
+      "rpm": 319.93,
+      "vbat_mv": 7510.0,
+      "previous_deg": 6.72467,
+      "peak_ms": 19712,
+      "peak_deg": 1.63483,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "run": "27579224",
+      "zero_ms": 21212,
+      "rate_dps": 13.8423,
+      "rpm": 277.76,
+      "vbat_mv": 7510.0,
+      "previous_deg": 7.37403,
+      "peak_ms": 21342,
+      "peak_deg": 1.03141,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "run": "33892778",
+      "zero_ms": 10012,
+      "rate_dps": 27.6808,
+      "rpm": 294.22,
+      "vbat_mv": 7480.0,
+      "previous_deg": 5.75587,
+      "peak_ms": 10213,
+      "peak_deg": 3.50417,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "run": "33892778",
+      "zero_ms": 15024,
+      "rate_dps": 25.9116,
+      "rpm": 311.75,
+      "vbat_mv": 7480.0,
+      "previous_deg": 6.11028,
+      "peak_ms": 15193,
+      "peak_deg": 2.47758,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "run": "33892778",
+      "zero_ms": 16671,
+      "rate_dps": 20.7,
+      "rpm": 298.94,
+      "vbat_mv": 7480.0,
+      "previous_deg": 7.08909,
+      "peak_ms": 16825,
+      "peak_deg": 1.9936,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "run": "33892778",
+      "zero_ms": 18380,
+      "rate_dps": 13.9906,
+      "rpm": 293.45,
+      "vbat_mv": 7480.0,
+      "previous_deg": 7.2271,
+      "peak_ms": 18510,
+      "peak_deg": 0.98555,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "run": "33892778",
+      "zero_ms": 19947,
+      "rate_dps": 16.9373,
+      "rpm": 299.4,
+      "vbat_mv": 7470.0,
+      "previous_deg": 7.28687,
+      "peak_ms": 20076,
+      "peak_deg": 1.36493,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "run": "33892778",
+      "zero_ms": 21512,
+      "rate_dps": 17.0876,
+      "rpm": 303.47,
+      "vbat_mv": 7470.0,
+      "previous_deg": 7.25574,
+      "peak_ms": 21644,
+      "peak_deg": 1.41287,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "run": "33892778",
+      "zero_ms": 23118,
+      "rate_dps": 14.508,
+      "rpm": 284.85,
+      "vbat_mv": 7470.0,
+      "previous_deg": 7.60492,
+      "peak_ms": 23249,
+      "peak_deg": 1.21745,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "run": "33892778",
+      "zero_ms": 24711,
+      "rate_dps": 15.65,
+      "rpm": 278.12,
+      "vbat_mv": 7470.0,
+      "previous_deg": 7.5853,
+      "peak_ms": 24842,
+      "peak_deg": 1.12482,
+      "pulse_ms": 0,
+      "output": false
+    }
+  ]
+}

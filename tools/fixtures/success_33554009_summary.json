@@ -1,0 +1,926 @@
+{
+  "source": "energy_control_autonomous_run_1_33554009.rwlog",
+  "sha256": "d1cf1e96e2dbd123ab642064b8321eb93cbee6cacef6ea9c5934789f8256092e",
+  "foot_csv_source": "energy_control_autonomous_run_1_33554009_foot.csv",
+  "foot_csv_sha256": "17e5b1b440d4875b69ee8ca166d3beaf4b78c01f3826050de3d3dbf58f3c82e9",
+  "foot_csv_matches_all_decoded_fields": true,
+  "format_version": 51,
+  "crc_verified": true,
+  "firmware_revision": "0.47.11-deferred-attitude-display",
+  "terminal_state": {
+    "state_id": 4,
+    "state": "FINISHED",
+    "last_error": "",
+    "motor_cmd_mA": 0,
+    "actual_current_mA": -2,
+    "heartbeat_us": 78483055
+  },
+  "acquisition": {
+    "duration_us": 30000125,
+    "captured": 12145,
+    "delivered": 12144,
+    "queue_drops": 0,
+    "delivery_sequence_gaps": 0,
+    "queue_high_water": 2,
+    "delivery_age_mean_us": 326.328,
+    "delivery_age_max_us": 4477,
+    "dt_mean_us": 2470.249,
+    "dt_max_us": 3903,
+    "over_4ms": 0,
+    "over_5ms": 0,
+    "over_10ms": 0,
+    "samples_per_second": [
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      0,
+      0
+    ],
+    "fault": false,
+    "fault_reason": ""
+  },
+  "completion": {
+    "budget_us": 2500,
+    "count": 12145,
+    "over_budget": 1127,
+    "max_us": 6235,
+    "mean_us": 1574.942,
+    "runner_over_budget": 276,
+    "runner_max_us": 5130,
+    "all_observed_within_budget": false,
+    "scope": "RUNNING_fresh_gyro_only;host_acquisition_to_runner_return;not_sensor_capture_to_motor_apply"
+  },
+  "profile": {
+    "revision": "control_work_04711",
+    "scope": "measurement_only;host_wall_time_includes_preemption;nested_stages_not_additive",
+    "mekf_attitude_scope": "posterior_copy_and_control_pitch;display_euler_from_snapshot_on_demand",
+    "cohort": "pulse_active_at_stage_entry;owner_includes_terminal_iteration;start_sync_excluded",
+    "pulse_off": {
+      "owner_iteration": {
+        "count": 12292,
+        "max_us": 6835,
+        "sum_us": 23603101,
+        "mean_us": 1920.2
+      },
+      "service": {
+        "count": 12292,
+        "max_us": 1277,
+        "sum_us": 666649,
+        "mean_us": 54.234
+      },
+      "imu_delivery": {
+        "count": 12292,
+        "max_us": 3086,
+        "sum_us": 8494153,
+        "mean_us": 691.031
+      },
+      "pose_guide": {
+        "count": 12292,
+        "max_us": 2208,
+        "sum_us": 559570,
+        "mean_us": 45.523
+      },
+      "filter": {
+        "count": 9615,
+        "max_us": 3828,
+        "sum_us": 6828961,
+        "mean_us": 710.24
+      },
+      "angle_display": {
+        "count": 9616,
+        "max_us": 1449,
+        "sum_us": 311951,
+        "mean_us": 32.441
+      },
+      "current_roll": {
+        "count": 9615,
+        "max_us": 1705,
+        "sum_us": 141183,
+        "mean_us": 14.684
+      },
+      "motion": {
+        "count": 9615,
+        "max_us": 4503,
+        "sum_us": 1136126,
+        "mean_us": 118.162
+      },
+      "log_row": {
+        "count": 1094,
+        "max_us": 1660,
+        "sum_us": 235558,
+        "mean_us": 215.318
+      },
+      "snapshot": {
+        "count": 12292,
+        "max_us": 2957,
+        "sum_us": 1049583,
+        "mean_us": 85.387
+      },
+      "publish": {
+        "count": 12292,
+        "max_us": 2001,
+        "sum_us": 229263,
+        "mean_us": 18.651
+      },
+      "mekf_predict": {
+        "count": 9615,
+        "max_us": 2220,
+        "sum_us": 2005142,
+        "mean_us": 208.543
+      },
+      "mekf_accel": {
+        "count": 4810,
+        "max_us": 2738,
+        "sum_us": 1711490,
+        "mean_us": 355.819
+      },
+      "mekf_attitude": {
+        "count": 9615,
+        "max_us": 1636,
+        "sum_us": 1025684,
+        "mean_us": 106.675
+      },
+      "madgwick": {
+        "count": 4810,
+        "max_us": 1826,
+        "sum_us": 681813,
+        "mean_us": 141.749
+      }
+    },
+    "pulse_on": {
+      "owner_iteration": {
+        "count": 2670,
+        "max_us": 6933,
+        "sum_us": 6062786,
+        "mean_us": 2270.706
+      },
+      "service": {
+        "count": 2670,
+        "max_us": 1318,
+        "sum_us": 121755,
+        "mean_us": 45.601
+      },
+      "imu_delivery": {
+        "count": 2670,
+        "max_us": 2665,
+        "sum_us": 1325223,
+        "mean_us": 496.338
+      },
+      "pose_guide": {
+        "count": 2670,
+        "max_us": 1313,
+        "sum_us": 205509,
+        "mean_us": 76.97
+      },
+      "filter": {
+        "count": 2530,
+        "max_us": 3296,
+        "sum_us": 2038941,
+        "mean_us": 805.906
+      },
+      "angle_display": {
+        "count": 2530,
+        "max_us": 1287,
+        "sum_us": 115124,
+        "mean_us": 45.504
+      },
+      "current_roll": {
+        "count": 2530,
+        "max_us": 818,
+        "sum_us": 48877,
+        "mean_us": 19.319
+      },
+      "motion": {
+        "count": 2530,
+        "max_us": 1003,
+        "sum_us": 246762,
+        "mean_us": 97.534
+      },
+      "log_row": {
+        "count": 1864,
+        "max_us": 1687,
+        "sum_us": 594434,
+        "mean_us": 318.902
+      },
+      "snapshot": {
+        "count": 2670,
+        "max_us": 2146,
+        "sum_us": 260931,
+        "mean_us": 97.727
+      },
+      "publish": {
+        "count": 2670,
+        "max_us": 2133,
+        "sum_us": 62966,
+        "mean_us": 23.583
+      },
+      "mekf_predict": {
+        "count": 2530,
+        "max_us": 1576,
+        "sum_us": 756424,
+        "mean_us": 298.982
+      },
+      "mekf_accel": {
+        "count": 1263,
+        "max_us": 1718,
+        "sum_us": 375686,
+        "mean_us": 297.455
+      },
+      "mekf_attitude": {
+        "count": 2530,
+        "max_us": 1324,
+        "sum_us": 249988,
+        "mean_us": 98.809
+      },
+      "madgwick": {
+        "count": 1263,
+        "max_us": 1779,
+        "sum_us": 258802,
+        "mean_us": 204.911
+      }
+    }
+  },
+  "poll_profile": {
+    "available": true,
+    "revision": "v46q_lightweight_acquisition_20260914",
+    "semantics": "host_wall_times;update_includes_driver;notify_age_from_latest_callback;not_ISR_latency",
+    "derived_accel_location": "consumer_new_accel_only_and_synchronous_startup",
+    "epoch_us": 38555770,
+    "polls": 29989,
+    "fresh_gyro_polls": 12145,
+    "no_data_polls": 17844,
+    "coalesced_wakes": 11,
+    "forced_yields": 34,
+    "long_gaps_over_4ms": 0,
+    "outside_detail_window": 0,
+    "record_overhead_max_us": 73,
+    "v46u_timing": {
+      "driver_calls": 29989,
+      "driver_failures": 0,
+      "data_bytes": 115374,
+      "status_read_max_us": 556,
+      "data_read_max_us": 767,
+      "poll_work_budget_us": 1000,
+      "poll_work_count": 29989,
+      "poll_work_over_budget": 32,
+      "host_gyro_interval_budget_us": 2500,
+      "host_gyro_interval_count": 12145,
+      "host_gyro_interval_over_budget": 5713,
+      "host_gyro_interval_max_us": 3903,
+      "sensor_clock_verified": false,
+      "policy": "strict_greater_than;host_polling_not_FIFO;no_tolerance_hidden"
+    },
+    "stages": {
+      "latest_notify_age": {
+        "count": 29989,
+        "mean_us": 27.083,
+        "max_us": 1049
+      },
+      "observed_callback_gap": {
+        "count": 29989,
+        "mean_us": 999.737,
+        "max_us": 1933
+      },
+      "poll_start_interval": {
+        "count": 29989,
+        "mean_us": 1000.367,
+        "max_us": 2394
+      },
+      "update_api": {
+        "count": 29989,
+        "mean_us": 408.741,
+        "max_us": 1249
+      },
+      "convert_api": {
+        "count": 12145,
+        "mean_us": 15.071,
+        "max_us": 37
+      },
+      "validate_pack": {
+        "count": 12145,
+        "mean_us": 16.949,
+        "max_us": 42
+      },
+      "publish_queue": {
+        "count": 12145,
+        "mean_us": 27.656,
+        "max_us": 56
+      },
+      "poll_total": {
+        "count": 29989,
+        "mean_us": 444.155,
+        "max_us": 1342
+      },
+      "overrun_yield": {
+        "count": 34,
+        "mean_us": 766.059,
+        "max_us": 1103
+      }
+    },
+    "second_columns": [
+      "second",
+      "polls",
+      "gyro",
+      "no_data",
+      "forced_yields",
+      "notify_max_us",
+      "update_max_us",
+      "convert_max_us",
+      "total_max_us",
+      "period_max_us",
+      "long_gaps"
+    ],
+    "seconds": [
+      [
+        0,
+        999,
+        405,
+        594,
+        1,
+        932,
+        1200,
+        35,
+        1308,
+        1975,
+        0
+      ],
+      [
+        1,
+        1000,
+        405,
+        595,
+        1,
+        991,
+        1125,
+        27,
+        1194,
+        1971,
+        0
+      ],
+      [
+        2,
+        1000,
+        405,
+        595,
+        3,
+        1009,
+        1175,
+        33,
+        1237,
+        1989,
+        0
+      ],
+      [
+        3,
+        999,
+        405,
+        594,
+        0,
+        494,
+        925,
+        36,
+        992,
+        2135,
+        0
+      ],
+      [
+        4,
+        1000,
+        404,
+        596,
+        1,
+        983,
+        1221,
+        29,
+        1289,
+        1952,
+        0
+      ],
+      [
+        5,
+        1000,
+        405,
+        595,
+        2,
+        1049,
+        1155,
+        27,
+        1235,
+        1976,
+        0
+      ],
+      [
+        6,
+        999,
+        405,
+        594,
+        2,
+        971,
+        1198,
+        26,
+        1306,
+        2046,
+        0
+      ],
+      [
+        7,
+        1000,
+        405,
+        595,
+        1,
+        986,
+        1215,
+        27,
+        1315,
+        1954,
+        0
+      ],
+      [
+        8,
+        1000,
+        405,
+        595,
+        1,
+        997,
+        976,
+        27,
+        1075,
+        1857,
+        0
+      ],
+      [
+        9,
+        1000,
+        404,
+        596,
+        2,
+        997,
+        1187,
+        37,
+        1296,
+        1985,
+        0
+      ],
+      [
+        10,
+        1000,
+        405,
+        595,
+        1,
+        1006,
+        1022,
+        29,
+        1138,
+        1846,
+        0
+      ],
+      [
+        11,
+        1000,
+        405,
+        595,
+        1,
+        913,
+        912,
+        30,
+        1036,
+        1984,
+        0
+      ],
+      [
+        12,
+        1000,
+        405,
+        595,
+        0,
+        411,
+        879,
+        27,
+        995,
+        1568,
+        0
+      ],
+      [
+        13,
+        999,
+        405,
+        594,
+        2,
+        992,
+        1051,
+        26,
+        1148,
+        2233,
+        0
+      ],
+      [
+        14,
+        999,
+        405,
+        594,
+        1,
+        651,
+        939,
+        26,
+        1037,
+        2187,
+        0
+      ],
+      [
+        15,
+        999,
+        404,
+        595,
+        2,
+        1001,
+        1091,
+        29,
+        1164,
+        2225,
+        0
+      ],
+      [
+        16,
+        1000,
+        405,
+        595,
+        1,
+        809,
+        1206,
+        27,
+        1279,
+        1973,
+        0
+      ],
+      [
+        17,
+        999,
+        405,
+        594,
+        2,
+        988,
+        1054,
+        28,
+        1125,
+        1978,
+        0
+      ],
+      [
+        18,
+        1000,
+        405,
+        595,
+        1,
+        999,
+        912,
+        37,
+        1000,
+        1958,
+        0
+      ],
+      [
+        19,
+        1000,
+        405,
+        595,
+        1,
+        856,
+        1249,
+        26,
+        1342,
+        1970,
+        0
+      ],
+      [
+        20,
+        1000,
+        404,
+        596,
+        0,
+        738,
+        858,
+        35,
+        976,
+        1827,
+        0
+      ],
+      [
+        21,
+        1000,
+        405,
+        595,
+        0,
+        718,
+        866,
+        27,
+        980,
+        1761,
+        0
+      ],
+      [
+        22,
+        999,
+        405,
+        594,
+        2,
+        1009,
+        907,
+        27,
+        1005,
+        1987,
+        0
+      ],
+      [
+        23,
+        1000,
+        405,
+        595,
+        0,
+        455,
+        862,
+        24,
+        980,
+        1766,
+        0
+      ],
+      [
+        24,
+        998,
+        405,
+        593,
+        3,
+        995,
+        1109,
+        27,
+        1207,
+        2394,
+        0
+      ],
+      [
+        25,
+        1000,
+        404,
+        596,
+        2,
+        996,
+        1118,
+        33,
+        1222,
+        1972,
+        0
+      ],
+      [
+        26,
+        1000,
+        405,
+        595,
+        0,
+        719,
+        876,
+        26,
+        981,
+        1899,
+        0
+      ],
+      [
+        27,
+        999,
+        405,
+        594,
+        0,
+        574,
+        869,
+        28,
+        988,
+        1885,
+        0
+      ],
+      [
+        28,
+        1000,
+        405,
+        595,
+        0,
+        332,
+        879,
+        33,
+        983,
+        1624,
+        0
+      ],
+      [
+        29,
+        1000,
+        405,
+        595,
+        1,
+        997,
+        953,
+        31,
+        1020,
+        1853,
+        0
+      ]
+    ],
+    "detail_policy": "worst_gap_per_100ms_bucket_not_all_gaps;full_counts_above",
+    "bucket_us": 100000,
+    "detail_window_us": 32000000,
+    "gap_columns": [
+      "time_us",
+      "dt_us",
+      "sequence",
+      "latest_notify_age_us",
+      "callback_gap_us",
+      "poll_period_us",
+      "update_us",
+      "convert_us",
+      "pack_us",
+      "publish_us",
+      "total_us",
+      "previous_total_us",
+      "previous_yield_us",
+      "wakes"
+    ],
+    "worst_gap_by_100ms": []
+  },
+  "normal_log": {
+    "total_rows": 3437,
+    "running_rows": 2958,
+    "all_running_rows_adopt_mekf": true,
+    "finite_fields_in_all_running_rows": [
+      "pitch_mekf_control_deg",
+      "pitch_mekf_abs_deg",
+      "mekf_q_w",
+      "mekf_q_x",
+      "mekf_q_y",
+      "mekf_q_z",
+      "pitch_madgwick_dynamic_abs_deg"
+    ],
+    "last_running_t_test_ms": 30001
+  },
+  "foot_observation": {
+    "revision": "freefoot_runtime_v2_0477",
+    "observation_only": true,
+    "detector": "sparse_rows_identity_v2",
+    "scan_y_semantics": "selected_row_template_center_not_marker_centroid",
+    "vertical_recovery_angle_accuracy_validated": false,
+    "search_radius_y_px": 32,
+    "search_step_y_px": 4,
+    "calibration_source_commit": null,
+    "original_calibration_source_commit": "ac6df8caf59c93956b87cba57521903c25ff9f00",
+    "calibration": {
+      "revision": "fixed_two_poses_20260924",
+      "provisional": true,
+      "method": "two_noncontact_pose_means",
+      "reference": "negative_mekf_roll_change",
+      "assumption": "feet_ground_fixed_fore_aft_planar_motion",
+      "right_deg_per_px": 0.155146316,
+      "left_deg_per_px": 0.155496761,
+      "body_span_deg": 20.276417,
+      "fit_right_x": [
+        40.95084,
+        171.64307
+      ],
+      "fit_left_x": [
+        39.15524,
+        169.55292
+      ],
+      "zero": "independent_per_boot",
+      "fit_poses": 2,
+      "heldout_hand_supported_poses": 2,
+      "independent_angular_accuracy_validated": false,
+      "source_file": "freefoot-pose-comparison.json",
+      "source_sha256": "f731b0ac1019d3ec2b054df9ccc9cbf91c7c013c39f565851d124ad3409f3676"
+    },
+    "mapping": "right=A upper lane;left=B lower lane",
+    "positive_direction": "marker_x_decreases",
+    "frame_timestamp_semantics": "camera_driver_frame_timestamp_not_verified_exposure_time",
+    "control_context_semantics": "latest_control_snapshot_at_frame_delivery_not_exposure",
+    "target_fps": 15,
+    "capacity": 768,
+    "count": 388,
+    "overflow": false,
+    "available": true,
+    "zero_ready": true,
+    "zero_reason": "ready",
+    "zero_max_nominal_offset_px": 35.0,
+    "zero_max_spread_px": 4.0,
+    "right_zero_x": 172.73619,
+    "left_zero_x": 172.05409,
+    "right_deg_per_px": 0.155146316,
+    "left_deg_per_px": 0.155496761,
+    "right_support_x": [
+      39.0,
+      182.0
+    ],
+    "left_support_x": [
+      37.0,
+      177.5
+    ],
+    "range": {
+      "revision": "observed_envelope_20260925",
+      "basis": "original_calibration_plus_observed_marker_positions",
+      "right_support_x": [
+        39.0,
+        182.0
+      ],
+      "left_support_x": [
+        37.0,
+        177.5
+      ],
+      "original_right_support_x": [
+        42.0,
+        173.0
+      ],
+      "original_left_support_x": [
+        43.5,
+        177.5
+      ],
+      "observed_right_x": [
+        40.7181,
+        180.6437
+      ],
+      "observed_left_x": [
+        38.7209,
+        173.524
+      ],
+      "margin_px": 1.0,
+      "source_manifest": "foot_range_20260925.json",
+      "extension_angle_accuracy_validated": false
+    }
+  },
+  "foot": {
+    "total_frames": 388,
+    "running_frames": 293,
+    "states": {
+      "START_SYNC": 48,
+      "RUNNING_BATCH_SWEEP": 293,
+      "END_SYNC": 47
+    },
+    "right": {
+      "valid_running": 291,
+      "invalid_running": 2,
+      "valid_out_of_range_running": 0,
+      "valid_total": 380,
+      "valid_out_of_range_total": 0,
+      "invalid_reasons_running": {
+        "ambiguous": 2
+      },
+      "running_x": [
+        144.9455,
+        175.45181
+      ],
+      "running_angle_deg": [
+        -0.42132,
+        4.31162
+      ]
+    },
+    "left": {
+      "valid_running": 293,
+      "invalid_running": 0,
+      "valid_out_of_range_running": 0,
+      "valid_total": 388,
+      "valid_out_of_range_total": 0,
+      "invalid_reasons_running": {},
+      "running_x": [
+        139.88452,
+        174.24081
+      ],
+      "running_angle_deg": [
+        -0.34003,
+        5.00226
+      ]
+    },
+    "running_fps": 9.765969902618565,
+    "max_frame_interval_us": 200034,
+    "frame_intervals_over_150ms": 8,
+    "right_valid_beyond_pre04710_upper_bound": 107
+  }
+}

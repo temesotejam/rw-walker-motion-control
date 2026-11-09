@@ -1,0 +1,364 @@
+{
+  "sources": [
+    {
+      "filename": "energy_control_autonomous_run_1_50202353.rwlog",
+      "sha256": "a78e5fe337e5125686b3b1f4c5cd9627caae490e765ef08ba919f4e7f9a5dd07"
+    },
+    {
+      "filename": "energy_control_autonomous_run_2_275876204.rwlog",
+      "sha256": "810d56030ec3b371c226bba15be773546d64d7d4046f4bd6a1168e6f2c9d8a53"
+    }
+  ],
+  "records": [
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 16086,
+      "peak_ms": 16258,
+      "peak_deg": 3.01393,
+      "peak_rpm": 36.7,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 611,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 16919,
+      "peak_ms": 17092,
+      "peak_deg": 3.15615,
+      "peak_rpm": 55.4,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 5416,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 17780,
+      "peak_ms": 17960,
+      "peak_deg": 3.02395,
+      "peak_rpm": 28.76,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 2521,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 18663,
+      "peak_ms": 18814,
+      "peak_deg": 2.53813,
+      "peak_rpm": 29.51,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 7401,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 19474,
+      "peak_ms": 19632,
+      "peak_deg": 2.88275,
+      "peak_rpm": 44.38,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 2416,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 20336,
+      "peak_ms": 20496,
+      "peak_deg": 2.61064,
+      "peak_rpm": 23.86,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 1454,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 21191,
+      "peak_ms": 21339,
+      "peak_deg": 2.5448,
+      "peak_rpm": 28.26,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 9528,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 22026,
+      "peak_ms": 22173,
+      "peak_deg": 2.2076,
+      "peak_rpm": 39.86,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 6411,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 22861,
+      "peak_ms": 22997,
+      "peak_deg": 1.95934,
+      "peak_rpm": 49.63,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 1204,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 23675,
+      "peak_ms": 23820,
+      "peak_deg": 2.24123,
+      "peak_rpm": 22.89,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 3518,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 24473,
+      "peak_ms": 24619,
+      "peak_deg": 2.45703,
+      "peak_rpm": 44.01,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 8551,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 25316,
+      "peak_ms": 25478,
+      "peak_deg": 2.28578,
+      "peak_rpm": 27.36,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 503,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 26183,
+      "peak_ms": 26336,
+      "peak_deg": 2.34533,
+      "peak_rpm": 4.94,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 697,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 27028,
+      "peak_ms": 27175,
+      "peak_deg": 2.23623,
+      "peak_rpm": 53.6,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 1486,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 27875,
+      "peak_ms": 28028,
+      "peak_deg": 2.17992,
+      "peak_rpm": 26.65,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 540,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 28703,
+      "peak_ms": 28844,
+      "peak_deg": 2.45982,
+      "peak_rpm": 49.83,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 2284,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_1_50202353.rwlog",
+      "zero_ms": 29531,
+      "peak_ms": 29668,
+      "peak_deg": 2.38315,
+      "peak_rpm": 67.53,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 3421,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 15019,
+      "peak_ms": 15207,
+      "peak_deg": 3.63815,
+      "peak_rpm": 47.97,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 8502,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 15853,
+      "peak_ms": 16026,
+      "peak_deg": 3.72701,
+      "peak_rpm": 52.89,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 8426,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 16687,
+      "peak_ms": 16842,
+      "peak_deg": 3.19544,
+      "peak_rpm": 67.31,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 9665,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 17537,
+      "peak_ms": 17713,
+      "peak_deg": 3.18242,
+      "peak_rpm": 39.38,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 3133,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 18394,
+      "peak_ms": 18562,
+      "peak_deg": 2.96262,
+      "peak_rpm": 44.73,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 4493,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 19204,
+      "peak_ms": 19369,
+      "peak_deg": 3.30105,
+      "peak_rpm": 56.6,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 2589,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 20028,
+      "peak_ms": 20168,
+      "peak_deg": 2.89626,
+      "peak_rpm": 69.34,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 630,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 20853,
+      "peak_ms": 21014,
+      "peak_deg": 2.69779,
+      "peak_rpm": 59.75,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 8509,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 21684,
+      "peak_ms": 21855,
+      "peak_deg": 2.87858,
+      "peak_rpm": 52.37,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 3566,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 22535,
+      "peak_ms": 22691,
+      "peak_deg": 2.76525,
+      "peak_rpm": 54.68,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 1503,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 23333,
+      "peak_ms": 23500,
+      "peak_deg": 3.41095,
+      "peak_rpm": 39.64,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 1614,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 24189,
+      "peak_ms": 24342,
+      "peak_deg": 2.51712,
+      "peak_rpm": 41.43,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 7253,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 24985,
+      "peak_ms": 25153,
+      "peak_deg": 2.96619,
+      "peak_rpm": 59.07,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 1528,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 25823,
+      "peak_ms": 25970,
+      "peak_deg": 2.50848,
+      "peak_rpm": 75.78,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 2574,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 26640,
+      "peak_ms": 26801,
+      "peak_deg": 2.53986,
+      "peak_rpm": 59.52,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 555,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 27455,
+      "peak_ms": 27595,
+      "peak_deg": 2.49582,
+      "peak_rpm": 66.85,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 6395,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 28228,
+      "peak_ms": 28374,
+      "peak_deg": 3.50988,
+      "peak_rpm": 77.74,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 4551,
+      "target_deg": 8.0
+    },
+    {
+      "source": "energy_control_autonomous_run_2_275876204.rwlog",
+      "zero_ms": 29015,
+      "peak_ms": 29164,
+      "peak_deg": 3.33221,
+      "peak_rpm": 57.98,
+      "peak_rpm_valid": true,
+      "peak_speed_age_us": 2502,
+      "target_deg": 8.0
+    }
+  ]
+}

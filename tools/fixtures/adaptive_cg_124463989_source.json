@@ -1,0 +1,8 @@
+{
+  "source": "energy_control_autonomous_run_1_124463989.rwlog",
+  "sha256": "2c68dc1bda82470688d29c39549b9619a88d6a0223dbab84a989be46c742d4ec",
+  "firmware": "1.0.30-lateral-cg-energy",
+  "rows": 53,
+  "selection": "valid branch 4/6, matched following peak, fresh pre-input wheel speed; raw = predicted_energy_j - prediction_bias_j; no future value used for raw prediction",
+  "physical_cg_identified": false
+}

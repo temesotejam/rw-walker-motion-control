@@ -1,0 +1,353 @@
+{
+  "source_filename": "energy_control_autonomous_run_1_42306015.rwlog",
+  "source_sha256": "b2f41a4c9fbbebfecb634c89a4a880dc1d83ff70887cb32fc9b073d5e77fbfdd",
+  "firmware": "1.0.45-walking-rpm",
+  "target_deg": 8,
+  "window_s": [
+    5,
+    30
+  ],
+  "records": [
+    {
+      "zero_ms": 5185,
+      "rate_dps": 33.5156,
+      "rpm": 536.09,
+      "vbat_mv": 7600,
+      "previous_deg": 5.10131,
+      "peak_ms": 5372,
+      "peak_deg": 4.78689,
+      "pulse_ms": 25,
+      "output": true
+    },
+    {
+      "zero_ms": 6008,
+      "rate_dps": 27.9409,
+      "rpm": 456.87,
+      "vbat_mv": 7600,
+      "previous_deg": 5.23859,
+      "peak_ms": 6220,
+      "peak_deg": 4.35115,
+      "pulse_ms": 25,
+      "output": true
+    },
+    {
+      "zero_ms": 6832,
+      "rate_dps": 29.9389,
+      "rpm": 412.19,
+      "vbat_mv": 7600,
+      "previous_deg": 5.03333,
+      "peak_ms": 7049,
+      "peak_deg": 4.0192,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 7656,
+      "rate_dps": 37.001,
+      "rpm": 474.95,
+      "vbat_mv": 7600,
+      "previous_deg": 4.60579,
+      "peak_ms": 7837,
+      "peak_deg": 4.58655,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 8441,
+      "rate_dps": 32.9678,
+      "rpm": 507.06,
+      "vbat_mv": 7600,
+      "previous_deg": 4.97244,
+      "peak_ms": 8636,
+      "peak_deg": 4.56299,
+      "pulse_ms": 25,
+      "output": true
+    },
+    {
+      "zero_ms": 9263,
+      "rate_dps": 27.3119,
+      "rpm": 442.37,
+      "vbat_mv": 7600,
+      "previous_deg": 5.10837,
+      "peak_ms": 9480,
+      "peak_deg": 4.21728,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 10073,
+      "rate_dps": 37.2938,
+      "rpm": 488.39,
+      "vbat_mv": 7600,
+      "previous_deg": 4.855,
+      "peak_ms": 10259,
+      "peak_deg": 4.71889,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 10862,
+      "rate_dps": 32.1359,
+      "rpm": 508.38,
+      "vbat_mv": 7600,
+      "previous_deg": 5.12234,
+      "peak_ms": 11057,
+      "peak_deg": 4.615,
+      "pulse_ms": 25,
+      "output": true
+    },
+    {
+      "zero_ms": 11707,
+      "rate_dps": 25.3456,
+      "rpm": 428.14,
+      "vbat_mv": 7600,
+      "previous_deg": 5.49366,
+      "peak_ms": 11921,
+      "peak_deg": 3.78693,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 12514,
+      "rate_dps": 36.844,
+      "rpm": 483.37,
+      "vbat_mv": 7600,
+      "previous_deg": 4.7022,
+      "peak_ms": 12690,
+      "peak_deg": 4.95729,
+      "pulse_ms": 25,
+      "output": true
+    },
+    {
+      "zero_ms": 13359,
+      "rate_dps": 22.4871,
+      "rpm": 408.87,
+      "vbat_mv": 7600,
+      "previous_deg": 5.91533,
+      "peak_ms": 13573,
+      "peak_deg": 3.4073,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 14167,
+      "rate_dps": 36.4766,
+      "rpm": 473.78,
+      "vbat_mv": 7600,
+      "previous_deg": 4.83972,
+      "peak_ms": 14337,
+      "peak_deg": 4.83565,
+      "pulse_ms": 25,
+      "output": true
+    },
+    {
+      "zero_ms": 14978,
+      "rate_dps": 27.8759,
+      "rpm": 424.89,
+      "vbat_mv": 7600,
+      "previous_deg": 6.039,
+      "peak_ms": 15173,
+      "peak_deg": 3.28705,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 15823,
+      "rate_dps": 31.5267,
+      "rpm": 457.18,
+      "vbat_mv": 7600,
+      "previous_deg": 4.87983,
+      "peak_ms": 16009,
+      "peak_deg": 4.13274,
+      "pulse_ms": 25,
+      "output": true
+    },
+    {
+      "zero_ms": 16641,
+      "rate_dps": 32.1021,
+      "rpm": 409.0,
+      "vbat_mv": 7600,
+      "previous_deg": 5.88016,
+      "peak_ms": 16825,
+      "peak_deg": 3.31545,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 17462,
+      "rate_dps": 29.9368,
+      "rpm": 458.86,
+      "vbat_mv": 7600,
+      "previous_deg": 4.93887,
+      "peak_ms": 17646,
+      "peak_deg": 3.96593,
+      "pulse_ms": 25,
+      "output": true
+    },
+    {
+      "zero_ms": 18296,
+      "rate_dps": 25.2703,
+      "rpm": 400.88,
+      "vbat_mv": 7590,
+      "previous_deg": 6.06377,
+      "peak_ms": 18485,
+      "peak_deg": 2.89414,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 19103,
+      "rate_dps": 28.0318,
+      "rpm": 448.45,
+      "vbat_mv": 7590,
+      "previous_deg": 5.41494,
+      "peak_ms": 19279,
+      "peak_deg": 3.84831,
+      "pulse_ms": 25,
+      "output": true
+    },
+    {
+      "zero_ms": 19944,
+      "rate_dps": 21.5225,
+      "rpm": 382.63,
+      "vbat_mv": 7590,
+      "previous_deg": 6.12234,
+      "peak_ms": 20117,
+      "peak_deg": 2.57308,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 20747,
+      "rate_dps": 28.8376,
+      "rpm": 454.2,
+      "vbat_mv": 7590,
+      "previous_deg": 5.22867,
+      "peak_ms": 20931,
+      "peak_deg": 3.72468,
+      "pulse_ms": 25,
+      "output": true
+    },
+    {
+      "zero_ms": 21619,
+      "rate_dps": 18.4623,
+      "rpm": 369.23,
+      "vbat_mv": 7590,
+      "previous_deg": 6.38082,
+      "peak_ms": 21769,
+      "peak_deg": 1.89496,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 22359,
+      "rate_dps": 29.4663,
+      "rpm": 452.78,
+      "vbat_mv": 7590,
+      "previous_deg": 5.65492,
+      "peak_ms": 22533,
+      "peak_deg": 3.66492,
+      "pulse_ms": 25,
+      "output": true
+    },
+    {
+      "zero_ms": 23201,
+      "rate_dps": 23.5952,
+      "rpm": 381.26,
+      "vbat_mv": 7590,
+      "previous_deg": 6.45807,
+      "peak_ms": 23352,
+      "peak_deg": 2.02922,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 23975,
+      "rate_dps": 28.4864,
+      "rpm": 440.1,
+      "vbat_mv": 7590,
+      "previous_deg": 5.99565,
+      "peak_ms": 24131,
+      "peak_deg": 2.58178,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 24746,
+      "rate_dps": 27.4053,
+      "rpm": 471.78,
+      "vbat_mv": 7590,
+      "previous_deg": 6.00424,
+      "peak_ms": 24910,
+      "peak_deg": 3.12465,
+      "pulse_ms": 25,
+      "output": true
+    },
+    {
+      "zero_ms": 25593,
+      "rate_dps": 19.4272,
+      "rpm": 372.5,
+      "vbat_mv": 7590,
+      "previous_deg": 6.33544,
+      "peak_ms": 25734,
+      "peak_deg": 1.75711,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 26346,
+      "rate_dps": 25.4116,
+      "rpm": 442.9,
+      "vbat_mv": 7590,
+      "previous_deg": 5.88886,
+      "peak_ms": 26498,
+      "peak_deg": 2.58043,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 27103,
+      "rate_dps": 28.8861,
+      "rpm": 473.42,
+      "vbat_mv": 7590,
+      "previous_deg": 6.00894,
+      "peak_ms": 27272,
+      "peak_deg": 3.41449,
+      "pulse_ms": 25,
+      "output": true
+    },
+    {
+      "zero_ms": 27984,
+      "rate_dps": 19.2895,
+      "rpm": 362.17,
+      "vbat_mv": 7590,
+      "previous_deg": 6.89316,
+      "peak_ms": 28110,
+      "peak_deg": 1.45196,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 28713,
+      "rate_dps": 28.1751,
+      "rpm": 442.1,
+      "vbat_mv": 7590,
+      "previous_deg": 5.94916,
+      "peak_ms": 28869,
+      "peak_deg": 2.64578,
+      "pulse_ms": 0,
+      "output": false
+    },
+    {
+      "zero_ms": 29483,
+      "rate_dps": 30.5053,
+      "rpm": 474.57,
+      "vbat_mv": 7590,
+      "previous_deg": 6.15413,
+      "peak_ms": 29631,
+      "peak_deg": 2.80651,
+      "pulse_ms": 0,
+      "output": false
+    }
+  ]
+}

@@ -1,0 +1,958 @@
+{
+  "source": "energy_control_autonomous_run_1_42183521.rwlog",
+  "sha256": "ebf43abd26b7c88adc92d060e72ad2e303446c0775eefc711fd2516dfdc08e62",
+  "foot_csv_source": "energy_control_autonomous_run_1_42183521_foot.csv",
+  "foot_csv_sha256": "4c91f62f9b2115882e876020a9d28ca87a0f053486e79638c5146be89f185c86",
+  "foot_csv_matches_all_decoded_fields": true,
+  "format_version": 51,
+  "crc_verified": true,
+  "firmware_revision": "0.47.10-range-timing-optimization",
+  "terminal_state": {
+    "state_id": 4,
+    "state": "FINISHED",
+    "last_error": "",
+    "motor_cmd_mA": 0,
+    "actual_current_mA": 4,
+    "heartbeat_us": 86837354
+  },
+  "acquisition": {
+    "duration_us": 30000567,
+    "captured": 12145,
+    "delivered": 12144,
+    "queue_drops": 0,
+    "delivery_sequence_gaps": 0,
+    "queue_high_water": 3,
+    "delivery_age_mean_us": 284.56,
+    "delivery_age_max_us": 4803,
+    "dt_mean_us": 2470.233,
+    "dt_max_us": 4067,
+    "over_4ms": 2,
+    "over_5ms": 0,
+    "over_10ms": 0,
+    "samples_per_second": [
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      1,
+      0
+    ],
+    "fault": false,
+    "fault_reason": ""
+  },
+  "completion": {
+    "budget_us": 2500,
+    "count": 12145,
+    "over_budget": 1007,
+    "max_us": 7589,
+    "mean_us": 1535.954,
+    "runner_over_budget": 276,
+    "runner_max_us": 5552,
+    "all_observed_within_budget": false,
+    "scope": "RUNNING_fresh_gyro_only;host_acquisition_to_runner_return;not_sensor_capture_to_motor_apply"
+  },
+  "profile": {
+    "revision": "control_work_04710",
+    "scope": "measurement_only;host_wall_time_includes_preemption;nested_stages_not_additive",
+    "cohort": "pulse_active_at_stage_entry;owner_includes_terminal_iteration;start_sync_excluded",
+    "pulse_off": {
+      "owner_iteration": {
+        "count": 12240,
+        "max_us": 7830,
+        "sum_us": 24250300,
+        "mean_us": 1981.234
+      },
+      "service": {
+        "count": 12240,
+        "max_us": 1946,
+        "sum_us": 729388,
+        "mean_us": 59.591
+      },
+      "imu_delivery": {
+        "count": 12240,
+        "max_us": 2754,
+        "sum_us": 9311362,
+        "mean_us": 760.732
+      },
+      "pose_guide": {
+        "count": 12240,
+        "max_us": 1207,
+        "sum_us": 558517,
+        "mean_us": 45.63
+      },
+      "filter": {
+        "count": 9892,
+        "max_us": 3138,
+        "sum_us": 7548276,
+        "mean_us": 763.069
+      },
+      "angle_display": {
+        "count": 9893,
+        "max_us": 1888,
+        "sum_us": 342309,
+        "mean_us": 34.601
+      },
+      "current_roll": {
+        "count": 9892,
+        "max_us": 1163,
+        "sum_us": 165074,
+        "mean_us": 16.688
+      },
+      "motion": {
+        "count": 9892,
+        "max_us": 3000,
+        "sum_us": 771385,
+        "mean_us": 77.981
+      },
+      "log_row": {
+        "count": 1123,
+        "max_us": 2525,
+        "sum_us": 279538,
+        "mean_us": 248.921
+      },
+      "snapshot": {
+        "count": 12240,
+        "max_us": 2165,
+        "sum_us": 1170462,
+        "mean_us": 95.626
+      },
+      "publish": {
+        "count": 12240,
+        "max_us": 2360,
+        "sum_us": 346697,
+        "mean_us": 28.325
+      },
+      "mekf_predict": {
+        "count": 9892,
+        "max_us": 1706,
+        "sum_us": 1946751,
+        "mean_us": 196.801
+      },
+      "mekf_accel": {
+        "count": 4950,
+        "max_us": 2123,
+        "sum_us": 1893986,
+        "mean_us": 382.623
+      },
+      "mekf_attitude": {
+        "count": 9892,
+        "max_us": 2241,
+        "sum_us": 1485245,
+        "mean_us": 150.146
+      },
+      "madgwick": {
+        "count": 4950,
+        "max_us": 1761,
+        "sum_us": 560036,
+        "mean_us": 113.139
+      }
+    },
+    "pulse_on": {
+      "owner_iteration": {
+        "count": 2334,
+        "max_us": 6710,
+        "sum_us": 5399656,
+        "mean_us": 2313.477
+      },
+      "service": {
+        "count": 2334,
+        "max_us": 1286,
+        "sum_us": 101598,
+        "mean_us": 43.53
+      },
+      "imu_delivery": {
+        "count": 2334,
+        "max_us": 2114,
+        "sum_us": 1088972,
+        "mean_us": 466.569
+      },
+      "pose_guide": {
+        "count": 2334,
+        "max_us": 1267,
+        "sum_us": 173566,
+        "mean_us": 74.364
+      },
+      "filter": {
+        "count": 2253,
+        "max_us": 3540,
+        "sum_us": 1919108,
+        "mean_us": 851.801
+      },
+      "angle_display": {
+        "count": 2253,
+        "max_us": 1257,
+        "sum_us": 94229,
+        "mean_us": 41.824
+      },
+      "current_roll": {
+        "count": 2253,
+        "max_us": 1231,
+        "sum_us": 58138,
+        "mean_us": 25.805
+      },
+      "motion": {
+        "count": 2253,
+        "max_us": 1739,
+        "sum_us": 194857,
+        "mean_us": 86.488
+      },
+      "log_row": {
+        "count": 1674,
+        "max_us": 1751,
+        "sum_us": 562648,
+        "mean_us": 336.11
+      },
+      "snapshot": {
+        "count": 2334,
+        "max_us": 1484,
+        "sum_us": 251142,
+        "mean_us": 107.602
+      },
+      "publish": {
+        "count": 2334,
+        "max_us": 1607,
+        "sum_us": 61455,
+        "mean_us": 26.33
+      },
+      "mekf_predict": {
+        "count": 2253,
+        "max_us": 1735,
+        "sum_us": 603401,
+        "mean_us": 267.821
+      },
+      "mekf_accel": {
+        "count": 1123,
+        "max_us": 1892,
+        "sum_us": 374334,
+        "mean_us": 333.334
+      },
+      "mekf_attitude": {
+        "count": 2253,
+        "max_us": 1442,
+        "sum_us": 417648,
+        "mean_us": 185.374
+      },
+      "madgwick": {
+        "count": 1123,
+        "max_us": 1353,
+        "sum_us": 170817,
+        "mean_us": 152.108
+      }
+    }
+  },
+  "poll_profile": {
+    "available": true,
+    "revision": "v46q_lightweight_acquisition_20260914",
+    "semantics": "host_wall_times;update_includes_driver;notify_age_from_latest_callback;not_ISR_latency",
+    "derived_accel_location": "consumer_new_accel_only_and_synchronous_startup",
+    "epoch_us": 47186108,
+    "polls": 29956,
+    "fresh_gyro_polls": 12145,
+    "no_data_polls": 17811,
+    "coalesced_wakes": 44,
+    "forced_yields": 45,
+    "long_gaps_over_4ms": 2,
+    "outside_detail_window": 0,
+    "record_overhead_max_us": 72,
+    "v46u_timing": {
+      "driver_calls": 29956,
+      "driver_failures": 0,
+      "data_bytes": 115374,
+      "status_read_max_us": 551,
+      "data_read_max_us": 730,
+      "poll_work_budget_us": 1000,
+      "poll_work_count": 29956,
+      "poll_work_over_budget": 44,
+      "host_gyro_interval_budget_us": 2500,
+      "host_gyro_interval_count": 12145,
+      "host_gyro_interval_over_budget": 5708,
+      "host_gyro_interval_max_us": 4067,
+      "sensor_clock_verified": false,
+      "policy": "strict_greater_than;host_polling_not_FIFO;no_tolerance_hidden"
+    },
+    "stages": {
+      "latest_notify_age": {
+        "count": 29956,
+        "mean_us": 25.406,
+        "max_us": 990
+      },
+      "observed_callback_gap": {
+        "count": 29956,
+        "mean_us": 999.926,
+        "max_us": 1953
+      },
+      "poll_start_interval": {
+        "count": 29956,
+        "mean_us": 1001.469,
+        "max_us": 2618
+      },
+      "update_api": {
+        "count": 29956,
+        "mean_us": 432.726,
+        "max_us": 1258
+      },
+      "convert_api": {
+        "count": 12145,
+        "mean_us": 13.594,
+        "max_us": 36
+      },
+      "validate_pack": {
+        "count": 12145,
+        "mean_us": 15.323,
+        "max_us": 41
+      },
+      "publish_queue": {
+        "count": 12145,
+        "mean_us": 27.395,
+        "max_us": 60
+      },
+      "poll_total": {
+        "count": 29956,
+        "mean_us": 466.852,
+        "max_us": 1359
+      },
+      "overrun_yield": {
+        "count": 45,
+        "mean_us": 1101.133,
+        "max_us": 1463
+      }
+    },
+    "second_columns": [
+      "second",
+      "polls",
+      "gyro",
+      "no_data",
+      "forced_yields",
+      "notify_max_us",
+      "update_max_us",
+      "convert_max_us",
+      "total_max_us",
+      "period_max_us",
+      "long_gaps"
+    ],
+    "seconds": [
+      [
+        0,
+        999,
+        405,
+        594,
+        1,
+        813,
+        1220,
+        29,
+        1329,
+        2183,
+        0
+      ],
+      [
+        1,
+        999,
+        405,
+        594,
+        2,
+        612,
+        1145,
+        29,
+        1236,
+        2440,
+        0
+      ],
+      [
+        2,
+        998,
+        405,
+        593,
+        2,
+        689,
+        970,
+        29,
+        1074,
+        2373,
+        0
+      ],
+      [
+        3,
+        998,
+        405,
+        593,
+        2,
+        339,
+        935,
+        30,
+        1028,
+        2618,
+        0
+      ],
+      [
+        4,
+        998,
+        404,
+        594,
+        2,
+        424,
+        996,
+        29,
+        1079,
+        2255,
+        0
+      ],
+      [
+        5,
+        997,
+        405,
+        592,
+        3,
+        626,
+        1242,
+        27,
+        1359,
+        2361,
+        1
+      ],
+      [
+        6,
+        999,
+        405,
+        594,
+        0,
+        736,
+        884,
+        29,
+        976,
+        2601,
+        0
+      ],
+      [
+        7,
+        999,
+        405,
+        594,
+        1,
+        622,
+        1222,
+        33,
+        1322,
+        2610,
+        0
+      ],
+      [
+        8,
+        997,
+        405,
+        592,
+        3,
+        775,
+        1063,
+        31,
+        1136,
+        2534,
+        0
+      ],
+      [
+        9,
+        997,
+        404,
+        593,
+        3,
+        611,
+        1082,
+        27,
+        1149,
+        2517,
+        0
+      ],
+      [
+        10,
+        997,
+        405,
+        592,
+        3,
+        876,
+        1203,
+        27,
+        1309,
+        2329,
+        0
+      ],
+      [
+        11,
+        1000,
+        405,
+        595,
+        0,
+        797,
+        878,
+        29,
+        993,
+        1795,
+        0
+      ],
+      [
+        12,
+        999,
+        405,
+        594,
+        1,
+        416,
+        926,
+        29,
+        1040,
+        2208,
+        0
+      ],
+      [
+        13,
+        999,
+        405,
+        594,
+        1,
+        636,
+        886,
+        33,
+        1003,
+        2417,
+        0
+      ],
+      [
+        14,
+        998,
+        404,
+        594,
+        2,
+        469,
+        1188,
+        30,
+        1269,
+        2593,
+        0
+      ],
+      [
+        15,
+        999,
+        405,
+        594,
+        1,
+        638,
+        952,
+        28,
+        1066,
+        2295,
+        0
+      ],
+      [
+        16,
+        1000,
+        405,
+        595,
+        0,
+        771,
+        888,
+        28,
+        993,
+        1654,
+        0
+      ],
+      [
+        17,
+        1000,
+        405,
+        595,
+        0,
+        382,
+        867,
+        29,
+        946,
+        1687,
+        0
+      ],
+      [
+        18,
+        998,
+        405,
+        593,
+        2,
+        617,
+        891,
+        29,
+        1003,
+        2326,
+        0
+      ],
+      [
+        19,
+        1000,
+        405,
+        595,
+        0,
+        508,
+        872,
+        31,
+        964,
+        1737,
+        0
+      ],
+      [
+        20,
+        999,
+        404,
+        595,
+        1,
+        649,
+        1226,
+        29,
+        1333,
+        2564,
+        0
+      ],
+      [
+        21,
+        999,
+        405,
+        594,
+        2,
+        622,
+        946,
+        29,
+        1026,
+        2377,
+        0
+      ],
+      [
+        22,
+        999,
+        405,
+        594,
+        2,
+        610,
+        1111,
+        27,
+        1184,
+        2393,
+        0
+      ],
+      [
+        23,
+        997,
+        405,
+        592,
+        3,
+        635,
+        1258,
+        36,
+        1358,
+        2600,
+        0
+      ],
+      [
+        24,
+        998,
+        405,
+        593,
+        1,
+        599,
+        911,
+        27,
+        1010,
+        2593,
+        0
+      ],
+      [
+        25,
+        999,
+        404,
+        595,
+        1,
+        641,
+        1039,
+        29,
+        1108,
+        2305,
+        0
+      ],
+      [
+        26,
+        998,
+        405,
+        593,
+        2,
+        990,
+        1176,
+        29,
+        1284,
+        2356,
+        1
+      ],
+      [
+        27,
+        999,
+        405,
+        594,
+        1,
+        623,
+        1222,
+        35,
+        1336,
+        2618,
+        0
+      ],
+      [
+        28,
+        997,
+        405,
+        592,
+        3,
+        629,
+        1048,
+        33,
+        1119,
+        2586,
+        0
+      ],
+      [
+        29,
+        1000,
+        405,
+        595,
+        0,
+        519,
+        848,
+        25,
+        937,
+        1683,
+        0
+      ]
+    ],
+    "detail_policy": "worst_gap_per_100ms_bucket_not_all_gaps;full_counts_above",
+    "bucket_us": 100000,
+    "detail_window_us": 32000000,
+    "gap_columns": [
+      "time_us",
+      "dt_us",
+      "sequence",
+      "latest_notify_age_us",
+      "callback_gap_us",
+      "poll_period_us",
+      "update_us",
+      "convert_us",
+      "pack_us",
+      "publish_us",
+      "total_us",
+      "previous_total_us",
+      "previous_yield_us",
+      "wakes"
+    ],
+    "worst_gap_by_100ms": [
+      [
+        5395144,
+        4025,
+        17531,
+        20,
+        1308,
+        1310,
+        1242,
+        21,
+        39,
+        38,
+        1359,
+        306,
+        0,
+        1
+      ],
+      [
+        26200187,
+        4067,
+        25953,
+        22,
+        1896,
+        1895,
+        684,
+        14,
+        16,
+        39,
+        770,
+        352,
+        0,
+        1
+      ]
+    ]
+  },
+  "normal_log": {
+    "total_rows": 3274,
+    "running_rows": 2797,
+    "all_running_rows_adopt_mekf": true,
+    "finite_fields_in_all_running_rows": [
+      "pitch_mekf_control_deg",
+      "pitch_mekf_abs_deg",
+      "mekf_q_w",
+      "mekf_q_x",
+      "mekf_q_y",
+      "mekf_q_z"
+    ],
+    "last_running_t_test_ms": 30001
+  },
+  "foot_observation": {
+    "revision": "freefoot_runtime_v2_0477",
+    "observation_only": true,
+    "detector": "sparse_rows_identity_v2",
+    "scan_y_semantics": "selected_row_template_center_not_marker_centroid",
+    "vertical_recovery_angle_accuracy_validated": false,
+    "search_radius_y_px": 32,
+    "search_step_y_px": 4,
+    "calibration_source_commit": null,
+    "original_calibration_source_commit": "ac6df8caf59c93956b87cba57521903c25ff9f00",
+    "calibration": {
+      "revision": "fixed_two_poses_20260924",
+      "provisional": true,
+      "method": "two_noncontact_pose_means",
+      "reference": "negative_mekf_roll_change",
+      "assumption": "feet_ground_fixed_fore_aft_planar_motion",
+      "right_deg_per_px": 0.155146316,
+      "left_deg_per_px": 0.155496761,
+      "body_span_deg": 20.276417,
+      "fit_right_x": [
+        40.95084,
+        171.64307
+      ],
+      "fit_left_x": [
+        39.15524,
+        169.55292
+      ],
+      "zero": "independent_per_boot",
+      "fit_poses": 2,
+      "heldout_hand_supported_poses": 2,
+      "independent_angular_accuracy_validated": false,
+      "source_file": "freefoot-pose-comparison.json",
+      "source_sha256": "f731b0ac1019d3ec2b054df9ccc9cbf91c7c013c39f565851d124ad3409f3676"
+    },
+    "mapping": "right=A upper lane;left=B lower lane",
+    "positive_direction": "marker_x_decreases",
+    "frame_timestamp_semantics": "camera_driver_frame_timestamp_not_verified_exposure_time",
+    "control_context_semantics": "latest_control_snapshot_at_frame_delivery_not_exposure",
+    "target_fps": 15,
+    "capacity": 768,
+    "count": 380,
+    "overflow": false,
+    "available": true,
+    "zero_ready": true,
+    "zero_reason": "ready",
+    "zero_max_nominal_offset_px": 35.0,
+    "zero_max_spread_px": 4.0,
+    "right_zero_x": 171.13884,
+    "left_zero_x": 170.41356,
+    "right_deg_per_px": 0.155146316,
+    "left_deg_per_px": 0.155496761,
+    "right_support_x": [
+      39.0,
+      182.0
+    ],
+    "left_support_x": [
+      37.0,
+      177.5
+    ],
+    "range": {
+      "revision": "observed_envelope_20260925",
+      "basis": "original_calibration_plus_observed_marker_positions",
+      "right_support_x": [
+        39.0,
+        182.0
+      ],
+      "left_support_x": [
+        37.0,
+        177.5
+      ],
+      "original_right_support_x": [
+        42.0,
+        173.0
+      ],
+      "original_left_support_x": [
+        43.5,
+        177.5
+      ],
+      "observed_right_x": [
+        40.7181,
+        180.6437
+      ],
+      "observed_left_x": [
+        38.7209,
+        173.524
+      ],
+      "margin_px": 1.0,
+      "source_manifest": "foot_range_20260925.json",
+      "extension_angle_accuracy_validated": false
+    }
+  },
+  "foot": {
+    "total_frames": 380,
+    "running_frames": 286,
+    "states": {
+      "START_SYNC": 48,
+      "RUNNING_BATCH_SWEEP": 286,
+      "END_SYNC": 46
+    },
+    "right": {
+      "valid_running": 282,
+      "invalid_running": 4,
+      "valid_out_of_range_running": 0,
+      "valid_total": 376,
+      "valid_out_of_range_total": 0,
+      "invalid_reasons_running": {
+        "ambiguous": 4
+      },
+      "running_x": [
+        140.96153,
+        172.56757
+      ],
+      "running_angle_deg": [
+        -0.22166,
+        4.6819
+      ]
+    },
+    "left": {
+      "valid_running": 285,
+      "invalid_running": 1,
+      "valid_out_of_range_running": 0,
+      "valid_total": 379,
+      "valid_out_of_range_total": 0,
+      "invalid_reasons_running": {
+        "bad_shape": 1
+      },
+      "running_x": [
+        136.32495,
+        172.27719
+      ],
+      "running_angle_deg": [
+        -0.28979,
+        5.30067
+      ]
+    },
+    "running_fps": 9.531774169193005,
+    "max_frame_interval_us": 200338,
+    "frame_intervals_over_150ms": 15
+  }
+}

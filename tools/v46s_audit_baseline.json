@@ -1,0 +1,16 @@
+{
+  "baseline": "09e6a0ea15cca6b25eba8209ed375bf392229beb",
+  "runner_sha256": "151bdc4ee2725320f3e6160f5a3bfd5d3e9fc40f483fddaa7b1686520a201ddc",
+  "config_sha256": "acbfcc2ff4ab1d6995051ab2a2383ac66d342cabd7144df7f0e9e7caa49594b8",
+  "protected": {
+    "src/main.cpp": "c70415585045489574004efec17a6cb4c4df085f930f540656cbf575f8b648ec",
+    "src/imu_manager.cpp": "1b5c5d6ceea79fdf55c51d158ed51ecbe730fac79f9898e6563dcee549e583a2",
+    "src/imu_manager.h": "def4a12a485416284d05064c5dbb04dd80a25144cd69e51d1e9a5561406cdfa6",
+    "src/roller485_manager.cpp": "e1fcd50183f73f8ab748f4921ea5156f11c03a2bc8f3b25becde985f4ab49e9b",
+    "src/roller485_manager.h": "99f1b3a9316728a541a650be60bc629c6f8b0993c33811ef3757ee939e136810",
+    "src/run_control_worker.h": "415e4f422d53d362ebdf54e339b0dc5d14a3794fb03faabcb6b4a7fa8f4abf5b",
+    "src/log_types.h": "8f6279de5a311db286e840d9564b5fa91a7a3f517c5aa390026d322c4a1695f5",
+    "src/mekf6.cpp": "150c05691e3d2b385c6a700fd0b227251da3cfdba42ad7fd1eaab22444cf9d07",
+    "src/mekf6.hpp": "e6d9798ace7c42fa382704d4b7d6a3d0b0062c6dc2b706b5c6353b0ef6cd74e7"
+  }
+}

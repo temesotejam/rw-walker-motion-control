@@ -1,0 +1,350 @@
+{
+  "source": "energy_control_autonomous_run_1_31767392.rwlog",
+  "sha256": "9ee15c56a97602e14349594d4c94220432d701c316025516473120e8ced5d476",
+  "records": [
+    {
+      "time_ms": 427,
+      "side": -1,
+      "rpm": 260.92,
+      "valid": true,
+      "positive_peak_deg": 1.98456,
+      "negative_peak_deg": null
+    },
+    {
+      "time_ms": 938,
+      "side": 1,
+      "rpm": 15.04,
+      "valid": true,
+      "positive_peak_deg": 1.98456,
+      "negative_peak_deg": 3.29764
+    },
+    {
+      "time_ms": 1301,
+      "side": -1,
+      "rpm": 404.49,
+      "valid": true,
+      "positive_peak_deg": 4.21105,
+      "negative_peak_deg": 3.29764
+    },
+    {
+      "time_ms": 1714,
+      "side": 1,
+      "rpm": 169.86,
+      "valid": true,
+      "positive_peak_deg": 4.21105,
+      "negative_peak_deg": 4.66867
+    },
+    {
+      "time_ms": 2081,
+      "side": -1,
+      "rpm": 494.39,
+      "valid": true,
+      "positive_peak_deg": 4.78477,
+      "negative_peak_deg": 4.66867
+    },
+    {
+      "time_ms": 2504,
+      "side": 1,
+      "rpm": 232.01,
+      "valid": true,
+      "positive_peak_deg": 4.78477,
+      "negative_peak_deg": 4.56517
+    },
+    {
+      "time_ms": 2874,
+      "side": -1,
+      "rpm": 523.51,
+      "valid": true,
+      "positive_peak_deg": 4.71766,
+      "negative_peak_deg": 4.56517
+    },
+    {
+      "time_ms": 3310,
+      "side": 1,
+      "rpm": 234.87,
+      "valid": true,
+      "positive_peak_deg": 4.71766,
+      "negative_peak_deg": 4.43578
+    },
+    {
+      "time_ms": 3677,
+      "side": -1,
+      "rpm": 532.34,
+      "valid": true,
+      "positive_peak_deg": 4.65146,
+      "negative_peak_deg": 4.43578
+    },
+    {
+      "time_ms": 4086,
+      "side": 1,
+      "rpm": 266.25,
+      "valid": true,
+      "positive_peak_deg": 4.65146,
+      "negative_peak_deg": 4.71559
+    },
+    {
+      "time_ms": 4448,
+      "side": -1,
+      "rpm": 559.79,
+      "valid": true,
+      "positive_peak_deg": 4.85528,
+      "negative_peak_deg": 4.71559
+    },
+    {
+      "time_ms": 4865,
+      "side": 1,
+      "rpm": 280.62,
+      "valid": true,
+      "positive_peak_deg": 4.85528,
+      "negative_peak_deg": 4.7677
+    },
+    {
+      "time_ms": 5236,
+      "side": -1,
+      "rpm": 564.38,
+      "valid": true,
+      "positive_peak_deg": 4.87088,
+      "negative_peak_deg": 4.7677
+    },
+    {
+      "time_ms": 5648,
+      "side": 1,
+      "rpm": 187.47,
+      "valid": true,
+      "positive_peak_deg": 4.87088,
+      "negative_peak_deg": 4.83913
+    },
+    {
+      "time_ms": 6047,
+      "side": -1,
+      "rpm": 480.28,
+      "valid": true,
+      "positive_peak_deg": 5.3601,
+      "negative_peak_deg": 4.83913
+    },
+    {
+      "time_ms": 6460,
+      "side": 1,
+      "rpm": 122.03,
+      "valid": true,
+      "positive_peak_deg": 5.3601,
+      "negative_peak_deg": 4.59257
+    },
+    {
+      "time_ms": 6865,
+      "side": -1,
+      "rpm": 442.83,
+      "valid": true,
+      "positive_peak_deg": 5.36906,
+      "negative_peak_deg": 4.59257
+    },
+    {
+      "time_ms": 7266,
+      "side": 1,
+      "rpm": 80.08,
+      "valid": true,
+      "positive_peak_deg": 5.36906,
+      "negative_peak_deg": 4.76122
+    },
+    {
+      "time_ms": 7678,
+      "side": -1,
+      "rpm": 402.18,
+      "valid": true,
+      "positive_peak_deg": 5.52467,
+      "negative_peak_deg": 4.76122
+    },
+    {
+      "time_ms": 8094,
+      "side": 1,
+      "rpm": 47.97,
+      "valid": true,
+      "positive_peak_deg": 5.52467,
+      "negative_peak_deg": 4.48628
+    },
+    {
+      "time_ms": 8487,
+      "side": -1,
+      "rpm": 381.79,
+      "valid": true,
+      "positive_peak_deg": 5.25884,
+      "negative_peak_deg": 4.48628
+    },
+    {
+      "time_ms": 8879,
+      "side": 1,
+      "rpm": 24.98,
+      "valid": true,
+      "positive_peak_deg": 5.25884,
+      "negative_peak_deg": 4.78519
+    },
+    {
+      "time_ms": 9326,
+      "side": -1,
+      "rpm": 353.77,
+      "valid": true,
+      "positive_peak_deg": 6.00997,
+      "negative_peak_deg": 4.78519
+    },
+    {
+      "time_ms": 9751,
+      "side": 1,
+      "rpm": -2.25,
+      "valid": true,
+      "positive_peak_deg": 6.00997,
+      "negative_peak_deg": 4.07413
+    },
+    {
+      "time_ms": 10155,
+      "side": -1,
+      "rpm": 379.21,
+      "valid": true,
+      "positive_peak_deg": 5.5191,
+      "negative_peak_deg": 4.07413
+    },
+    {
+      "time_ms": 10536,
+      "side": 1,
+      "rpm": 15.75,
+      "valid": true,
+      "positive_peak_deg": 5.5191,
+      "negative_peak_deg": 4.57437
+    },
+    {
+      "time_ms": 11000,
+      "side": -1,
+      "rpm": 340.77,
+      "valid": true,
+      "positive_peak_deg": 6.45172,
+      "negative_peak_deg": 4.57437
+    },
+    {
+      "time_ms": 11409,
+      "side": 1,
+      "rpm": 4.4,
+      "valid": true,
+      "positive_peak_deg": 6.45172,
+      "negative_peak_deg": 4.02953
+    },
+    {
+      "time_ms": 11845,
+      "side": -1,
+      "rpm": 356.66,
+      "valid": true,
+      "positive_peak_deg": 5.86417,
+      "negative_peak_deg": 4.02953
+    },
+    {
+      "time_ms": 12230,
+      "side": 1,
+      "rpm": 5.6,
+      "valid": true,
+      "positive_peak_deg": 5.86417,
+      "negative_peak_deg": 4.34452
+    },
+    {
+      "time_ms": 12707,
+      "side": -1,
+      "rpm": 330.9,
+      "valid": true,
+      "positive_peak_deg": 6.46077,
+      "negative_peak_deg": 4.34452
+    },
+    {
+      "time_ms": 13106,
+      "side": 1,
+      "rpm": 2.9,
+      "valid": true,
+      "positive_peak_deg": 6.46077,
+      "negative_peak_deg": 3.97789
+    },
+    {
+      "time_ms": 13554,
+      "side": -1,
+      "rpm": 356.69,
+      "valid": true,
+      "positive_peak_deg": 6.07715,
+      "negative_peak_deg": 3.97789
+    },
+    {
+      "time_ms": 13922,
+      "side": 1,
+      "rpm": 5.17,
+      "valid": true,
+      "positive_peak_deg": 6.07715,
+      "negative_peak_deg": 4.18283
+    },
+    {
+      "time_ms": 14436,
+      "side": -1,
+      "rpm": 305.41,
+      "valid": true,
+      "positive_peak_deg": 7.00876,
+      "negative_peak_deg": 4.18283
+    },
+    {
+      "time_ms": 14804,
+      "side": 1,
+      "rpm": 107.37,
+      "valid": true,
+      "positive_peak_deg": 7.00876,
+      "negative_peak_deg": 2.44908
+    },
+    {
+      "time_ms": 15213,
+      "side": -1,
+      "rpm": 415.04,
+      "valid": true,
+      "positive_peak_deg": 5.44025,
+      "negative_peak_deg": 2.44908
+    },
+    {
+      "time_ms": 15572,
+      "side": 1,
+      "rpm": 15.71,
+      "valid": true,
+      "positive_peak_deg": 5.44025,
+      "negative_peak_deg": 4.59816
+    },
+    {
+      "time_ms": 16107,
+      "side": -1,
+      "rpm": 298.32,
+      "valid": true,
+      "positive_peak_deg": 7.31173,
+      "negative_peak_deg": 4.59816
+    },
+    {
+      "time_ms": 16457,
+      "side": 1,
+      "rpm": 111.73,
+      "valid": true,
+      "positive_peak_deg": 7.31173,
+      "negative_peak_deg": 1.79003
+    },
+    {
+      "time_ms": 16885,
+      "side": -1,
+      "rpm": 408.53,
+      "valid": true,
+      "positive_peak_deg": 5.26087,
+      "negative_peak_deg": 1.79003
+    },
+    {
+      "time_ms": 17240,
+      "side": 1,
+      "rpm": 8.64,
+      "valid": true,
+      "positive_peak_deg": 5.26087,
+      "negative_peak_deg": 4.03132
+    },
+    {
+      "time_ms": 17834,
+      "side": -1,
+      "rpm": 274.92,
+      "valid": true,
+      "positive_peak_deg": 7.63905,
+      "negative_peak_deg": 4.03132
+    }
+  ]
+}

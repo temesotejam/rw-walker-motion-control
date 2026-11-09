@@ -1,0 +1,1872 @@
+{
+  "source_file": "freefoot-pose-comparison.json",
+  "source_sha256": "f731b0ac1019d3ec2b054df9ccc9cbf91c7c013c39f565851d124ad3409f3676",
+  "source_firmware_commit": "7380f2a5af53894dcefe6f44fd01be1a70700f22",
+  "source_schema": "freefoot-static-poses-v1",
+  "created_at": "2026-09-24T05:34:38.793Z",
+  "operator_note": "First two records untouched while captured; last two held by hand. Feet held in the same ground posture as previously described.",
+  "fit_record_indices": [
+    0,
+    1
+  ],
+  "validation_record_indices": [
+    2,
+    3
+  ],
+  "records": [
+    {
+      "label": "直立基準",
+      "role": "fit",
+      "summary": {
+        "boot_id": 1964685441,
+        "run_id": 0,
+        "revision": "0.47.6-pose-comparison",
+        "right_zero_x": 171.5742,
+        "left_zero_x": 169.9162,
+        "first_frame_us": 46181605,
+        "last_frame_us": 49981603,
+        "span_us": 3801042,
+        "right_in_range": true,
+        "left_in_range": true,
+        "spread": {
+          "roll_deg": 0.00913043767752697,
+          "pitch_deg": 0.012354608237387765,
+          "yaw_deg": 0.422363360251893,
+          "right_x": 0.7975999999999885,
+          "left_x": 0.11539999999999395
+        },
+        "roll_deg": 1.7056209417368489,
+        "pitch_deg": 0.23556345210042146,
+        "yaw_deg": 3.7565153733291496,
+        "right_x": 171.64306,
+        "left_x": 169.55292,
+        "right_deg": -0.011560000000000003,
+        "left_deg": 0.05908,
+        "accel_roll_deg": 1.6302056129569606
+      },
+      "comparison_before": null,
+      "image_crc32": 2964803563,
+      "image_selection_review": "selected_x_matches_visible_white_marker; detection band is not a square boundary",
+      "frames": [
+        {
+          "sequence": 344,
+          "frame_us": 46181605,
+          "delivered_us": 46232008,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": -0.0342,
+          "left_deg": 0.0571,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 46228679,
+            "age_us": 140510,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": 1.711243,
+            "pitch_deg": 0.233198,
+            "yaw_deg": 3.957399,
+            "quaternion": {
+              "w": 0.999291,
+              "x": 0.014854,
+              "y": 0.002549,
+              "z": 0.034494
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.001465,
+                0.02832,
+                1.007813
+              ],
+              "gyro_dps": [
+                0.12207,
+                0,
+                0.061035
+              ],
+              "gyro_bias_dps": [
+                -0.136317,
+                0.078998,
+                0.125306
+              ],
+              "accel_sample_us": 46228679,
+              "accel_age_us": 140510,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.180226
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 171.7778,
+            "scan_y": 78,
+            "width": 68,
+            "contrast": 174.4,
+            "weight": 4561.6001,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 169.5653,
+            "scan_y": 188,
+            "width": 51,
+            "contrast": 125.5333,
+            "weight": 2797.2666,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 354,
+          "frame_us": 47181610,
+          "delivered_us": 47232108,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": -0.0446,
+          "left_deg": 0.0603,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 47229875,
+            "age_us": 67018,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": 1.706243,
+            "pitch_deg": 0.231328,
+            "yaw_deg": 3.853292,
+            "quaternion": {
+              "w": 0.999323,
+              "x": 0.014813,
+              "y": 0.002518,
+              "z": 0.033586
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.00415,
+                0.029541,
+                1.010498
+              ],
+              "gyro_dps": [
+                -0.061035,
+                0,
+                -0.183105
+              ],
+              "gyro_bias_dps": [
+                -0.133353,
+                0.081901,
+                0.125212
+              ],
+              "accel_sample_us": 47226836,
+              "accel_age_us": 70057,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.034264
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 171.84,
+            "scan_y": 78,
+            "width": 67,
+            "contrast": 173.9333,
+            "weight": 4519.9331,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 169.5456,
+            "scan_y": 188,
+            "width": 51,
+            "contrast": 124.6667,
+            "weight": 2781.2666,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 361,
+          "frame_us": 47981598,
+          "delivered_us": 48033194,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 0.0876,
+          "left_deg": 0.061,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 48029822,
+            "age_us": 174236,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": 1.702164,
+            "pitch_deg": 0.238184,
+            "yaw_deg": 3.774266,
+            "quaternion": {
+              "w": 0.999346,
+              "x": 0.014777,
+              "y": 0.002566,
+              "z": 0.032896
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.003418,
+                0.030029,
+                1.008545
+              ],
+              "gyro_dps": [
+                -0.305176,
+                0.221902,
+                0.12207
+              ],
+              "gyro_bias_dps": [
+                -0.132415,
+                0.081208,
+                0.125222
+              ],
+              "accel_sample_us": 48026861,
+              "accel_age_us": 177197,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.044235
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 171.0523,
+            "scan_y": 82,
+            "width": 72,
+            "contrast": 187.6667,
+            "weight": 4878.6001,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 169.5409,
+            "scan_y": 188,
+            "width": 51,
+            "contrast": 124.6,
+            "weight": 2802.6667,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 370,
+          "frame_us": 48982094,
+          "delivered_us": 49032304,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": -0.0463,
+          "left_deg": 0.0491,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 49029842,
+            "age_us": 96341,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": 1.705981,
+            "pitch_deg": 0.243713,
+            "yaw_deg": 3.662527,
+            "quaternion": {
+              "w": 0.999377,
+              "x": 0.014811,
+              "y": 0.002601,
+              "z": 0.031921
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.003906,
+                0.0271,
+                1.008057
+              ],
+              "gyro_dps": [
+                -0.12207,
+                0.166427,
+                -0.061035
+              ],
+              "gyro_bias_dps": [
+                -0.12789,
+                0.082189,
+                0.125203
+              ],
+              "accel_sample_us": 49029842,
+              "accel_age_us": 96341,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.16902
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 171.8499,
+            "scan_y": 78,
+            "width": 69,
+            "contrast": 175.6667,
+            "weight": 4546.6001,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 169.6141,
+            "scan_y": 188,
+            "width": 51,
+            "contrast": 124.1333,
+            "weight": 2785.4666,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 380,
+          "frame_us": 49981603,
+          "delivered_us": 50033050,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": -0.0203,
+          "left_deg": 0.0679,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 50027668,
+            "age_us": 81463,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": 1.702507,
+            "pitch_deg": 0.231446,
+            "yaw_deg": 3.535072,
+            "quaternion": {
+              "w": 0.999413,
+              "x": 0.014787,
+              "y": 0.002477,
+              "z": 0.030811
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.005127,
+                0.028564,
+                1.009033
+              ],
+              "gyro_dps": [
+                -0.12207,
+                0.110951,
+                -0.061035
+              ],
+              "gyro_bias_dps": [
+                -0.124676,
+                0.087141,
+                0.125117
+              ],
+              "accel_sample_us": 50027668,
+              "accel_age_us": 81463,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.098912
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 171.6953,
+            "scan_y": 78,
+            "width": 70,
+            "contrast": 173.9333,
+            "weight": 4558.6665,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 169.4987,
+            "scan_y": 188,
+            "width": 51,
+            "contrast": 123.8,
+            "weight": 2767.6001,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        }
+      ],
+      "after": {
+        "right": {
+          "delta_deg": 0.0,
+          "residual_deg": 0.0
+        },
+        "left": {
+          "delta_deg": 0.0,
+          "residual_deg": 0.0
+        }
+      }
+    },
+    {
+      "label": "姿勢 1",
+      "role": "fit",
+      "summary": {
+        "boot_id": 1964685441,
+        "run_id": 0,
+        "revision": "0.47.6-pose-comparison",
+        "right_zero_x": 171.5742,
+        "left_zero_x": 169.9162,
+        "first_frame_us": 85281619,
+        "last_frame_us": 88981598,
+        "span_us": 3700071,
+        "right_in_range": true,
+        "left_in_range": true,
+        "spread": {
+          "roll_deg": 0.01463982720849799,
+          "pitch_deg": 0.03965872242747537,
+          "yaw_deg": 0.01681832272174688,
+          "right_x": 0.01999999999999602,
+          "left_x": 0.06029999999999802
+        },
+        "roll_deg": -18.570795587644582,
+        "pitch_deg": 0.8325436776021038,
+        "yaw_deg": 4.293834329381163,
+        "right_x": 40.95084,
+        "left_x": 39.15524,
+        "right_deg": 21.91588,
+        "left_deg": 21.267680000000002,
+        "accel_roll_deg": -18.57431453736884
+      },
+      "comparison_before": {
+        "delta": {
+          "roll_deg": -20.276416529381436,
+          "pitch_deg": 0.5969802255017385,
+          "yaw_deg": 0.5373189560519904,
+          "accel_roll_deg": -20.204520150325834,
+          "right_deg": 21.92744,
+          "left_deg": 21.2086
+        },
+        "right_residual_deg": 1.651023470618565,
+        "left_residual_deg": 0.9321834706185648,
+        "planar_check": true,
+        "flags": []
+      },
+      "image_crc32": 617545619,
+      "image_selection_review": "selected_x_matches_visible_white_marker; detection band is not a square boundary",
+      "frames": [
+        {
+          "sequence": 717,
+          "frame_us": 85281619,
+          "delivered_us": 85332056,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 21.9166,
+          "left_deg": 21.2651,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 85328936,
+            "age_us": 78950,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -18.562532,
+            "pitch_deg": 0.846818,
+            "yaw_deg": 4.304039,
+            "quaternion": {
+              "w": 0.986141,
+              "x": -0.161437,
+              "y": 0.001232,
+              "z": 0.038249
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.01416,
+                -0.321289,
+                0.95459
+              ],
+              "gyro_dps": [
+                -0.366211,
+                0.166427,
+                -0.061035
+              ],
+              "gyro_bias_dps": [
+                -0.199685,
+                0.091716,
+                0.026952
+              ],
+              "accel_sample_us": 85328936,
+              "accel_age_us": 78950,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.055953
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 40.9467,
+            "scan_y": 86,
+            "width": 37,
+            "contrast": 201.4667,
+            "weight": 4675.8667,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 39.1713,
+            "scan_y": 180,
+            "width": 37,
+            "contrast": 176.2667,
+            "weight": 3877.0667,
+            "candidates": 2,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 726,
+          "frame_us": 86181556,
+          "delivered_us": 86232739,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 21.9161,
+          "left_deg": 21.2693,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 86228644,
+            "age_us": 102454,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -18.577154,
+            "pitch_deg": 0.84097,
+            "yaw_deg": 4.289328,
+            "quaternion": {
+              "w": 0.986126,
+              "x": -0.161561,
+              "y": 0.001197,
+              "z": 0.038115
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.014648,
+                -0.321289,
+                0.957031
+              ],
+              "gyro_dps": [
+                -0.183105,
+                0.055476,
+                -0.061035
+              ],
+              "gyro_bias_dps": [
+                -0.198017,
+                0.092597,
+                0.027325
+              ],
+              "accel_sample_us": 86228644,
+              "accel_age_us": 102454,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.019782
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 40.9492,
+            "scan_y": 86,
+            "width": 37,
+            "contrast": 201.8,
+            "weight": 4677.0669,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 39.1451,
+            "scan_y": 180,
+            "width": 37,
+            "contrast": 177.2,
+            "weight": 3885.1333,
+            "candidates": 2,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 735,
+          "frame_us": 87081606,
+          "delivered_us": 87132684,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 21.9138,
+          "left_deg": 21.264,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 87127888,
+            "age_us": 140167,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -18.566446,
+            "pitch_deg": 0.843037,
+            "yaw_deg": 4.287179,
+            "quaternion": {
+              "w": 0.986141,
+              "x": -0.161469,
+              "y": 0.001222,
+              "z": 0.038099
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.015381,
+                -0.320801,
+                0.957031
+              ],
+              "gyro_dps": [
+                -0.305176,
+                0.221902,
+                -0.183105
+              ],
+              "gyro_bias_dps": [
+                -0.198038,
+                0.09233,
+                0.027216
+              ],
+              "accel_sample_us": 87127888,
+              "accel_age_us": 140167,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.044235
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 40.9631,
+            "scan_y": 86,
+            "width": 37,
+            "contrast": 201.1333,
+            "weight": 4671.7334,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 39.178,
+            "scan_y": 180,
+            "width": 36,
+            "contrast": 177.2667,
+            "weight": 3885.1333,
+            "candidates": 2,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 745,
+          "frame_us": 88081563,
+          "delivered_us": 88132611,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 21.9172,
+          "left_deg": 21.2738,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 88128664,
+            "age_us": 58379,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -18.573853,
+            "pitch_deg": 0.824716,
+            "yaw_deg": 4.288342,
+            "quaternion": {
+              "w": 0.986133,
+              "x": -0.161527,
+              "y": 0.00106,
+              "z": 0.038083
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.012695,
+                -0.32251,
+                0.957275
+              ],
+              "gyro_dps": [
+                -0.305176,
+                -0.110951,
+                0
+              ],
+              "gyro_bias_dps": [
+                -0.199433,
+                0.09098,
+                0.026677
+              ],
+              "accel_sample_us": 88125840,
+              "accel_age_us": 61203,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.113641
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 40.9431,
+            "scan_y": 86,
+            "width": 37,
+            "contrast": 201.8667,
+            "weight": 4665.7998,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 39.1177,
+            "scan_y": 180,
+            "width": 37,
+            "contrast": 177.4,
+            "weight": 3894,
+            "candidates": 2,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 754,
+          "frame_us": 88981598,
+          "delivered_us": 89032127,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 21.9157,
+          "left_deg": 21.2662,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 89029639,
+            "age_us": 76633,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -18.574038,
+            "pitch_deg": 0.807188,
+            "yaw_deg": 4.300378,
+            "quaternion": {
+              "w": 0.98613,
+              "x": -0.161523,
+              "y": 0.000892,
+              "z": 0.038162
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.014404,
+                -0.321777,
+                0.958252
+              ],
+              "gyro_dps": [
+                -0.12207,
+                0.166427,
+                0.061035
+              ],
+              "gyro_bias_dps": [
+                -0.198934,
+                0.081809,
+                0.023523
+              ],
+              "accel_sample_us": 89029639,
+              "accel_age_us": 76633,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.019782
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 40.9521,
+            "scan_y": 86,
+            "width": 38,
+            "contrast": 202.1333,
+            "weight": 4687.9331,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 39.1641,
+            "scan_y": 180,
+            "width": 37,
+            "contrast": 176.9333,
+            "weight": 3906.2666,
+            "candidates": 2,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        }
+      ],
+      "after": {
+        "right": {
+          "delta_deg": 20.276416529381432,
+          "residual_deg": 0.0
+        },
+        "left": {
+          "delta_deg": 20.276416529381432,
+          "residual_deg": 0.0
+        }
+      }
+    },
+    {
+      "label": "姿勢 2",
+      "role": "heldout_hand_supported",
+      "summary": {
+        "boot_id": 1964685441,
+        "run_id": 0,
+        "revision": "0.47.6-pose-comparison",
+        "right_zero_x": 171.5742,
+        "left_zero_x": 169.9162,
+        "first_frame_us": 266931603,
+        "last_frame_us": 270631618,
+        "span_us": 3700673,
+        "right_in_range": true,
+        "left_in_range": true,
+        "spread": {
+          "roll_deg": 0.407112173666178,
+          "pitch_deg": 0.02573242416588073,
+          "yaw_deg": 0.2761784843002033,
+          "right_x": 2.2449000000000012,
+          "left_x": 1.8992999999999824
+        },
+        "roll_deg": -1.6307723198039106,
+        "pitch_deg": 0.45633041064902063,
+        "yaw_deg": 2.0589548480007447,
+        "right_x": 148.09240000000003,
+        "left_x": 146.0271,
+        "right_deg": 3.9397800000000003,
+        "left_deg": 3.8854599999999997,
+        "accel_roll_deg": -1.7982619948425334
+      },
+      "comparison_before": {
+        "delta": {
+          "roll_deg": -3.3363932615407066,
+          "pitch_deg": 0.22076695854866557,
+          "yaw_deg": -1.697560525328413,
+          "accel_roll_deg": -3.428467607799462,
+          "right_deg": 3.95134,
+          "left_deg": 3.82638
+        },
+        "right_residual_deg": 0.6149467384592935,
+        "left_residual_deg": 0.4899867384592933,
+        "planar_check": true,
+        "flags": []
+      },
+      "image_crc32": 2131682186,
+      "image_selection_review": "selected_x_matches_visible_white_marker; detection band is not a square boundary",
+      "frames": [
+        {
+          "sequence": 2471,
+          "frame_us": 266931603,
+          "delivered_us": 266982147,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 4.0451,
+          "left_deg": 3.9974,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 266979797,
+            "age_us": 81414,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -1.807131,
+            "pitch_deg": 0.441573,
+            "yaw_deg": 2.076999,
+            "quaternion": {
+              "w": 0.999703,
+              "x": -0.015837,
+              "y": 0.003567,
+              "z": 0.018183
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.006348,
+                -0.040527,
+                1.011963
+              ],
+              "gyro_dps": [
+                0.671387,
+                0.277378,
+                0.183105
+              ],
+              "gyro_bias_dps": [
+                -0.250168,
+                -0.010729,
+                0.006724
+              ],
+              "accel_sample_us": 266977647,
+              "accel_age_us": 83564,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.492578
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 147.4644,
+            "scan_y": 82,
+            "width": 70,
+            "contrast": 190.1333,
+            "weight": 4902.4668,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 145.3389,
+            "scan_y": 184,
+            "width": 48,
+            "contrast": 134.6667,
+            "weight": 2962.7334,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 2480,
+          "frame_us": 267831592,
+          "delivered_us": 267882027,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 4.1098,
+          "left_deg": 4.0331,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 267876944,
+            "age_us": 111007,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -1.762685,
+            "pitch_deg": 0.455171,
+            "yaw_deg": 1.934574,
+            "quaternion": {
+              "w": 0.99973,
+              "x": -0.015446,
+              "y": 0.003711,
+              "z": 0.01694
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.008301,
+                -0.033447,
+                1.010254
+              ],
+              "gyro_dps": [
+                1.037598,
+                0.554755,
+                0.061035
+              ],
+              "gyro_bias_dps": [
+                -0.246386,
+                -0.009423,
+                0.007677
+              ],
+              "accel_sample_us": 267876944,
+              "accel_age_us": 111007,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.13417
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 147.0789,
+            "scan_y": 82,
+            "width": 69,
+            "contrast": 189.5333,
+            "weight": 4897.4668,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 145.1194,
+            "scan_y": 188,
+            "width": 49,
+            "contrast": 134.1333,
+            "weight": 2960.9333,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 2489,
+          "frame_us": 268731559,
+          "delivered_us": 268783403,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 3.9618,
+          "left_deg": 3.8798,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 268778830,
+            "age_us": 145263,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -1.65558,
+            "pitch_deg": 0.455309,
+            "yaw_deg": 2.210675,
+            "quaternion": {
+              "w": 0.999701,
+              "x": -0.014521,
+              "y": 0.003693,
+              "z": 0.019346
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.008789,
+                -0.032227,
+                1.014404
+              ],
+              "gyro_dps": [
+                -0.12207,
+                0.49928,
+                0.061035
+              ],
+              "gyro_bias_dps": [
+                -0.246277,
+                -0.012256,
+                0.004928
+              ],
+              "accel_sample_us": 268777027,
+              "accel_age_us": 147066,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.167859
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 147.9613,
+            "scan_y": 82,
+            "width": 69,
+            "contrast": 190.2667,
+            "weight": 4864.2002,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 146.0616,
+            "scan_y": 188,
+            "width": 49,
+            "contrast": 133.4667,
+            "weight": 2975.1333,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 2498,
+          "frame_us": 269631705,
+          "delivered_us": 269682631,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 3.849,
+          "left_deg": 3.7928,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 269678609,
+            "age_us": 177382,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -1.528386,
+            "pitch_deg": 0.467387,
+            "yaw_deg": 2.100229,
+            "quaternion": {
+              "w": 0.999734,
+              "x": -0.01341,
+              "y": 0.003833,
+              "z": 0.01838
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.008789,
+                -0.027344,
+                1.01416
+              ],
+              "gyro_dps": [
+                -0.671387,
+                0,
+                -0.061035
+              ],
+              "gyro_bias_dps": [
+                -0.24237,
+                -0.013476,
+                0.005454
+              ],
+              "accel_sample_us": 269675864,
+              "accel_age_us": 180127,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.027976
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 148.6336,
+            "scan_y": 82,
+            "width": 70,
+            "contrast": 191.2667,
+            "weight": 4884.2002,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 146.5969,
+            "scan_y": 184,
+            "width": 48,
+            "contrast": 134.6667,
+            "weight": 2951.5334,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 2507,
+          "frame_us": 270631618,
+          "delivered_us": 270682820,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 3.7332,
+          "left_deg": 3.7242,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 270676803,
+            "age_us": 91177,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -1.40006,
+            "pitch_deg": 0.462227,
+            "yaw_deg": 1.972215,
+            "quaternion": {
+              "w": 0.999768,
+              "x": -0.012285,
+              "y": 0.003823,
+              "z": 0.017258
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.004639,
+                -0.025391,
+                1.011719
+              ],
+              "gyro_dps": [
+                0.305176,
+                0.277378,
+                0.061035
+              ],
+              "gyro_bias_dps": [
+                -0.237314,
+                -0.016193,
+                0.006319
+              ],
+              "accel_sample_us": 270674796,
+              "accel_age_us": 93184,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.201741
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 149.3238,
+            "scan_y": 82,
+            "width": 72,
+            "contrast": 190.5333,
+            "weight": 4926.3335,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 147.0187,
+            "scan_y": 184,
+            "width": 50,
+            "contrast": 134.4,
+            "weight": 2964.9333,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        }
+      ],
+      "after": {
+        "right": {
+          "delta_deg": 3.653798150355404,
+          "residual_deg": 0.31740488881464435
+        },
+        "left": {
+          "delta_deg": 3.65818874626644,
+          "residual_deg": 0.32179548472568076
+        }
+      }
+    },
+    {
+      "label": "姿勢 3",
+      "role": "heldout_hand_supported",
+      "summary": {
+        "boot_id": 1964685441,
+        "run_id": 0,
+        "revision": "0.47.6-pose-comparison",
+        "right_zero_x": 171.5742,
+        "left_zero_x": 169.9162,
+        "first_frame_us": 275681618,
+        "last_frame_us": 279481560,
+        "span_us": 3798149,
+        "right_in_range": true,
+        "left_in_range": true,
+        "spread": {
+          "roll_deg": 0.4667096102941741,
+          "pitch_deg": 0.12977312631994664,
+          "yaw_deg": 0.31118753185023706,
+          "right_x": 1.8357999999999919,
+          "left_x": 2.1740000000000066
+        },
+        "roll_deg": -6.780250714108325,
+        "pitch_deg": 0.35085197965461284,
+        "yaw_deg": -3.600495856833367,
+        "right_x": 115.27286000000001,
+        "left_x": 113.29306,
+        "right_deg": 9.446179999999998,
+        "left_deg": 9.2095,
+        "accel_roll_deg": -6.586061957973234
+      },
+      "comparison_before": {
+        "delta": {
+          "roll_deg": -8.48587165584513,
+          "pitch_deg": 0.11528852755418484,
+          "yaw_deg": -7.35701123016247,
+          "accel_roll_deg": -8.2162675709302,
+          "right_deg": 9.457739999999998,
+          "left_deg": 9.15042
+        },
+        "right_residual_deg": 0.971868344154867,
+        "left_residual_deg": 0.6645483441548699,
+        "planar_check": false,
+        "flags": [
+          "yaw_changed"
+        ]
+      },
+      "image_crc32": 1432835101,
+      "image_selection_review": "selected_x_matches_visible_white_marker; detection band is not a square boundary",
+      "frames": [
+        {
+          "sequence": 2554,
+          "frame_us": 275681618,
+          "delivered_us": 275734080,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 9.6334,
+          "left_deg": 9.4103,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 275729839,
+            "age_us": 143047,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -7.046742,
+            "pitch_deg": 0.319497,
+            "yaw_deg": -3.666375,
+            "quaternion": {
+              "w": 0.997601,
+              "x": -0.061335,
+              "y": 0.004747,
+              "z": -0.031758
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.00293,
+                -0.11792,
+                0.997314
+              ],
+              "gyro_dps": [
+                -0.366211,
+                0,
+                -0.061035
+              ],
+              "gyro_bias_dps": [
+                -0.173361,
+                -0.014124,
+                0.052573
+              ],
+              "accel_sample_us": 275729839,
+              "accel_age_us": 143047,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.340923
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 114.1573,
+            "scan_y": 86,
+            "width": 68,
+            "contrast": 182.8,
+            "weight": 4561.7334,
+            "candidates": 2,
+            "ambiguity_ratio": 0.4222,
+            "alternate_x": 113.3181,
+            "alternate_y": 70
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 112.0585,
+            "scan_y": 184,
+            "width": 45,
+            "contrast": 139.6,
+            "weight": 2987.6001,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 2563,
+          "frame_us": 276682005,
+          "delivered_us": 276732361,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 9.529,
+          "left_deg": 9.3166,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 276728856,
+            "age_us": 61074,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -6.893323,
+            "pitch_deg": 0.304089,
+            "yaw_deg": -3.61184,
+            "quaternion": {
+              "w": 0.997697,
+              "x": -0.060006,
+              "y": 0.004542,
+              "z": -0.031297
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.004883,
+                -0.108887,
+                0.991943
+              ],
+              "gyro_dps": [
+                0,
+                0.166427,
+                -0.244141
+              ],
+              "gyro_bias_dps": [
+                -0.18752,
+                -0.016265,
+                0.049701
+              ],
+              "accel_sample_us": 276728856,
+              "accel_age_us": 61074,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.63211
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 114.7792,
+            "scan_y": 86,
+            "width": 63,
+            "contrast": 180.6,
+            "weight": 4459.2666,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 112.6345,
+            "scan_y": 184,
+            "width": 45,
+            "contrast": 137.5333,
+            "weight": 2930.8667,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 2571,
+          "frame_us": 277581610,
+          "delivered_us": 277632303,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 9.4156,
+          "left_deg": 9.1949,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 277630595,
+            "age_us": 83515,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -6.716389,
+            "pitch_deg": 0.329989,
+            "yaw_deg": -3.441213,
+            "quaternion": {
+              "w": 0.997834,
+              "x": -0.058465,
+              "y": 0.004632,
+              "z": -0.029805
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.007568,
+                -0.114258,
+                1.000488
+              ],
+              "gyro_dps": [
+                1.647949,
+                0.110951,
+                -0.305176
+              ],
+              "gyro_bias_dps": [
+                -0.203206,
+                -0.018629,
+                0.046103
+              ],
+              "accel_sample_us": 277627800,
+              "accel_age_us": 86310,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.22985
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 115.4552,
+            "scan_y": 86,
+            "width": 63,
+            "contrast": 180.0667,
+            "weight": 4415.6001,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 113.3829,
+            "scan_y": 184,
+            "width": 45,
+            "contrast": 137.8667,
+            "weight": 2943.2666,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 2580,
+          "frame_us": 278481871,
+          "delivered_us": 278532371,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 9.3276,
+          "left_deg": 9.069,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 278527854,
+            "age_us": 132006,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -6.664731,
+            "pitch_deg": 0.366892,
+            "yaw_deg": -3.752342,
+            "quaternion": {
+              "w": 0.997775,
+              "x": -0.057992,
+              "y": 0.005098,
+              "z": -0.032498
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.009033,
+                -0.114258,
+                1.007813
+              ],
+              "gyro_dps": [
+                -1.647949,
+                -0.721182,
+                -0.12207
+              ],
+              "gyro_bias_dps": [
+                -0.211684,
+                -0.023379,
+                0.045056
+              ],
+              "accel_sample_us": 278527854,
+              "accel_age_us": 132006,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.24309
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 115.9795,
+            "scan_y": 86,
+            "width": 65,
+            "contrast": 179.6,
+            "weight": 4450.2002,
+            "candidates": 2,
+            "ambiguity_ratio": 0.433,
+            "alternate_x": 115.1341,
+            "alternate_y": 70
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 114.1569,
+            "scan_y": 184,
+            "width": 45,
+            "contrast": 138.7333,
+            "weight": 2962.6001,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        },
+        {
+          "sequence": 2590,
+          "frame_us": 279481560,
+          "delivered_us": 279532229,
+          "right_zero_x": 171.5742,
+          "left_zero_x": 169.9162,
+          "right_deg": 9.3253,
+          "left_deg": 9.0567,
+          "mekf": {
+            "valid": true,
+            "fresh": true,
+            "sample_us": 279527819,
+            "age_us": 59030,
+            "estimate": "posterior",
+            "frame": "mekf",
+            "euler_order": "ZYX",
+            "roll_deg": -6.580061,
+            "pitch_deg": 0.433829,
+            "yaw_deg": -3.530791,
+            "quaternion": {
+              "w": 0.997878,
+              "x": -0.057246,
+              "y": 0.005546,
+              "z": -0.030539
+            },
+            "yaw_reference": "gyro_integrated_since_filter_initialization",
+            "inputs": {
+              "valid": true,
+              "frame": "mekf",
+              "axis_order": "xyz",
+              "accel_g": [
+                -0.005371,
+                -0.12207,
+                1.00293
+              ],
+              "gyro_dps": [
+                1.464844,
+                -0.443804,
+                0.061035
+              ],
+              "gyro_bias_dps": [
+                -0.216468,
+                -0.024492,
+                0.042827
+              ],
+              "accel_sample_us": 279525876,
+              "accel_age_us": 60973,
+              "last_accel_update": {
+                "used": true,
+                "confidence": 1,
+                "residual_deg": 0.380522
+              }
+            }
+          },
+          "right": {
+            "valid": true,
+            "reason": "detected",
+            "x": 115.9931,
+            "scan_y": 86,
+            "width": 66,
+            "contrast": 178.8,
+            "weight": 4419.2002,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          },
+          "left": {
+            "valid": true,
+            "reason": "detected",
+            "x": 114.2325,
+            "scan_y": 184,
+            "width": 44,
+            "contrast": 137.8,
+            "weight": 2921.3999,
+            "candidates": 1,
+            "ambiguity_ratio": 0,
+            "alternate_x": -1,
+            "alternate_y": -1
+          }
+        }
+      ],
+      "after": {
+        "right": {
+          "delta_deg": 8.745628890874583,
+          "residual_deg": 0.2597572350294097
+        },
+        "left": {
+          "delta_deg": 8.748225852213668,
+          "residual_deg": 0.262354196368495
+        }
+      }
+    }
+  ],
+  "fit": {
+    "body_roll_change_magnitude_deg": 20.276416529381432,
+    "method": "linear_scale_from_two_noncontact_pose_means; preserve per-boot zero",
+    "slopes_deg_per_px": {
+      "right": 0.15514631650898145,
+      "left": 0.1554967582964776
+    },
+    "independent_angular_accuracy_validated": false
+  }
+}

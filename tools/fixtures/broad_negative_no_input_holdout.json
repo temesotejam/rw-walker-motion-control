@@ -1,0 +1,47 @@
+[
+  {
+    "run": "42884626",
+    "rate_dps": 74.0655,
+    "wheel_rpm": 39.97,
+    "previous_peak_deg": 7.96907,
+    "battery_mV": 7190,
+    "assigned_width_ms": 0,
+    "observed_next_peak_deg": 11.82887
+  },
+  {
+    "run": "42884626",
+    "rate_dps": 74.2173,
+    "wheel_rpm": 59.86,
+    "previous_peak_deg": 7.94715,
+    "battery_mV": 7080,
+    "assigned_width_ms": 0,
+    "observed_next_peak_deg": 11.92696
+  },
+  {
+    "run": "42884626",
+    "rate_dps": 73.4389,
+    "wheel_rpm": 58.25,
+    "previous_peak_deg": 8.06085,
+    "battery_mV": 7140,
+    "assigned_width_ms": 0,
+    "observed_next_peak_deg": 11.92007
+  },
+  {
+    "run": "42884626",
+    "rate_dps": 73.5625,
+    "wheel_rpm": 41.57,
+    "previous_peak_deg": 8.08507,
+    "battery_mV": 7150,
+    "assigned_width_ms": 0,
+    "observed_next_peak_deg": 11.81728
+  },
+  {
+    "run": "42884626",
+    "rate_dps": 73.2581,
+    "wheel_rpm": 64.96,
+    "previous_peak_deg": 8.06084,
+    "battery_mV": 7140,
+    "assigned_width_ms": 0,
+    "observed_next_peak_deg": 11.98799
+  }
+]

@@ -1,0 +1,211 @@
+{
+  "revision": "observed_envelope_20260925",
+  "selection": "identity-v2 (0.47.4 onward), per-side valid observations; individual pose frames/trace included; invalid positions and older identity-ambiguous firmware excluded",
+  "counts": "exported records, not unique camera frames",
+  "policy": "union previous support with floor(observed_min-1px), ceil(observed_max+1px)",
+  "margin_px": 1,
+  "previous_support_x": {
+    "right": [
+      40,
+      173
+    ],
+    "left": [
+      39,
+      177.5
+    ]
+  },
+  "observed_x": {
+    "right": [
+      40.7181,
+      180.6437
+    ],
+    "left": [
+      38.7209,
+      173.52403
+    ]
+  },
+  "accepted_support_x": {
+    "right": [
+      39,
+      182
+    ],
+    "left": [
+      37,
+      177.5
+    ]
+  },
+  "angle_scale_refitted": false,
+  "independent_angle_accuracy_validated": false,
+  "sources": [
+    {
+      "file": "freefoot-diagnostics (10).json",
+      "sha256": "dde6a994ef17afc95243dad59bab7ec4a1210d51e37835c42453834024a7e66c",
+      "revision": "0.47.7-fixed-pose-calibration",
+      "observations": {
+        "right": {
+          "count": 1,
+          "min_x": 174.1771,
+          "max_x": 174.1771
+        },
+        "left": {
+          "count": 1,
+          "min_x": 172.9752,
+          "max_x": 172.9752
+        }
+      }
+    },
+    {
+      "file": "freefoot-diagnostics (11).json",
+      "sha256": "71a65004ef09b1ebc9872a5c5a6eb815c3e814ed9f49325b1dba086338f1e375",
+      "revision": "0.47.7-fixed-pose-calibration",
+      "observations": {
+        "right": {
+          "count": 1,
+          "min_x": 45.2008,
+          "max_x": 45.2008
+        },
+        "left": {
+          "count": 1,
+          "min_x": 42.1522,
+          "max_x": 42.1522
+        }
+      }
+    },
+    {
+      "file": "freefoot-diagnostics (6).json",
+      "sha256": "e853f210250d5b0f3facd44462a58ad8b99dc922ffa6acbeb4a21f719c03f874",
+      "revision": "0.47.4-marker-identity",
+      "observations": {
+        "right": {
+          "count": 1,
+          "min_x": 171.7313,
+          "max_x": 171.7313
+        },
+        "left": {
+          "count": 1,
+          "min_x": 170.7977,
+          "max_x": 170.7977
+        }
+      }
+    },
+    {
+      "file": "freefoot-diagnostics (7).json",
+      "sha256": "fd8c6ddda9ac13de01721aca8c84780ae6725205631742f0387a5f25e5b7db62",
+      "revision": "0.47.4-marker-identity",
+      "observations": {
+        "right": {
+          "count": 1,
+          "min_x": 41.7336,
+          "max_x": 41.7336
+        },
+        "left": {
+          "count": 1,
+          "min_x": 40.3504,
+          "max_x": 40.3504
+        }
+      }
+    },
+    {
+      "file": "freefoot-diagnostics (8)(1).json",
+      "sha256": "76902fc7623e783fee59ff882e279c54c757c9be86402cfc3c93688ee414f0a3",
+      "revision": "0.47.5-range-mekf-all-axes",
+      "observations": {
+        "right": {
+          "count": 1,
+          "min_x": 171.9493,
+          "max_x": 171.9493
+        },
+        "left": {
+          "count": 1,
+          "min_x": 170.9835,
+          "max_x": 170.9835
+        }
+      }
+    },
+    {
+      "file": "freefoot-diagnostics (9)(1).json",
+      "sha256": "d31957fb3bb46be79bb223eb8fa3082b3956cf4dc9caddf8378aff2909b2cb74",
+      "revision": "0.47.5-range-mekf-all-axes",
+      "observations": {
+        "right": {
+          "count": 1,
+          "min_x": 43.1053,
+          "max_x": 43.1053
+        },
+        "left": {
+          "count": 1,
+          "min_x": 41.4602,
+          "max_x": 41.4602
+        }
+      }
+    },
+    {
+      "file": "freefoot-pose-comparison.json",
+      "sha256": "f731b0ac1019d3ec2b054df9ccc9cbf91c7c013c39f565851d124ad3409f3676",
+      "revision": "0.47.6-pose-comparison",
+      "observations": {
+        "right": {
+          "count": 317,
+          "min_x": 40.7181,
+          "max_x": 180.6437
+        },
+        "left": {
+          "count": 318,
+          "min_x": 38.7209,
+          "max_x": 169.8006
+        }
+      }
+    },
+    {
+      "file": "energy_control_autonomous_run_1_32653719.rwlog",
+      "sha256": "776d0f42ff28cf4fba64490004f82d24fcc47fd5ef3f9a316c97bdb52649babb",
+      "revision": "0.47.9-control-work-reduction",
+      "observations": {
+        "right": {
+          "count": 387,
+          "min_x": 136.47998,
+          "max_x": 173.67436
+        },
+        "left": {
+          "count": 390,
+          "min_x": 135.69519,
+          "max_x": 173.52403
+        }
+      }
+    },
+    {
+      "file": "energy_control_autonomous_run_1_45028066.rwlog",
+      "sha256": "ce00ea966686fbd15ff7435c8dada1ec8d4c0f5f82bcd7aa07d1877a5e9ae565",
+      "revision": "0.47.8-control-work-profile",
+      "observations": {
+        "right": {
+          "count": 51,
+          "min_x": 171.99002,
+          "max_x": 172.72197
+        },
+        "left": {
+          "count": 51,
+          "min_x": 172.32552,
+          "max_x": 172.49197
+        }
+      }
+    },
+    {
+      "file": "energy_control_autonomous_run_1_52231331.rwlog",
+      "sha256": "aad0d536fef0bbeeb527def4b887cf8011610c31d1960c42d66c48ad7f212a56",
+      "revision": "freefoot_runtime_v2_0_47_0_20260923",
+      "observations": {
+        "right": {
+          "count": 58,
+          "min_x": 170.5098,
+          "max_x": 171.65987
+        },
+        "left": {
+          "count": 58,
+          "min_x": 164.11447,
+          "max_x": 171.07231
+        }
+      }
+    }
+  ]
+}

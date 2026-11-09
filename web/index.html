@@ -1,0 +1,104 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AtomS3R Free-foot</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#1d293d;background:#eef2f5;font-size:16px}*{box-sizing:border-box}body{max-width:950px;margin:auto;padding:20px}h1{font-size:1.65rem;margin-bottom:4px}h2{font-size:1.08rem}p{line-height:1.6}.muted{color:#546477;font-size:.88rem}.card{background:white;border-radius:14px;padding:20px;margin:16px 0;border:1px solid #d9e1e8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}.value{font-size:2rem;font-variant-numeric:tabular-nums;margin:4px 0}.label{font-size:.85rem;color:#546477}#state{font-size:1.35rem;overflow-wrap:anywhere}button{padding:13px 18px;border:0;border-radius:8px;background:#174b8e;color:white;font:inherit;cursor:pointer;margin:4px 4px 4px 0}button:disabled{opacity:.4;cursor:default}#stop{background:#b62032}#clear,#cancel{background:#58677a}code,pre{font-family:ui-monospace,monospace}pre{white-space:pre-wrap;font-size:.78rem;overflow-wrap:anywhere}#connection{font-weight:600}progress{width:100%;height:24px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:9px 4px;border-bottom:1px solid #e1e6eb}canvas{width:100%;height:120px;background:#f3f6fa;border-radius:8px}#message{min-height:26px;color:#9c2636}a{color:#174b8e}
+</style>
+<h1>AtomS3R Free-foot</h1><div class="muted">左右揺動のエネルギー制御 · MEKF姿勢推定 · ZEROクロスで必要な入力時間を計算</div>
+<p id="connection">接続を確認中…</p>
+<p class="muted" id="firmware-revision">本体プログラムの版を確認中…</p>
+<section class="card"><div class="grid"><div><div class="label">状態</div><div class="value" id="state">—</div></div><div><div class="label">残り時間</div><div class="value" id="remaining">—</div></div><div><div class="label">胴体の左右揺動 · MEKF</div><div class="value" id="pitch">—</div></div><div><div class="label">指令 / 実測電流</div><div class="value" style="font-size:1.5rem" id="current">—</div></div></div>
+<p id="guide">起動後は静止させてください。LEDが点灯したら左右のpitchを基準に合わせ、機体を静止させます。足のマーカー認識は測定開始に不要です。</p>
+<h2>比較用の保存姿勢（従来制御用）</h2>
+<p>機体の左右の中心線が鉛直になるように保持し、下のボタンを押してください。約2秒間の左右角の平均を保存します。重心の偏りで自然に傾く姿勢とは区別してください。測定開始・ログ消去・再起動では基準を変えません。</p>
+<button id="upright-reference-capture" disabled>今の姿勢を直立基準として保存</button>
+<p id="upright-reference-status" role="status">保存した基準を確認中…</p>
+  <p class="muted">1.0.40：12°では、入力前の回転数・電池電圧などから入力中と入力後の仕事を予測し、目標エネルギーに近づく電流と時間を選びます。負側の補助入力上限は回転数と電圧に応じて調整します。絶対角0°基準、直立基準の保存不要、各30秒測定です。まず同じ固定脚条件の12°で確認してください。</p>
+<p class="muted">仕事に基づく制御は絶対角0°を原点とし、選んだ目標角を左右それぞれに適用します。この保存操作では原点を変更しません。保存姿勢は比較と従来方式で使用します。</p>
+<h2>左右の偏りを動作中に自動補正</h2>
+<p>「仕事に基づく制御」を開始すると、左右の実測ピークと仕事モデルの予測を比較し、左右別のエネルギー予測と等価な重心ずれを更新します。選んだ目標角に対応する左右のエネルギー計算に反映します。重心ずれの手動設定は不要です。表示するずれは損失やモデル誤差も含み、実際の重心位置そのものとは限りません。</p>
+<p id="cg-status" role="status">自動補正の状態を確認中…</p>
+<details><summary>初期値を手動で指定する場合</summary>
+<p>通常は設定不要です。手動値は自動補正の初期値として使い、動作中は観測結果から更新します。＋の値は、画面の角度が＋に傾くほど重心が高くなる側へのずれです。</p>
+<label>重心ずれ（mm、−2～＋2） <input id="cg-shift" type="number" min="-2" max="2" step="0.01" placeholder="測定値" disabled></label>
+<button id="cg-save" type="button" disabled>重心ずれを保存</button>
+<details><summary>自然な静止姿勢から推定する</summary>
+<p>MEKF絶対角0°を機体の基準として扱います。機体を左右に支えず、ホイールを止めて自然に静止させ、下のボタンを押します。足裏の円弧上で釣り合う条件に限って推定します。中央の接地範囲内や固定具で支えている場合は、静止角だけでは重心ずれを特定できません。取得中は機体を動かさないでください。</p>
+<button id="cg-capture" type="button" disabled>自然な静止姿勢を2秒測って推定</button>
+</details>
+<p class="muted">新しい手動初期値は絶対角基準で保存します。旧基準の手動値は引き継ぎません。未指定の場合は補正ゼロから自動更新します。</p>
+</details>
+<div id="work-energy-control">
+  <h2>固定脚・ホイールの仕事を使う制御（30秒）</h2>
+  <p class="muted">脚の前後移動を固定し、各ボタンで30秒測定します。正側は300・350・400 mA、最大100 msです。10°・12°の負側は、不足が実測でも続いた場合にエネルギーを加える補助入力を使います。補助入力は300 mA・上限25 msから段階的に最大100 ms、ブレーキは最大70 msです。補助入力の効き方は正側の仕事モデルから仮定した試験用で、負側での精度は未確認です。8°は従来の入力選択を使います。</p>
+  <button id="work-start" type="button" disabled>目標±8°で30秒測定</button>
+  <button id="work-start-10" type="button" disabled>目標±10°で30秒測定</button>
+  <button id="work-start-12" type="button" disabled>目標±12°で30秒測定</button>
+</div>
+<div id="negative-energy-control">
+  <h2>固定脚・新しいエネルギー制御（15秒）</h2>
+  <p class="muted">脚の前後移動を固定し、目標8°・300 mAで測ります。正側は従来制御、負側は次の最大角度に必要なエネルギーから入力時間を選びます。今の姿勢で直立基準を保存済みなら、そのMEKF絶対角を学習時の数値に合わせる必要はありません。</p>
+  <button id="inverse-start" type="button" disabled>新しい制御で15秒測定を開始</button>
+</div>
+<div id="negative-probe-extended-package">
+  <h2>負側30・35・40 msの一括測定（30秒）</h2>
+  <p class="muted">脚の前後移動を固定します。目標8°・300 mAで負側の入力時間を3条件で順序を変えて試します。正側は従来制御を続けます。負側ピークと次の正側ピークまで記録します。終了後はRWLOGを保存してください。</p>
+  <button id="probe-extended" type="button" disabled>負側3条件の一括測定を開始</button>
+</div>
+<div id="positive-current-package">
+  <h2>正側の電流3条件の一括測定（30秒）</h2>
+  <p class="muted">脚の前後移動を固定します。目標8°、始動キックと負側は300 mA、負側の減速は40 msに固定します。正側だけ300・350・400 mAを3回ごとに順序を変えて試し、両側のピークと電圧・ホイールの動きを記録します。終了後はRWLOGを保存してください。</p>
+  <button id="probe-positive-current" type="button" disabled>正側の電流3条件を測定</button>
+</div>
+<details id="negative-probe-packages"><summary>負側5条件の一括実験を行う（30秒）</summary>
+  <p class="muted">入力時間0・10・15・20・25 msを5条件ずつ順序を変えて試す測定です。正側の制御は従来どおりです。毎回RWLOGを保存し、「ログを消去・次の測定へ」を押してから次の回を始めてください。</p>
+  <button id="probe-batch" type="button" disabled>負側5条件の一括実験を開始</button>
+</details>
+<details><summary>従来制御や比較用の方式を測定する（15秒）</summary>
+<p><label for="target">目標とする左右の最大角度 </label><select id="target" disabled aria-describedby="target-help" style="font:inherit;padding:10px 14px;border:1px solid #aab8c6;border-radius:8px;background:white"><option value="8" selected>8°</option><option value="10">10°</option><option value="12">12°</option></select></p>
+<p class="muted" id="target-help">ZEROクロスの角速度から次の最大角度を予測し、選んだ目標に近づくよう電流の入力時間を0〜100 msで決めます。</p>
+<p class="muted" id="run-target" role="status">目標角度は測定開始時に確定します。</p>
+<p><label for="energy-model">ZEROクロス後の予測式 </label><select id="energy-model" disabled style="font:inherit;padding:10px 14px;border:1px solid #aab8c6;border-radius:8px;background:white"><option value="bridge" selected>旧到達角予測をエネルギーに換算</option><option value="work_control">ホイールの仕事から両側の入力を選ぶ（固定脚で試験）</option><option value="bridge_inverse">次ピークのエネルギーから負側入力を選ぶ（固定脚で試験）</option><option value="quadratic">現行の二次エネルギー式（比較用）</option></select></p>
+<p class="muted">前者は旧版0.47.31の次ピーク角を位置エネルギーに換算し、不足分だけ正方向へ入力します。過剰時は入力を止めます。二次式を選ぶと従来の逆入力設定が使えます。</p>
+<p class="muted">新しい方式は目標8°・300 mAで固定します。正側は従来制御、負側は速度・直前のピーク・電圧・ホイール回転数から次ピークのエネルギーを予測して入力時間を選びます。実測条件外では負側に入力しません。25 msを超える入力は実測ピークを確認しながら最大30 msまで1 msずつ増やします。脚を前後に動かさない条件で試してください。</p>
+<p class="muted" id="run-model" role="status">予測式は測定開始時に確定します。</p>
+<p><label for="input-current">指令電流 </label><input id="input-current" type="number" min="100" max="1200" step="10" value="300" disabled aria-describedby="input-current-help" style="font:inherit;padding:10px 14px;border:1px solid #aab8c6;border-radius:8px;width:110px"> mA</p>
+<p class="muted" id="input-current-help">100〜1200 mA、10 mA刻み。初期値300 mAは予備データに近い条件です。始動キックと通常入力に同じ指令値を使います。</p>
+<p><label for="brake-max">負側ブレーキ時間の上限 </label><select id="brake-max" disabled aria-describedby="brake-max-help" style="font:inherit;padding:10px 14px;border:1px solid #aab8c6;border-radius:8px;background:white"><option value="0">0 ms（ブレーキなし）</option><option value="20">20 ms</option><option value="50" selected>50 ms（従来条件）</option></select></p>
+<p class="muted" id="brake-max-help">二次エネルギー式でのみ使用します。旧到達角予測の逆入力は同定されていないため、そちらではブレーキを使用しません。</p>
+<p class="muted" id="run-brake" role="status">負側ブレーキ上限は測定開始時に確定します。</p>
+<p><label for="peak-adaptation">予測誤差の学習補正 </label><select id="peak-adaptation" disabled style="font:inherit;padding:10px 14px;border:1px solid #aab8c6;border-radius:8px;background:white"><option value="0" selected>使用しない（式の比較）</option><option value="1">使用する</option></select></p>
+<p class="muted">まず学習補正なし、目標8°・300 mAで式を比較してください。次ピーク角、入力時間、実電流とホイール速度をRWLOGで確認します。</p>
+<p class="muted" id="run-adaptation" role="status">学習補正の設定は測定開始時に確定します。</p>
+<input id="input-percent" type="hidden" value="0">
+<p class="muted" id="run-percent" role="status">通常入力はZEROクロスで行います。</p>
+<button id="start" disabled>通常制御の15秒測定を開始</button>
+</details>
+<p><button id="reconnect" style="display:none">終了・Web復帰を確認</button><button id="clear" disabled>ログを消去・次の測定へ</button></p>
+<div id="message" role="status"></div><p class="muted">開始・終了のLED同期はそれぞれ5秒です。始動キックの後、MEKFの左右角と角速度でZEROクロスを検出します。</p></section>
+<p class="muted">運転中もWi-Fiを維持し、Web更新を休止して本体で制御・観測・記録します。前後90°以上の傾斜で停止します。横倒しは姿勢STOPの対象にしません。姿勢を戻しても再始動しません。Wi-Fi接続と画面を保ったままお待ちください。終了後にWeb表示が復帰したらログを保存してください。Web復帰だけではログは消えません。本体の電源断・再起動では未取得のログが失われます。</p>
+<section class="card"><h2>左右足角度 · 胴体に対する相対角</h2><div class="grid"><div><div class="label">右足 · 上段マーカー A</div><div class="value" id="right">—</div></div><div><div class="label">左足 · 下段マーカー B</div><div class="value" id="left">—</div></div><div><div class="label">カメラ実測 / 目標</div><div class="value" style="font-size:1.5rem" id="fps">— / 15 fps</div></div></div>
+<canvas id="markers" width="640" height="120" aria-label="マーカー検出位置。上段が右足、下段が左足。"></canvas>
+<p class="muted" id="foot-status">足角度は任意です。マーカーが見えれば起動ごとにゼロ点を確定します。</p><p class="muted">角度の正方向はマーカーが左へ動く方向です。検出失敗・古い画像・設定範囲外を区別して表示し、その状態もログに保存します。候補を区別できないときは角度を無効にします。足を地面に固定して胴体を前後に傾けると、この相対角は変わります。</p><details><summary>検出画像を確認</summary><p class="muted">待機中に更新される1枚の画像です。測定完了後は測定前の画像を保持します。ログ保存後に「次の測定へ」進むと画像更新を再開します。線は検出に使った帯、丸は選択位置、黄色は未確定の位置・別候補です。</p><button id="preview" disabled>検出画像を取得</button><button id="preview-save" disabled>画像付き診断を保存</button><p class="muted" id="preview-status">画像はまだ取得していません。</p><canvas id="preview-image" width="640" height="480" style="height:auto;display:none" aria-label="カメラ画像と同じフレームの検出位置"></canvas></details></section>
+<section class="card"><h2>前後傾斜と足角度の比較</h2>
+<p id="mekf-axes" class="muted">MEKFの更新を待っています。</p>
+<p>両足を地面に固定して、胴体と両足が直立した姿勢を基準にします。基準の後、胴体を前後の片方向へ約5°・10°・15°・20°と傾け、10°・直立へ戻す順に、設定範囲内で記録してください。各姿勢で約3秒間静止します。</p>
+<button id="pose-base" disabled>比較用の直立姿勢を取得</button><button id="pose-add" disabled>この姿勢を追加</button><button id="pose-cancel" disabled>姿勢取得を中止</button><button id="pose-save" disabled>比較JSONを保存</button><button id="pose-reset" disabled>保存後に比較をやり直す</button>
+<p class="muted">この姿勢比較は記録用です。仕事に基づく制御の原点はMEKF絶対角0°に固定しています。</p>
+<p id="pose-status" role="status">胴体と両足を直立させ、基準を取得してください。</p>
+<div style="overflow-x:auto"><table><thead><tr><th>姿勢</th><th>胴体前後変化</th><th>右の差</th><th>左の差</th><th>確認</th></tr></thead><tbody id="pose-rows"></tbody></table></div>
+<p class="muted">「差」は基準からの足相対角の変化＋胴体前後角の変化です。足を固定した平面運動では0°が目安になります。左右傾斜が大きい場合は参考値とします。各姿勢の取得では角度換算係数を変更しません。現在は固定2姿勢から求めた係数を使用しています。最大12姿勢の画像と診断をまとめて保存します。再読み込みする前に比較JSONを保存してください。</p>
+</section>
+<section class="card"><h2>測定ログ</h2><p>測定終了後にログを確定します。中断した場合は「取得・再開」で続きから取得できます。画面を再読み込みしても、端末に保存済みの部分を再利用します。</p>
+<button id="download" disabled>RWLOGを取得・再開</button><button id="cancel" disabled>取得を一時停止</button><button id="csv" disabled>足角度CSVを保存</button>
+<progress id="progress" value="0" max="1"></progress><div id="transfer" role="status">測定待ち</div><p class="muted">RWLOGにIMU・制御イベント・電流・LED同期・足角度をまとめて保存します。USB診断ログは書き込みページから保存できます。</p></section>
+<section class="card"><h2>ホイールが機体に与えた仕事</h2>
+<p>RWLOG取得後、ホイールの位置変化から求めた速度と、同じ時刻の機体角速度を使って計算します。正なら加振、負なら制動です。位置の読み取りは5 ms間隔を目標にします。慣性と軸の符号は暫定値です。</p>
+<p><label>慣性モーメント［kg·m²］ <input id="work-inertia" type="number" value="0.000028" min="0.000000001" step="any"></label>
+<label>生の正回転と機体の正方向 <select id="work-sign"><option value="-1" selected>逆向き（暫定）</option><option value="1">同じ向き</option></select></label></p>
+<button id="work-calculate">取得したRWLOGから再計算</button><button id="work-pulses">入力別CSVを保存</button><button id="work-intervals">全区間CSVを保存</button><button id="work-kinematics">位置由来の速度CSVを保存</button>
+<pre id="work-result" role="status">RWLOGを取得すると計算結果を表示します。</pre></section>
+<details class="card"><summary>診断情報</summary><label><input type="checkbox" id="usb-diag">USB診断を有効にする</label><p class="muted">起動ごとにOFFです。運転中の変更はUSB側から行えます。メモリ・スタックの調査は有効時の待機中だけ行い、診断JSONには測定時刻付きで保持します。未測定のメモリ値は0です。</p><p class="muted">MEKFのroll・pitch、姿勢確認用クォータニオン、有効性・更新時刻を保存します。方位には独立したジャイロ推定を使用します。</p><button id="diagnostics">診断JSONを保存</button><pre id="diagnostic-view">—</pre></details>
+<script>
+/*POSE_SCRIPT*/
+/*WHEEL_WORK_SCRIPT*/
+/*RUNTIME_SCRIPT*/
+</script></html>

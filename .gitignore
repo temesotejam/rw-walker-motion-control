@@ -1,0 +1,7 @@
+.pio/
+bmi270-build-patch.json
+madgwick-build-patch.json
+.vscode/
+__pycache__/
+*.pyc
+*.log

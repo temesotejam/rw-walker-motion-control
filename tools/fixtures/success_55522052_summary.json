@@ -1,0 +1,1147 @@
+{
+  "source": "energy_control_autonomous_run_1_55522052.rwlog",
+  "foot_csv_source": "energy_control_autonomous_run_1_55522052_foot.csv",
+  "foot_csv_matches_all_decoded_fields": true,
+  "foot_csv_compared_rows": 391,
+  "foot_csv_compared_columns": 37,
+  "format_version": 51,
+  "crc_verified": true,
+  "firmware_revision": "0.47.15-deferred-stack-diagnostics",
+  "terminal_state": {
+    "state_id": 4,
+    "state": "FINISHED",
+    "last_error": "",
+    "motor_cmd_mA": 0,
+    "actual_current_mA": 1,
+    "heartbeat_us": 101462865
+  },
+  "acquisition": {
+    "duration_us": 30000371,
+    "captured": 12144,
+    "delivered": 12144,
+    "queue_drops": 0,
+    "delivery_sequence_gaps": 0,
+    "queue_high_water": 3,
+    "delivery_age_mean_us": 280.921,
+    "delivery_age_max_us": 5760,
+    "dt_mean_us": 2470.453,
+    "dt_max_us": 3881,
+    "over_4ms": 0,
+    "over_5ms": 0,
+    "over_10ms": 0,
+    "samples_per_second": [
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      0,
+      0
+    ],
+    "fault": false,
+    "fault_reason": ""
+  },
+  "completion": {
+    "budget_us": 2500,
+    "count": 12144,
+    "over_budget": 942,
+    "max_us": 7720,
+    "mean_us": 1449.287,
+    "runner_over_budget": 238,
+    "runner_max_us": 5696,
+    "runner_mean_us": 1016.392,
+    "all_observed_within_budget": false,
+    "scope": "RUNNING_fresh_gyro_only;host_acquisition_to_runner_return;not_sensor_capture_to_motor_apply"
+  },
+  "deadline_input_cohorts": {
+    "revision": "input_partition_04712",
+    "classification": "pulse_active_before_runner;accel_fresh_at_delivery",
+    "budget_us": 2500,
+    "groups": [
+      {
+        "pulse_active": false,
+        "accel_fresh": false,
+        "count": 5061,
+        "over_budget": 108,
+        "max_us": 5940,
+        "mean_us": 1049.012
+      },
+      {
+        "pulse_active": false,
+        "accel_fresh": true,
+        "count": 5067,
+        "over_budget": 220,
+        "max_us": 5811,
+        "mean_us": 1530.095
+      },
+      {
+        "pulse_active": true,
+        "accel_fresh": false,
+        "count": 1011,
+        "over_budget": 204,
+        "max_us": 7185,
+        "mean_us": 1875.823
+      },
+      {
+        "pulse_active": true,
+        "accel_fresh": true,
+        "count": 1005,
+        "over_budget": 410,
+        "max_us": 7720,
+        "mean_us": 2628.506
+      }
+    ]
+  },
+  "profile": {
+    "revision": "control_work_04714",
+    "scope": "measurement_only;host_wall_time_includes_preemption;nested_stages_not_additive",
+    "mekf_attitude_scope": "posterior_copy_and_control_pitch;display_euler_from_snapshot_on_demand",
+    "mekf_math_compiler": "GCC_O2_no_fast_math",
+    "madgwick_pitch": "upstream_2.4.0_pitch_only",
+    "log_encoder": "GCC_Os_no_fast_math_shared_noinline_quantizer",
+    "log_substages": "encode_includes_beta_ceilings;store_is_synchronous_psram_addSample",
+    "cohort": "pulse_active_at_stage_entry;owner_includes_terminal_iteration;start_sync_excluded",
+    "pulse_off": {
+      "owner_iteration": {
+        "count": 13080,
+        "max_us": 7244,
+        "sum_us": 24917585,
+        "mean_us": 1905.014
+      },
+      "service": {
+        "count": 13080,
+        "max_us": 1571,
+        "sum_us": 701094,
+        "mean_us": 53.6
+      },
+      "imu_delivery": {
+        "count": 13080,
+        "max_us": 2716,
+        "sum_us": 10246412,
+        "mean_us": 783.365
+      },
+      "pose_guide": {
+        "count": 13080,
+        "max_us": 1965,
+        "sum_us": 730500,
+        "mean_us": 55.849
+      },
+      "filter": {
+        "count": 10128,
+        "max_us": 2666,
+        "sum_us": 6468380,
+        "mean_us": 638.663
+      },
+      "angle_display": {
+        "count": 10129,
+        "max_us": 2253,
+        "sum_us": 358281,
+        "mean_us": 35.372
+      },
+      "current_roll": {
+        "count": 10128,
+        "max_us": 2232,
+        "sum_us": 194510,
+        "mean_us": 19.205
+      },
+      "motion": {
+        "count": 10128,
+        "max_us": 3173,
+        "sum_us": 1055324,
+        "mean_us": 104.199
+      },
+      "log_row": {
+        "count": 1151,
+        "max_us": 2777,
+        "sum_us": 337200,
+        "mean_us": 292.963
+      },
+      "snapshot": {
+        "count": 13080,
+        "max_us": 1469,
+        "sum_us": 1071405,
+        "mean_us": 81.912
+      },
+      "publish": {
+        "count": 13080,
+        "max_us": 1211,
+        "sum_us": 338071,
+        "mean_us": 25.846
+      },
+      "mekf_predict": {
+        "count": 10128,
+        "max_us": 2478,
+        "sum_us": 1756746,
+        "mean_us": 173.454
+      },
+      "mekf_accel": {
+        "count": 5067,
+        "max_us": 1947,
+        "sum_us": 1773867,
+        "mean_us": 350.082
+      },
+      "mekf_attitude": {
+        "count": 10128,
+        "max_us": 1351,
+        "sum_us": 875000,
+        "mean_us": 86.394
+      },
+      "madgwick": {
+        "count": 5067,
+        "max_us": 1779,
+        "sum_us": 468883,
+        "mean_us": 92.537
+      },
+      "log_encode": {
+        "count": 1151,
+        "max_us": 2723,
+        "sum_us": 258040,
+        "mean_us": 224.188
+      },
+      "log_store": {
+        "count": 1151,
+        "max_us": 1371,
+        "sum_us": 45374,
+        "mean_us": 39.421
+      }
+    },
+    "pulse_on": {
+      "owner_iteration": {
+        "count": 2274,
+        "max_us": 7138,
+        "sum_us": 4841258,
+        "mean_us": 2128.961
+      },
+      "service": {
+        "count": 2274,
+        "max_us": 1407,
+        "sum_us": 88179,
+        "mean_us": 38.777
+      },
+      "imu_delivery": {
+        "count": 2274,
+        "max_us": 2754,
+        "sum_us": 937291,
+        "mean_us": 412.177
+      },
+      "pose_guide": {
+        "count": 2274,
+        "max_us": 1312,
+        "sum_us": 185570,
+        "mean_us": 81.605
+      },
+      "filter": {
+        "count": 2016,
+        "max_us": 5194,
+        "sum_us": 1442025,
+        "mean_us": 715.29
+      },
+      "angle_display": {
+        "count": 2016,
+        "max_us": 1224,
+        "sum_us": 91849,
+        "mean_us": 45.56
+      },
+      "current_roll": {
+        "count": 2016,
+        "max_us": 1220,
+        "sum_us": 50225,
+        "mean_us": 24.913
+      },
+      "motion": {
+        "count": 2016,
+        "max_us": 1404,
+        "sum_us": 202727,
+        "mean_us": 100.559
+      },
+      "log_row": {
+        "count": 1550,
+        "max_us": 2232,
+        "sum_us": 660011,
+        "mean_us": 425.814
+      },
+      "snapshot": {
+        "count": 2274,
+        "max_us": 1355,
+        "sum_us": 234223,
+        "mean_us": 103.0
+      },
+      "publish": {
+        "count": 2274,
+        "max_us": 1304,
+        "sum_us": 46765,
+        "mean_us": 20.565
+      },
+      "mekf_predict": {
+        "count": 2016,
+        "max_us": 1849,
+        "sum_us": 409109,
+        "mean_us": 202.931
+      },
+      "mekf_accel": {
+        "count": 1005,
+        "max_us": 3346,
+        "sum_us": 372483,
+        "mean_us": 370.63
+      },
+      "mekf_attitude": {
+        "count": 2016,
+        "max_us": 2357,
+        "sum_us": 204641,
+        "mean_us": 101.508
+      },
+      "madgwick": {
+        "count": 1005,
+        "max_us": 1351,
+        "sum_us": 124586,
+        "mean_us": 123.966
+      },
+      "log_encode": {
+        "count": 1550,
+        "max_us": 2161,
+        "sum_us": 525564,
+        "mean_us": 339.074
+      },
+      "log_store": {
+        "count": 1550,
+        "max_us": 911,
+        "sum_us": 56139,
+        "mean_us": 36.219
+      }
+    }
+  },
+  "poll_profile": {
+    "available": true,
+    "revision": "v46q_lightweight_acquisition_20260914",
+    "semantics": "host_wall_times;update_includes_driver;notify_age_from_latest_callback;not_ISR_latency",
+    "derived_accel_location": "consumer_new_accel_only_and_synchronous_startup",
+    "epoch_us": 60524895,
+    "polls": 29952,
+    "fresh_gyro_polls": 12144,
+    "no_data_polls": 17808,
+    "coalesced_wakes": 48,
+    "forced_yields": 47,
+    "long_gaps_over_4ms": 0,
+    "outside_detail_window": 0,
+    "record_overhead_max_us": 71,
+    "v46u_timing": {
+      "driver_calls": 29952,
+      "driver_failures": 0,
+      "data_bytes": 115368,
+      "status_read_max_us": 569,
+      "data_read_max_us": 713,
+      "poll_work_budget_us": 1000,
+      "poll_work_count": 29952,
+      "poll_work_over_budget": 46,
+      "host_gyro_interval_budget_us": 2500,
+      "host_gyro_interval_count": 12144,
+      "host_gyro_interval_over_budget": 5717,
+      "host_gyro_interval_max_us": 3881,
+      "sensor_clock_verified": false,
+      "policy": "strict_greater_than;host_polling_not_FIFO;no_tolerance_hidden"
+    },
+    "stages": {
+      "latest_notify_age": {
+        "count": 29952,
+        "mean_us": 23.859,
+        "max_us": 1471
+      },
+      "observed_callback_gap": {
+        "count": 29952,
+        "mean_us": 999.93,
+        "max_us": 2084
+      },
+      "poll_start_interval": {
+        "count": 29952,
+        "mean_us": 1001.602,
+        "max_us": 2478
+      },
+      "update_api": {
+        "count": 29952,
+        "mean_us": 433.124,
+        "max_us": 1261
+      },
+      "convert_api": {
+        "count": 12144,
+        "mean_us": 14.595,
+        "max_us": 40
+      },
+      "validate_pack": {
+        "count": 12144,
+        "mean_us": 15.289,
+        "max_us": 38
+      },
+      "publish_queue": {
+        "count": 12144,
+        "mean_us": 25.58,
+        "max_us": 54
+      },
+      "poll_total": {
+        "count": 29952,
+        "mean_us": 468.088,
+        "max_us": 1372
+      },
+      "overrun_yield": {
+        "count": 47,
+        "mean_us": 1052.17,
+        "max_us": 1369
+      }
+    },
+    "second_columns": [
+      "second",
+      "polls",
+      "gyro",
+      "no_data",
+      "forced_yields",
+      "notify_max_us",
+      "update_max_us",
+      "convert_max_us",
+      "total_max_us",
+      "period_max_us",
+      "long_gaps"
+    ],
+    "seconds": [
+      [
+        0,
+        1000,
+        405,
+        595,
+        0,
+        278,
+        864,
+        29,
+        956,
+        1547,
+        0
+      ],
+      [
+        1,
+        998,
+        405,
+        593,
+        2,
+        430,
+        1236,
+        27,
+        1300,
+        2386,
+        0
+      ],
+      [
+        2,
+        1000,
+        405,
+        595,
+        0,
+        324,
+        890,
+        27,
+        969,
+        1588,
+        0
+      ],
+      [
+        3,
+        999,
+        405,
+        594,
+        1,
+        665,
+        1179,
+        31,
+        1251,
+        2192,
+        0
+      ],
+      [
+        4,
+        1000,
+        404,
+        596,
+        0,
+        572,
+        916,
+        28,
+        986,
+        1724,
+        0
+      ],
+      [
+        5,
+        999,
+        405,
+        594,
+        1,
+        327,
+        884,
+        37,
+        1009,
+        2247,
+        0
+      ],
+      [
+        6,
+        998,
+        405,
+        593,
+        2,
+        680,
+        1153,
+        31,
+        1265,
+        2246,
+        0
+      ],
+      [
+        7,
+        996,
+        405,
+        591,
+        3,
+        515,
+        1185,
+        26,
+        1290,
+        2465,
+        0
+      ],
+      [
+        8,
+        999,
+        405,
+        594,
+        1,
+        505,
+        1209,
+        35,
+        1279,
+        2226,
+        0
+      ],
+      [
+        9,
+        998,
+        404,
+        594,
+        2,
+        434,
+        1175,
+        40,
+        1275,
+        2377,
+        0
+      ],
+      [
+        10,
+        998,
+        405,
+        593,
+        2,
+        542,
+        1207,
+        27,
+        1295,
+        2244,
+        0
+      ],
+      [
+        11,
+        998,
+        405,
+        593,
+        2,
+        834,
+        1170,
+        30,
+        1279,
+        2372,
+        0
+      ],
+      [
+        12,
+        1000,
+        405,
+        595,
+        0,
+        476,
+        903,
+        29,
+        993,
+        1493,
+        0
+      ],
+      [
+        13,
+        1000,
+        405,
+        595,
+        0,
+        821,
+        884,
+        36,
+        998,
+        1732,
+        0
+      ],
+      [
+        14,
+        999,
+        404,
+        595,
+        1,
+        306,
+        1203,
+        28,
+        1315,
+        2463,
+        0
+      ],
+      [
+        15,
+        999,
+        405,
+        594,
+        1,
+        653,
+        1144,
+        30,
+        1211,
+        2322,
+        0
+      ],
+      [
+        16,
+        997,
+        405,
+        592,
+        3,
+        506,
+        1239,
+        28,
+        1356,
+        2358,
+        0
+      ],
+      [
+        17,
+        999,
+        405,
+        594,
+        1,
+        471,
+        1152,
+        32,
+        1258,
+        2456,
+        0
+      ],
+      [
+        18,
+        999,
+        404,
+        595,
+        1,
+        815,
+        1221,
+        31,
+        1342,
+        2462,
+        0
+      ],
+      [
+        19,
+        999,
+        405,
+        594,
+        1,
+        477,
+        916,
+        39,
+        1029,
+        2460,
+        0
+      ],
+      [
+        20,
+        999,
+        405,
+        594,
+        1,
+        1471,
+        997,
+        30,
+        1078,
+        2431,
+        0
+      ],
+      [
+        21,
+        998,
+        405,
+        593,
+        2,
+        483,
+        1192,
+        29,
+        1305,
+        2469,
+        0
+      ],
+      [
+        22,
+        999,
+        405,
+        594,
+        1,
+        639,
+        983,
+        35,
+        1068,
+        2432,
+        0
+      ],
+      [
+        23,
+        997,
+        404,
+        593,
+        3,
+        477,
+        1138,
+        33,
+        1209,
+        2451,
+        0
+      ],
+      [
+        24,
+        998,
+        405,
+        593,
+        2,
+        468,
+        1189,
+        32,
+        1270,
+        2246,
+        0
+      ],
+      [
+        25,
+        997,
+        405,
+        592,
+        3,
+        621,
+        1217,
+        30,
+        1314,
+        2478,
+        0
+      ],
+      [
+        26,
+        999,
+        405,
+        594,
+        1,
+        605,
+        929,
+        27,
+        1002,
+        2152,
+        0
+      ],
+      [
+        27,
+        995,
+        404,
+        591,
+        5,
+        532,
+        1261,
+        28,
+        1372,
+        2463,
+        0
+      ],
+      [
+        28,
+        998,
+        405,
+        593,
+        2,
+        960,
+        1078,
+        32,
+        1143,
+        2095,
+        0
+      ],
+      [
+        29,
+        997,
+        405,
+        592,
+        3,
+        458,
+        1204,
+        32,
+        1328,
+        2455,
+        0
+      ]
+    ],
+    "detail_policy": "worst_gap_per_100ms_bucket_not_all_gaps;full_counts_above",
+    "bucket_us": 100000,
+    "detail_window_us": 32000000,
+    "gap_columns": [
+      "time_us",
+      "dt_us",
+      "sequence",
+      "latest_notify_age_us",
+      "callback_gap_us",
+      "poll_period_us",
+      "update_us",
+      "convert_us",
+      "pack_us",
+      "publish_us",
+      "total_us",
+      "previous_total_us",
+      "previous_yield_us",
+      "wakes"
+    ],
+    "worst_gap_by_100ms": []
+  },
+  "start_pulse_timing": {
+    "event_index": 1,
+    "pulse_id": 1,
+    "pulse_kind": "strong_start_kick",
+    "t_test_ms": 0,
+    "command_mA": -300,
+    "pulse_width_ms": 100,
+    "pulse_start_us": 60524040,
+    "gyro_sequence_at_start": 20749,
+    "set_current_us": 18,
+    "state_update_us": 1,
+    "current_model_us": 220,
+    "update_pulse_model_us": 506,
+    "pulse_begin_total_us": 751,
+    "first_audit_log_offset_us": 2589,
+    "first_audit_log_us": 189,
+    "imu_update_call_us": 881,
+    "runner_update_call_us": 1936,
+    "core1_path_us": 2885,
+    "first_imu_dt_after_start_us": 3389,
+    "first_imu_sample_offset_us": 2100,
+    "capture_mask": 7,
+    "complete": true
+  },
+  "profile_weighted": {
+    "owner_iteration": {
+      "count": 15354,
+      "sum_us": 29758843,
+      "mean_us": 1938.181776735704,
+      "max_us": 7244
+    },
+    "service": {
+      "count": 15354,
+      "sum_us": 789273,
+      "mean_us": 51.40504103165299,
+      "max_us": 1571
+    },
+    "imu_delivery": {
+      "count": 15354,
+      "sum_us": 11183703,
+      "mean_us": 728.3901914810473,
+      "max_us": 2754
+    },
+    "pose_guide": {
+      "count": 15354,
+      "sum_us": 916070,
+      "mean_us": 59.66327992705484,
+      "max_us": 1965
+    },
+    "filter": {
+      "count": 12144,
+      "sum_us": 7910405,
+      "mean_us": 651.3838109354414,
+      "max_us": 5194
+    },
+    "angle_display": {
+      "count": 12145,
+      "sum_us": 450130,
+      "mean_us": 37.062988884314535,
+      "max_us": 2253
+    },
+    "current_roll": {
+      "count": 12144,
+      "sum_us": 244735,
+      "mean_us": 20.152750329380765,
+      "max_us": 2232
+    },
+    "motion": {
+      "count": 12144,
+      "sum_us": 1258051,
+      "mean_us": 103.59444993412384,
+      "max_us": 3173
+    },
+    "log_row": {
+      "count": 2701,
+      "sum_us": 997211,
+      "mean_us": 369.2006664198445,
+      "max_us": 2777
+    },
+    "snapshot": {
+      "count": 15354,
+      "sum_us": 1305628,
+      "mean_us": 85.03503972906083,
+      "max_us": 1469
+    },
+    "publish": {
+      "count": 15354,
+      "sum_us": 384836,
+      "mean_us": 25.064217793408883,
+      "max_us": 1304
+    },
+    "mekf_predict": {
+      "count": 12144,
+      "sum_us": 2165855,
+      "mean_us": 178.34774374176547,
+      "max_us": 2478
+    },
+    "mekf_accel": {
+      "count": 6072,
+      "sum_us": 2146350,
+      "mean_us": 353.4832015810277,
+      "max_us": 3346
+    },
+    "mekf_attitude": {
+      "count": 12144,
+      "sum_us": 1079641,
+      "mean_us": 88.90324440052702,
+      "max_us": 2357
+    },
+    "madgwick": {
+      "count": 6072,
+      "sum_us": 593469,
+      "mean_us": 97.73863636363636,
+      "max_us": 1779
+    },
+    "log_encode": {
+      "count": 2701,
+      "sum_us": 783604,
+      "mean_us": 290.1162532395409,
+      "max_us": 2723
+    },
+    "log_store": {
+      "count": 2701,
+      "sum_us": 101513,
+      "mean_us": 37.58348759718623,
+      "max_us": 1371
+    }
+  },
+  "ordinary_rows": 3179,
+  "rows_by_state": {
+    "6": 239,
+    "3": 2701,
+    "7": 238,
+    "4": 1
+  },
+  "running_rows": 2701,
+  "running_last_t_test_ms": 30002,
+  "all_running_mekf_adopted": true,
+  "all_running_attitude_fields_finite": true,
+  "running_row_sample_age_max_us": 7205,
+  "peak_event_count": 69,
+  "zero_cross_event_count": 69,
+  "foot": {
+    "total_rows": 391,
+    "rows_by_state": {
+      "6": 49,
+      "3": 295,
+      "7": 47
+    },
+    "running_rows": 295,
+    "measurement_observation_validated": true,
+    "overflow": false,
+    "running_frames_per_second": 9.833211729281615,
+    "right_zero_x": 171.50705,
+    "right_support_x": [
+      39.0,
+      182.0
+    ],
+    "right_valid": 390,
+    "right_invalid_reasons": {
+      "bad_shape": 1
+    },
+    "right_out_of_range": 1,
+    "right_out_of_range_records": [
+      {
+        "sequence": "601",
+        "run_id": "1",
+        "frame_us": "71273843",
+        "delivered_us": "71324416",
+        "log_time_us": "15751793",
+        "measurement_time_us": "10749007",
+        "imu_sample_us": "71320868",
+        "state_id": "3",
+        "led_state": "0",
+        "sync_event_id": "0",
+        "processing_us": "17481",
+        "timestamp_valid": "True",
+        "frame_valid": "True",
+        "zero_ready": "True",
+        "right_valid": "True",
+        "left_valid": "True",
+        "right_in_range": "False",
+        "left_in_range": "True",
+        "right_x": "204.94246",
+        "left_x": "161.5199",
+        "right_deg": "-5.18738",
+        "left_deg": "1.32934",
+        "right_contrast": "55.2",
+        "left_contrast": "156.2",
+        "right_scan_y": "50.0",
+        "left_scan_y": "188.0",
+        "right_weight": "341.79999",
+        "left_weight": "4727.8667",
+        "right_reason": "detected",
+        "left_reason": "detected",
+        "right_templates": "17",
+        "left_templates": "17",
+        "right_candidates": "1",
+        "left_candidates": "2",
+        "right_ambiguity": "0.0",
+        "left_ambiguity": "0.3147",
+        "zero_reason": "ready"
+      }
+    ],
+    "right_x_min": 135.05956,
+    "right_x_max": 204.94246,
+    "right_deg_min": -5.18738,
+    "right_deg_max": 5.65469,
+    "right_running_valid": 294,
+    "right_running_invalid_reasons": {
+      "bad_shape": 1
+    },
+    "right_running_out_of_range": 1,
+    "right_running_x_min": 135.05956,
+    "right_running_x_max": 204.94246,
+    "right_running_deg_min": -5.18738,
+    "right_running_deg_max": 5.65469,
+    "left_zero_x": 170.06886,
+    "left_support_x": [
+      37.0,
+      177.5
+    ],
+    "left_valid": 391,
+    "left_invalid_reasons": {},
+    "left_out_of_range": 0,
+    "left_out_of_range_records": [],
+    "left_x_min": 136.4453,
+    "left_x_max": 172.24913,
+    "left_deg_min": -0.33902,
+    "left_deg_max": 5.22836,
+    "left_running_valid": 295,
+    "left_running_invalid_reasons": {},
+    "left_running_out_of_range": 0,
+    "left_running_x_min": 136.4453,
+    "left_running_x_max": 172.24913,
+    "left_running_deg_min": -0.33902,
+    "left_running_deg_max": 5.22836,
+    "running_frame_interval_max_us": 200578
+  },
+  "sha256": {
+    "energy_control_autonomous_run_1_55522052.rwlog": "af69d36540784f0732e499a135a82c1f0065d0f35e9813a64b0c4a594a584320",
+    "energy_control_autonomous_run_1_55522052_foot.csv": "8b0030c73df4ed0efe610276d00cabbcf3deb751c33e9ba6d2f95e958d5fd0b9"
+  },
+  "marker_confirmation_review": {
+    "scope": "criteria applied to saved valid candidate metrics, not full image replay or identity ground truth",
+    "min_x_step_px": 20,
+    "min_y_step_px": 16,
+    "contrast_ratio_below": 0.5,
+    "weight_ratio_below": 0.1,
+    "sources": [
+      {
+        "file": "energy_control_autonomous_run_1_32653719_foot.csv",
+        "sha256": "90abb9c0fb156074ea4a52c0d8a12bab512d984cc6b854e812134fe2fd8615f4",
+        "rows": 391
+      },
+      {
+        "file": "energy_control_autonomous_run_1_42183521_foot.csv",
+        "sha256": "4c91f62f9b2115882e876020a9d28ca87a0f053486e79638c5146be89f185c86",
+        "rows": 380
+      },
+      {
+        "file": "energy_control_autonomous_run_1_33554009_foot.csv",
+        "sha256": "17e5b1b440d4875b69ee8ca166d3beaf4b78c01f3826050de3d3dbf58f3c82e9",
+        "rows": 388
+      },
+      {
+        "file": "energy_control_autonomous_run_1_53979692_foot.csv",
+        "sha256": "0644f215a1e6dc66acfbc2386259b89182d418aeb64568f9c087f73a690dcc10",
+        "rows": 387
+      },
+      {
+        "file": "energy_control_autonomous_run_1_53514900_foot.csv",
+        "sha256": "7c9d8dab59aa2002804e0c612ac2ac8cf8f9859ad50cf4a19e934015fc797039",
+        "rows": 47
+      },
+      {
+        "file": "energy_control_autonomous_run_1_47136279_foot.csv",
+        "sha256": "3f877b8032f0c40b372af12f9d45ad2ddea7d34caedad0a076e590bc384b9da2",
+        "rows": 386
+      },
+      {
+        "file": "energy_control_autonomous_run_1_55522052_foot.csv",
+        "sha256": "8b0030c73df4ed0efe610276d00cabbcf3deb751c33e9ba6d2f95e958d5fd0b9",
+        "rows": 391
+      }
+    ],
+    "hits": [
+      {
+        "run": "55522052",
+        "sequence": 601,
+        "side": "right",
+        "previous": {
+          "x": 169.29527,
+          "scan_y": 82.0,
+          "contrast": 215.2,
+          "weight": 5633.06689
+        },
+        "candidate": {
+          "x": 204.94246,
+          "scan_y": 50.0,
+          "contrast": 55.2,
+          "weight": 341.79999
+        }
+      }
+    ]
+  }
+}

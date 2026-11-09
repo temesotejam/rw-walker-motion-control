@@ -1,0 +1,122 @@
+[
+  {
+    "path": "src/config.h",
+    "old": "v46t_current_observation_20260915",
+    "new": "v46u_timing_reader_20260915"
+  },
+  {
+    "path": "src/imu_manager.cpp",
+    "old": "#include \"upright_pose_guide.h\"",
+    "new": "#include \"upright_pose_guide.h\"\n#include \"bmi270_timing_reader.h\""
+  },
+  {
+    "path": "src/imu_manager.cpp",
+    "old": "  const uint32_t update_done_us = micros();",
+    "new": "  const uint32_t update_done_us = micros();\n  const auto driver = bmi270_timing::lastRead();\n  poll_observation_.driver_called = driver.called;\n  poll_observation_.driver_status_us = driver.status_us;\n  poll_observation_.driver_data_us = driver.data_us;\n  poll_observation_.driver_data_bytes = driver.data_bytes;\n  poll_observation_.driver_failures = driver.failures;"
+  },
+  {
+    "path": "src/imu_poll_profile.h",
+    "old": "#include <type_traits>",
+    "new": "#include <type_traits>\n#include \"timing_deadline.h\""
+  },
+  {
+    "path": "src/imu_poll_profile.h",
+    "old": "  uint8_t mask = 0;",
+    "new": "  uint32_t driver_status_us = 0, driver_data_us = 0;\n  uint16_t driver_data_bytes = 0;\n  uint8_t driver_failures = 0;\n  bool driver_called = false;\n  uint8_t mask = 0;"
+  },
+  {
+    "path": "src/imu_poll_profile.h",
+    "old": "  Stats stage[STAGES];",
+    "new": "  timing_deadline::Counter poll_work_deadline, gyro_interval_deadline;\n  timing_deadline::Counter driver_status, driver_data;\n  uint32_t driver_calls = 0, driver_failures = 0, driver_bytes = 0;\n  Stats stage[STAGES];"
+  },
+  {
+    "path": "src/imu_poll_profile.h",
+    "old": "    ++polls; if (o.fresh_gyro) ++gyro; if (!o.mask) ++no_data;",
+    "new": "    ++polls; if (o.fresh_gyro) ++gyro; if (!o.mask) ++no_data;\n    poll_work_deadline.add(o.total_us, 1000);\n    if (o.fresh_gyro) gyro_interval_deadline.add(o.dt_us, 2500);\n    if (o.driver_called) {\n      ++driver_calls; driver_failures += o.driver_failures;\n      driver_bytes += o.driver_data_bytes;\n      driver_status.add(o.driver_status_us, 1000);\n      driver_data.add(o.driver_data_us, 1000);\n    }"
+  },
+  {
+    "path": "src/imu_manager.cpp",
+    "old": "  static const char* names[ImuPollProfile::STAGES] = {",
+    "new": "  s += \",\\\"v46u_timing\\\":{\\\"driver_calls\\\":\" + String(p.driver_calls);\n  s += \",\\\"driver_failures\\\":\" + String(p.driver_failures);\n  s += \",\\\"data_bytes\\\":\" + String(p.driver_bytes);\n  s += \",\\\"status_read_max_us\\\":\" + String(p.driver_status.maximum);\n  s += \",\\\"data_read_max_us\\\":\" + String(p.driver_data.maximum);\n  s += \",\\\"poll_work_budget_us\\\":1000,\\\"poll_work_count\\\":\" + String(p.poll_work_deadline.count);\n  s += \",\\\"poll_work_over_budget\\\":\" + String(p.poll_work_deadline.over);\n  s += \",\\\"host_gyro_interval_budget_us\\\":2500,\\\"host_gyro_interval_count\\\":\" + String(p.gyro_interval_deadline.count);\n  s += \",\\\"host_gyro_interval_over_budget\\\":\" + String(p.gyro_interval_deadline.over);\n  s += \",\\\"host_gyro_interval_max_us\\\":\" + String(p.gyro_interval_deadline.maximum);\n  s += \",\\\"sensor_clock_verified\\\":false,\\\"policy\\\":\\\"strict_greater_than;host_polling_not_FIFO;no_tolerance_hidden\\\"}\";\n  static const char* names[ImuPollProfile::STAGES] = {"
+  },
+  {
+    "path": "src/run_control_worker.h",
+    "old": "#include <string.h>",
+    "new": "#include <string.h>\n#include \"timing_deadline.h\""
+  },
+  {
+    "path": "src/run_control_worker.h",
+    "old": "    Timing recent[16] = {};",
+    "new": "    timing_deadline::Counter sample_completion, runner_work;\n    Timing recent[16] = {};"
+  },
+  {
+    "path": "src/run_control_worker.h",
+    "old": "  String diagnosticsJson() const {",
+    "new": "  void recordSampleCompletion(bool measurement, bool fresh, uint32_t sample_us,\n                              uint32_t done_us, uint32_t runner_us) {\n    if (!measurement || !fresh) return;\n    portENTER_CRITICAL(&mux_);\n    audit_.sample_completion.add(static_cast<uint32_t>(done_us - sample_us), 2500);\n    audit_.runner_work.add(runner_us, 2500);\n    portEXIT_CRITICAL(&mux_);\n  }\n  String diagnosticsJson() const {"
+  },
+  {
+    "path": "src/run_control_worker.h",
+    "old": "    json += \",\\\"recent_steps\\\":[\";",
+    "new": "    json += \",\\\"v46u_deadline\\\":{\\\"budget_us\\\":2500,\\\"count\\\":\" + String(a.sample_completion.count);\n    json += \",\\\"over_budget\\\":\" + String(a.sample_completion.over);\n    json += \",\\\"max_us\\\":\" + String(a.sample_completion.maximum);\n    json += \",\\\"mean_us\\\":\" + String(a.sample_completion.count ?\n        static_cast<double>(a.sample_completion.sum) / a.sample_completion.count : 0.0, 3);\n    json += \",\\\"runner_over_budget\\\":\" + String(a.runner_work.over);\n    json += \",\\\"runner_max_us\\\":\" + String(a.runner_work.maximum);\n    json += \",\\\"all_observed_within_budget\\\":\" + String(a.sample_completion.passed() ? \"true\" : \"false\");\n    json += \",\\\"scope\\\":\\\"RUNNING_fresh_gyro_only;host_acquisition_to_runner_return;not_sensor_capture_to_motor_apply\\\"}\";\n    json += \",\\\"recent_steps\\\":[\";"
+  },
+  {
+    "path": "src/main.cpp",
+    "old": "  const uint32_t runner_t0_us = micros();",
+    "new": "  const bool timing_measurement = runner.status().state == ExperimentState::RUNNING_BATCH_SWEEP;\n  const bool timing_fresh = imu.reading().gyro_fresh;\n  const uint32_t timing_sample_us = imu.reading().last_gyro_update_us;\n  const uint32_t runner_t0_us = micros();"
+  },
+  {
+    "path": "src/main.cpp",
+    "old": "  const uint32_t path_us = static_cast<uint32_t>(micros() - loop_start_us);",
+    "new": "  const uint32_t timing_done_us = micros();\n  const uint32_t path_us = static_cast<uint32_t>(timing_done_us - loop_start_us);\n  run_control.recordSampleCompletion(timing_measurement, timing_fresh, timing_sample_us,\n                                    timing_done_us, runner_update_us);"
+  },
+  {
+    "path": "src/roller485_manager.h",
+    "old": "#include <freertos/task.h>",
+    "new": "#include <freertos/task.h>\n#include \"timing_deadline.h\""
+  },
+  {
+    "path": "src/roller485_manager.h",
+    "old": "  bool roller_ok = false;",
+    "new": "  timing_deadline::Counter pulse_current_read_work, pulse_current_intervals;\n  bool roller_ok = false;"
+  },
+  {
+    "path": "src/roller485_manager.cpp",
+    "old": "  int32_t current_raw = 0;\n  ++telemetry_.current_sequence;",
+    "new": "  const uint32_t timing_start = micros();\n  int32_t current_raw = 0;\n  ++telemetry_.current_sequence;"
+  },
+  {
+    "path": "src/roller485_manager.cpp",
+    "old": "    recordCurrentReadFailure(audit_sample);\n    return false;",
+    "new": "    recordCurrentReadFailure(audit_sample);\n    if (audit_sample) telemetry_.pulse_current_read_work.add(\n        static_cast<uint32_t>(micros() - timing_start), 2000);\n    return false;"
+  },
+  {
+    "path": "src/roller485_manager.cpp",
+    "old": "  recordFreshCurrent(current_raw, micros(), audit_sample);",
+    "new": "  if (audit_sample) telemetry_.pulse_current_read_work.add(\n      static_cast<uint32_t>(micros() - timing_start), 2000);\n  recordFreshCurrent(current_raw, micros(), audit_sample);"
+  },
+  {
+    "path": "src/roller485_manager.cpp",
+    "old": "    const uint32_t dt_us = static_cast<uint32_t>(sample_time_us - current_audit_previous_sample_us_);",
+    "new": "    const uint32_t dt_us = static_cast<uint32_t>(sample_time_us - current_audit_previous_sample_us_);\n    telemetry_.pulse_current_intervals.add(dt_us, 2000);"
+  },
+  {
+    "path": "src/psram_logger.cpp",
+    "old": "extern RunControlWorker run_control;",
+    "new": "extern RunControlWorker run_control;\n#include \"roller485_manager.h\"\nextern Roller485Manager roller;"
+  },
+  {
+    "path": "src/psram_logger.cpp",
+    "old": "  json += \"\\\"v46p_control_worker\\\":\" + run_control.diagnosticsJson() + \",\";",
+    "new": "  json += \"\\\"v46p_control_worker\\\":\" + run_control.diagnosticsJson() + \",\";\n  {\n    const auto t = roller.telemetrySnapshot();\n    json += \"\\\"v46u_current_timing\\\":{\\\"scope\\\":\\\"since_boot_pulse_audit_only_not_per_run\\\",\\\"budget_us\\\":2000\";\n    json += \",\\\"read_count\\\":\" + String(t.pulse_current_read_work.count);\n    json += \",\\\"read_over_budget\\\":\" + String(t.pulse_current_read_work.over);\n    json += \",\\\"read_max_us\\\":\" + String(t.pulse_current_read_work.maximum);\n    json += \",\\\"interval_count\\\":\" + String(t.pulse_current_intervals.count);\n    json += \",\\\"interval_over_budget\\\":\" + String(t.pulse_current_intervals.over);\n    json += \",\\\"interval_max_us\\\":\" + String(t.pulse_current_intervals.maximum) + \"},\";\n  }"
+  },
+  {
+    "path": "platformio.ini",
+    "old": "[env:atoms3cam]",
+    "new": "[env:atoms3cam]\nextra_scripts = pre:tools/patch_bmi270_timing.py"
+  },
+  {
+    "path": ".gitignore",
+    "old": ".pio/",
+    "new": ".pio/\nbmi270-build-patch.json"
+  }
+]

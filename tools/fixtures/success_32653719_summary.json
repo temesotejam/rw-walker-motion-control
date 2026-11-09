@@ -1,0 +1,183 @@
+{
+  "source": "energy_control_autonomous_run_1_32653719.rwlog",
+  "sha256": "776d0f42ff28cf4fba64490004f82d24fcc47fd5ef3f9a316c97bdb52649babb",
+  "firmware_revision": "0.47.9-control-work-reduction",
+  "terminal_state": {
+    "state_id": 4,
+    "state": "FINISHED",
+    "last_error": "",
+    "motor_cmd_mA": 0,
+    "actual_current_mA": -2,
+    "heartbeat_us": 76907777
+  },
+  "acquisition": {
+    "duration_us": 29999910,
+    "captured": 12143,
+    "delivered": 12143,
+    "queue_drops": 0,
+    "delivery_sequence_gaps": 0,
+    "delivery_age_mean_us": 282.963,
+    "delivery_age_max_us": 4001,
+    "dt_mean_us": 2470.379,
+    "dt_max_us": 4232
+  },
+  "completion": {
+    "budget_us": 2500,
+    "count": 12144,
+    "over_budget": 947,
+    "max_us": 6884,
+    "mean_us": 1514.268,
+    "runner_over_budget": 215,
+    "runner_max_us": 5104,
+    "all_observed_within_budget": false,
+    "scope": "RUNNING_fresh_gyro_only;host_acquisition_to_runner_return;not_sensor_capture_to_motor_apply"
+  },
+  "profile": {
+    "revision": "control_work_0478",
+    "scope": "measurement_only;host_wall_time_includes_preemption;nested_stages_not_additive",
+    "cohort": "pulse_active_at_stage_entry;owner_includes_terminal_iteration;start_sync_excluded",
+    "pulse_off": {
+      "owner_iteration": {
+        "count": 12805,
+        "max_us": 7725,
+        "sum_us": 24999844,
+        "mean_us": 1952.35
+      },
+      "service": {
+        "count": 12805,
+        "max_us": 2486,
+        "sum_us": 701920,
+        "mean_us": 54.816
+      },
+      "imu_delivery": {
+        "count": 12805,
+        "max_us": 3437,
+        "sum_us": 9195894,
+        "mean_us": 718.149
+      },
+      "pose_guide": {
+        "count": 12805,
+        "max_us": 1317,
+        "sum_us": 766896,
+        "mean_us": 59.89
+      },
+      "filter": {
+        "count": 10145,
+        "max_us": 3475,
+        "sum_us": 7188510,
+        "mean_us": 708.577
+      },
+      "angle_display": {
+        "count": 10146,
+        "max_us": 1442,
+        "sum_us": 381886,
+        "mean_us": 37.639
+      },
+      "current_roll": {
+        "count": 10145,
+        "max_us": 1555,
+        "sum_us": 186412,
+        "mean_us": 18.375
+      },
+      "motion": {
+        "count": 10145,
+        "max_us": 2808,
+        "sum_us": 861132,
+        "mean_us": 84.882
+      },
+      "log_row": {
+        "count": 1153,
+        "max_us": 1724,
+        "sum_us": 304655,
+        "mean_us": 264.228
+      },
+      "snapshot": {
+        "count": 12805,
+        "max_us": 2148,
+        "sum_us": 1328287,
+        "mean_us": 103.732
+      },
+      "publish": {
+        "count": 12805,
+        "max_us": 1962,
+        "sum_us": 260911,
+        "mean_us": 20.376
+      }
+    },
+    "pulse_on": {
+      "owner_iteration": {
+        "count": 2241,
+        "max_us": 6762,
+        "sum_us": 4794231,
+        "mean_us": 2139.327
+      },
+      "service": {
+        "count": 2241,
+        "max_us": 1419,
+        "sum_us": 96097,
+        "mean_us": 42.881
+      },
+      "imu_delivery": {
+        "count": 2241,
+        "max_us": 3026,
+        "sum_us": 803760,
+        "mean_us": 358.661
+      },
+      "pose_guide": {
+        "count": 2241,
+        "max_us": 1116,
+        "sum_us": 192026,
+        "mean_us": 85.688
+      },
+      "filter": {
+        "count": 1999,
+        "max_us": 4444,
+        "sum_us": 1596412,
+        "mean_us": 798.605
+      },
+      "angle_display": {
+        "count": 1999,
+        "max_us": 1305,
+        "sum_us": 80701,
+        "mean_us": 40.371
+      },
+      "current_roll": {
+        "count": 1999,
+        "max_us": 953,
+        "sum_us": 49959,
+        "mean_us": 24.992
+      },
+      "motion": {
+        "count": 1999,
+        "max_us": 1433,
+        "sum_us": 197794,
+        "mean_us": 98.946
+      },
+      "log_row": {
+        "count": 1533,
+        "max_us": 1883,
+        "sum_us": 513166,
+        "mean_us": 334.746
+      },
+      "snapshot": {
+        "count": 2241,
+        "max_us": 1275,
+        "sum_us": 278576,
+        "mean_us": 124.309
+      },
+      "publish": {
+        "count": 2241,
+        "max_us": 1820,
+        "sum_us": 54372,
+        "mean_us": 24.262
+      }
+    }
+  },
+  "foot": {
+    "frames": 391,
+    "running_frames": 292,
+    "csv_matches_rwlog_exactly": true,
+    "csv_sha256": "90abb9c0fb156074ea4a52c0d8a12bab512d984cc6b854e812134fe2fd8615f4"
+  },
+  "interpretation": "Integrated MEKF + foot observation + actuation succeeded in this 30-second free-foot hardware run. User reports fore/aft movement with unfixed feet; asymmetry is not treated as integration failure. Deterministic timing remains to be improved."
+}

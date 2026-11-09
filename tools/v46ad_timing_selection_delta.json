@@ -1,0 +1,42 @@
+[
+  {
+    "path": "src/config.h",
+    "old": "v46ac_light_delay_compensation_20260918",
+    "new": "v46ad_delay_compensation_sweep_20260919"
+  },
+  {
+    "path": "src/config.h",
+    "old": "// It predicts the posterior measurement-relative pitch forward by 3.0 ms",
+    "new": "// Default 3.0 ms; V46ad snapshots the stopped-state 0/3/6/9 ms selection per run.\n// It predicts the posterior measurement-relative pitch forward by that delay"
+  },
+  {
+    "path": "src/experiment_runner.cpp",
+    "old": "  // angle. Autonomous timing gets only a lightweight fixed 3 ms projection to",
+    "new": "  // angle. Autonomous timing gets a lightweight projection fixed for this run to"
+  },
+  {
+    "path": "src/experiment_runner.cpp",
+    "old": "static_cast<float>(Config::ENERGY_CONTROL_AUTONOMOUS_TIMING_COMPENSATION_US) * 1.0e-6f",
+    "new": "static_cast<float>(autonomous_timing_.runUs()) * 1.0e-6f"
+  },
+  {
+    "path": "src/experiment_runner.cpp",
+    "old": "        isfinite(status_.pitch_mekf_measurement_relative_deg) && isfinite(mekf_pitch_rate_dps)\n            ? status_.pitch_mekf_measurement_relative_deg + mekf_pitch_rate_dps * compensation_s\n            : NAN;",
+    "new": "        autonomous_timing_.runUs() == 0 ? status_.pitch_mekf_measurement_relative_deg :\n        (isfinite(status_.pitch_mekf_measurement_relative_deg) && isfinite(mekf_pitch_rate_dps)\n            ? status_.pitch_mekf_measurement_relative_deg + mekf_pitch_rate_dps * compensation_s\n            : NAN);"
+  },
+  {
+    "path": "src/experiment_runner.cpp",
+    "old": "const char* ExperimentRunner::energyControlAutonomousPhaseName() const {",
+    "new": "bool ExperimentRunner::setEnergyControlAutonomousTimingCompensation(uint32_t value_us) {\n  const bool stopped_and_available =\n      (status_.state == ExperimentState::READY_TO_MEASURE || status_.state == ExperimentState::FINISHED) &&\n      logger_ && !logger_->downloading();\n  if (!autonomous_timing_.select(value_us, stopped_and_available)) {\n    status_.last_error = \"timing_compensation_not_selectable\";\n    return false;\n  }\n  status_.last_error = \"\";\n  return true;\n}\n\nconst char* ExperimentRunner::energyControlAutonomousPhaseName() const {"
+  },
+  {
+    "path": "src/experiment_runner.cpp",
+    "old": "  g_v46_mekf_run_reinit.active = true;\n  energy_control_autonomous_mode_ = true;",
+    "new": "  g_v46_mekf_run_reinit.active = true;\n  autonomous_timing_.captureRun();\n  energy_control_autonomous_mode_ = true;"
+  },
+  {
+    "path": "src/experiment_runner.cpp",
+    "old": "                     energy_control_v0_mode_, energy_control_autonomous_mode_);",
+    "new": "                     energy_control_v0_mode_, energy_control_autonomous_mode_,\n                     energy_control_autonomous_mode_ ? autonomous_timing_.runUs() : 0);"
+  }
+]

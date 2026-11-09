@@ -1,0 +1,120 @@
+{
+  "revision": "fixed_leg_five_pose_20261030",
+  "method": "piecewise_linear_with_endpoint_extrapolation",
+  "reference": "baseline_mekf_roll_minus_pose_mekf_roll",
+  "assumption": "feet_fixed_upper_body_and_camera_rotate_about_same_leg_joint",
+  "provisional": true,
+  "independent_angular_accuracy_validated": false,
+  "records": [
+    {
+      "source_file": "freefoot-vision-diagnostics-366.json",
+      "boot_id": 2811242688,
+      "sequence": 366,
+      "roll_deg": 1.446199,
+      "pitch_deg": -0.792232,
+      "reference_angle_deg": 0,
+      "right_x": 203.0819,
+      "left_x": 201.6569,
+      "right_valid": true,
+      "left_valid": true,
+      "gyro_dps": [
+        0.061035,
+        -0.277378,
+        0.12207
+      ],
+      "gyro_bias_dps": [
+        0.023139,
+        -0.219582,
+        0.110994
+      ]
+    },
+    {
+      "source_file": "freefoot-vision-diagnostics-2767.json",
+      "boot_id": 2811242688,
+      "sequence": 2767,
+      "roll_deg": -2.242266,
+      "pitch_deg": -0.017423,
+      "reference_angle_deg": 3.688465,
+      "right_x": 182.4695,
+      "left_x": 173.8169,
+      "right_valid": true,
+      "left_valid": true,
+      "gyro_dps": [
+        0.488281,
+        -0.49928,
+        0.244141
+      ],
+      "gyro_bias_dps": [
+        0.001427,
+        -0.222923,
+        0.25937
+      ]
+    },
+    {
+      "source_file": "freefoot-vision-diagnostics-2608.json",
+      "boot_id": 2811242688,
+      "sequence": 2608,
+      "roll_deg": -6.925082,
+      "pitch_deg": 0.38032,
+      "reference_angle_deg": 8.371281,
+      "right_x": 152.5749,
+      "left_x": 144.3562,
+      "right_valid": true,
+      "left_valid": true,
+      "gyro_dps": [
+        0.061035,
+        -0.110951,
+        0.305176
+      ],
+      "gyro_bias_dps": [
+        -0.003969,
+        -0.243911,
+        0.254946
+      ]
+    },
+    {
+      "source_file": "freefoot-vision-diagnostics-2486.json",
+      "boot_id": 2811242688,
+      "sequence": 2486,
+      "roll_deg": -12.663759,
+      "pitch_deg": 1.222151,
+      "reference_angle_deg": 14.109958,
+      "right_x": 111.0505,
+      "left_x": 102.703,
+      "right_valid": true,
+      "left_valid": true,
+      "gyro_dps": [
+        -0.854492,
+        -0.554755,
+        -0.061035
+      ],
+      "gyro_bias_dps": [
+        -0.017687,
+        -0.240577,
+        0.156821
+      ]
+    },
+    {
+      "source_file": "freefoot-vision-diagnostics-714.json",
+      "boot_id": 2811242688,
+      "sequence": 714,
+      "roll_deg": -19.232086,
+      "pitch_deg": 1.776217,
+      "reference_angle_deg": 20.678285,
+      "right_x": 67.8096,
+      "left_x": 62.8279,
+      "right_valid": true,
+      "left_valid": true,
+      "gyro_dps": [
+        0.12207,
+        -0.332853,
+        0.061035
+      ],
+      "gyro_bias_dps": [
+        0.045364,
+        -0.234531,
+        0.062063
+      ]
+    }
+  ]
+}

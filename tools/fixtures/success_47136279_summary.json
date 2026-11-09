@@ -1,0 +1,1045 @@
+{
+  "source": "energy_control_autonomous_run_1_47136279.rwlog",
+  "foot_csv_source": "energy_control_autonomous_run_1_47136279_foot.csv",
+  "foot_csv_matches_all_decoded_fields": true,
+  "foot_csv_compared_rows": 386,
+  "foot_csv_compared_columns": 37,
+  "format_version": 51,
+  "crc_verified": true,
+  "firmware_revision": "0.47.14-compact-log-encoder",
+  "terminal_state": {
+    "state_id": 4,
+    "state": "FINISHED",
+    "last_error": "",
+    "motor_cmd_mA": 0,
+    "actual_current_mA": 0,
+    "heartbeat_us": 90524305
+  },
+  "acquisition": {
+    "duration_us": 30000238,
+    "captured": 12144,
+    "delivered": 12144,
+    "queue_drops": 0,
+    "delivery_sequence_gaps": 0,
+    "queue_high_water": 3,
+    "delivery_age_mean_us": 319.349,
+    "delivery_age_max_us": 5295,
+    "dt_mean_us": 2470.367,
+    "dt_max_us": 3937,
+    "over_4ms": 0,
+    "over_5ms": 0,
+    "over_10ms": 0,
+    "samples_per_second": [
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      405,
+      404,
+      405,
+      405,
+      0,
+      0
+    ],
+    "fault": false,
+    "fault_reason": ""
+  },
+  "completion": {
+    "budget_us": 2500,
+    "count": 12145,
+    "over_budget": 1045,
+    "max_us": 6905,
+    "mean_us": 1513.601,
+    "runner_over_budget": 246,
+    "runner_max_us": 5286,
+    "runner_mean_us": 1045.849,
+    "all_observed_within_budget": false,
+    "scope": "RUNNING_fresh_gyro_only;host_acquisition_to_runner_return;not_sensor_capture_to_motor_apply"
+  },
+  "deadline_input_cohorts": {
+    "revision": "input_partition_04712",
+    "classification": "pulse_active_before_runner;accel_fresh_at_delivery",
+    "budget_us": 2500,
+    "groups": [
+      {
+        "pulse_active": false,
+        "accel_fresh": false,
+        "count": 5060,
+        "over_budget": 149,
+        "max_us": 6127,
+        "mean_us": 1105.153
+      },
+      {
+        "pulse_active": false,
+        "accel_fresh": true,
+        "count": 5061,
+        "over_budget": 326,
+        "max_us": 6905,
+        "mean_us": 1616.575
+      },
+      {
+        "pulse_active": true,
+        "accel_fresh": false,
+        "count": 1013,
+        "over_budget": 189,
+        "max_us": 6103,
+        "mean_us": 1938.731
+      },
+      {
+        "pulse_active": true,
+        "accel_fresh": true,
+        "count": 1011,
+        "over_budget": 381,
+        "max_us": 6335,
+        "mean_us": 2616.404
+      }
+    ]
+  },
+  "profile": {
+    "revision": "control_work_04714",
+    "scope": "measurement_only;host_wall_time_includes_preemption;nested_stages_not_additive",
+    "mekf_attitude_scope": "posterior_copy_and_control_pitch;display_euler_from_snapshot_on_demand",
+    "mekf_math_compiler": "GCC_O2_no_fast_math",
+    "madgwick_pitch": "upstream_2.4.0_pitch_only",
+    "log_encoder": "GCC_Os_no_fast_math_shared_noinline_quantizer",
+    "log_substages": "encode_includes_beta_ceilings;store_is_synchronous_psram_addSample",
+    "cohort": "pulse_active_at_stage_entry;owner_includes_terminal_iteration;start_sync_excluded",
+    "pulse_off": {
+      "owner_iteration": {
+        "count": 13226,
+        "max_us": 7969,
+        "sum_us": 24880740,
+        "mean_us": 1881.199
+      },
+      "service": {
+        "count": 13226,
+        "max_us": 1783,
+        "sum_us": 653883,
+        "mean_us": 49.439
+      },
+      "imu_delivery": {
+        "count": 13226,
+        "max_us": 2931,
+        "sum_us": 9386230,
+        "mean_us": 709.68
+      },
+      "pose_guide": {
+        "count": 13226,
+        "max_us": 1763,
+        "sum_us": 576047,
+        "mean_us": 43.554
+      },
+      "filter": {
+        "count": 10121,
+        "max_us": 4493,
+        "sum_us": 6679516,
+        "mean_us": 659.966
+      },
+      "angle_display": {
+        "count": 10122,
+        "max_us": 2201,
+        "sum_us": 345514,
+        "mean_us": 34.135
+      },
+      "current_roll": {
+        "count": 10121,
+        "max_us": 2218,
+        "sum_us": 187877,
+        "mean_us": 18.563
+      },
+      "motion": {
+        "count": 10121,
+        "max_us": 2821,
+        "sum_us": 855992,
+        "mean_us": 84.576
+      },
+      "log_row": {
+        "count": 1157,
+        "max_us": 1542,
+        "sum_us": 321543,
+        "mean_us": 277.911
+      },
+      "snapshot": {
+        "count": 13226,
+        "max_us": 1748,
+        "sum_us": 1047068,
+        "mean_us": 79.167
+      },
+      "publish": {
+        "count": 13226,
+        "max_us": 2247,
+        "sum_us": 286999,
+        "mean_us": 21.7
+      },
+      "mekf_predict": {
+        "count": 10121,
+        "max_us": 2442,
+        "sum_us": 1854791,
+        "mean_us": 183.262
+      },
+      "mekf_accel": {
+        "count": 5061,
+        "max_us": 3676,
+        "sum_us": 1845305,
+        "mean_us": 364.613
+      },
+      "mekf_attitude": {
+        "count": 10121,
+        "max_us": 1878,
+        "sum_us": 914857,
+        "mean_us": 90.392
+      },
+      "madgwick": {
+        "count": 5061,
+        "max_us": 2317,
+        "sum_us": 461478,
+        "mean_us": 91.183
+      },
+      "log_encode": {
+        "count": 1157,
+        "max_us": 1447,
+        "sum_us": 250136,
+        "mean_us": 216.194
+      },
+      "log_store": {
+        "count": 1157,
+        "max_us": 1270,
+        "sum_us": 36736,
+        "mean_us": 31.751
+      }
+    },
+    "pulse_on": {
+      "owner_iteration": {
+        "count": 2120,
+        "max_us": 6852,
+        "sum_us": 4822123,
+        "mean_us": 2274.586
+      },
+      "service": {
+        "count": 2120,
+        "max_us": 938,
+        "sum_us": 98363,
+        "mean_us": 46.398
+      },
+      "imu_delivery": {
+        "count": 2120,
+        "max_us": 2089,
+        "sum_us": 947360,
+        "mean_us": 446.868
+      },
+      "pose_guide": {
+        "count": 2120,
+        "max_us": 1555,
+        "sum_us": 161277,
+        "mean_us": 76.074
+      },
+      "filter": {
+        "count": 2024,
+        "max_us": 3778,
+        "sum_us": 1561257,
+        "mean_us": 771.372
+      },
+      "angle_display": {
+        "count": 2024,
+        "max_us": 968,
+        "sum_us": 93524,
+        "mean_us": 46.208
+      },
+      "current_roll": {
+        "count": 2024,
+        "max_us": 1104,
+        "sum_us": 54992,
+        "mean_us": 27.17
+      },
+      "motion": {
+        "count": 2024,
+        "max_us": 1341,
+        "sum_us": 178466,
+        "mean_us": 88.175
+      },
+      "log_row": {
+        "count": 1507,
+        "max_us": 3147,
+        "sum_us": 628949,
+        "mean_us": 417.352
+      },
+      "snapshot": {
+        "count": 2120,
+        "max_us": 1561,
+        "sum_us": 227549,
+        "mean_us": 107.334
+      },
+      "publish": {
+        "count": 2120,
+        "max_us": 1789,
+        "sum_us": 58048,
+        "mean_us": 27.381
+      },
+      "mekf_predict": {
+        "count": 2024,
+        "max_us": 1632,
+        "sum_us": 535995,
+        "mean_us": 264.82
+      },
+      "mekf_accel": {
+        "count": 1011,
+        "max_us": 2453,
+        "sum_us": 361868,
+        "mean_us": 357.931
+      },
+      "mekf_attitude": {
+        "count": 2024,
+        "max_us": 1734,
+        "sum_us": 191415,
+        "mean_us": 94.573
+      },
+      "madgwick": {
+        "count": 1011,
+        "max_us": 1136,
+        "sum_us": 126139,
+        "mean_us": 124.767
+      },
+      "log_encode": {
+        "count": 1507,
+        "max_us": 3104,
+        "sum_us": 491754,
+        "mean_us": 326.313
+      },
+      "log_store": {
+        "count": 1507,
+        "max_us": 871,
+        "sum_us": 63893,
+        "mean_us": 42.397
+      }
+    }
+  },
+  "poll_profile": {
+    "available": true,
+    "revision": "v46q_lightweight_acquisition_20260914",
+    "semantics": "host_wall_times;update_includes_driver;notify_age_from_latest_callback;not_ISR_latency",
+    "derived_accel_location": "consumer_new_accel_only_and_synchronous_startup",
+    "epoch_us": 52139263,
+    "polls": 29994,
+    "fresh_gyro_polls": 12144,
+    "no_data_polls": 17850,
+    "coalesced_wakes": 6,
+    "forced_yields": 33,
+    "long_gaps_over_4ms": 0,
+    "outside_detail_window": 0,
+    "record_overhead_max_us": 75,
+    "v46u_timing": {
+      "driver_calls": 29994,
+      "driver_failures": 0,
+      "data_bytes": 115368,
+      "status_read_max_us": 560,
+      "data_read_max_us": 808,
+      "poll_work_budget_us": 1000,
+      "poll_work_count": 29994,
+      "poll_work_over_budget": 33,
+      "host_gyro_interval_budget_us": 2500,
+      "host_gyro_interval_count": 12144,
+      "host_gyro_interval_over_budget": 5714,
+      "host_gyro_interval_max_us": 3937,
+      "sensor_clock_verified": false,
+      "policy": "strict_greater_than;host_polling_not_FIFO;no_tolerance_hidden"
+    },
+    "stages": {
+      "latest_notify_age": {
+        "count": 29994,
+        "mean_us": 24.782,
+        "max_us": 972
+      },
+      "observed_callback_gap": {
+        "count": 29994,
+        "mean_us": 999.985,
+        "max_us": 2118
+      },
+      "poll_start_interval": {
+        "count": 29994,
+        "mean_us": 1000.2,
+        "max_us": 2589
+      },
+      "update_api": {
+        "count": 29994,
+        "mean_us": 406.113,
+        "max_us": 1258
+      },
+      "convert_api": {
+        "count": 12144,
+        "mean_us": 16.916,
+        "max_us": 40
+      },
+      "validate_pack": {
+        "count": 12144,
+        "mean_us": 15.809,
+        "max_us": 45
+      },
+      "publish_queue": {
+        "count": 12144,
+        "mean_us": 25.914,
+        "max_us": 59
+      },
+      "poll_total": {
+        "count": 29994,
+        "mean_us": 439.728,
+        "max_us": 1355
+      },
+      "overrun_yield": {
+        "count": 33,
+        "mean_us": 662.455,
+        "max_us": 1298
+      }
+    },
+    "second_columns": [
+      "second",
+      "polls",
+      "gyro",
+      "no_data",
+      "forced_yields",
+      "notify_max_us",
+      "update_max_us",
+      "convert_max_us",
+      "total_max_us",
+      "period_max_us",
+      "long_gaps"
+    ],
+    "seconds": [
+      [
+        0,
+        999,
+        405,
+        594,
+        2,
+        965,
+        1129,
+        32,
+        1198,
+        2124,
+        0
+      ],
+      [
+        1,
+        1000,
+        405,
+        595,
+        3,
+        952,
+        1161,
+        29,
+        1265,
+        1945,
+        0
+      ],
+      [
+        2,
+        1000,
+        405,
+        595,
+        0,
+        537,
+        857,
+        40,
+        980,
+        1800,
+        0
+      ],
+      [
+        3,
+        1000,
+        404,
+        596,
+        1,
+        809,
+        1179,
+        35,
+        1247,
+        1933,
+        0
+      ],
+      [
+        4,
+        999,
+        405,
+        594,
+        0,
+        413,
+        888,
+        32,
+        965,
+        2364,
+        0
+      ],
+      [
+        5,
+        1000,
+        405,
+        595,
+        1,
+        952,
+        1173,
+        30,
+        1249,
+        1933,
+        0
+      ],
+      [
+        6,
+        1000,
+        405,
+        595,
+        0,
+        475,
+        862,
+        35,
+        964,
+        1549,
+        0
+      ],
+      [
+        7,
+        1000,
+        405,
+        595,
+        3,
+        962,
+        1230,
+        36,
+        1323,
+        1947,
+        0
+      ],
+      [
+        8,
+        1000,
+        404,
+        596,
+        1,
+        787,
+        1252,
+        35,
+        1355,
+        1670,
+        0
+      ],
+      [
+        9,
+        1000,
+        405,
+        595,
+        0,
+        744,
+        863,
+        30,
+        970,
+        1956,
+        0
+      ],
+      [
+        10,
+        1000,
+        405,
+        595,
+        3,
+        954,
+        1183,
+        30,
+        1251,
+        1954,
+        0
+      ],
+      [
+        11,
+        1000,
+        405,
+        595,
+        1,
+        954,
+        1206,
+        32,
+        1281,
+        1941,
+        0
+      ],
+      [
+        12,
+        1000,
+        405,
+        595,
+        0,
+        555,
+        904,
+        37,
+        980,
+        1878,
+        0
+      ],
+      [
+        13,
+        1000,
+        404,
+        596,
+        0,
+        753,
+        867,
+        30,
+        971,
+        1776,
+        0
+      ],
+      [
+        14,
+        1000,
+        405,
+        595,
+        0,
+        442,
+        880,
+        32,
+        979,
+        1343,
+        0
+      ],
+      [
+        15,
+        1000,
+        405,
+        595,
+        1,
+        957,
+        925,
+        31,
+        1005,
+        1924,
+        0
+      ],
+      [
+        16,
+        1000,
+        405,
+        595,
+        1,
+        944,
+        1198,
+        39,
+        1269,
+        1937,
+        0
+      ],
+      [
+        17,
+        1000,
+        405,
+        595,
+        1,
+        948,
+        1016,
+        38,
+        1083,
+        1770,
+        0
+      ],
+      [
+        18,
+        1000,
+        404,
+        596,
+        0,
+        368,
+        862,
+        30,
+        969,
+        1412,
+        0
+      ],
+      [
+        19,
+        999,
+        405,
+        594,
+        0,
+        536,
+        841,
+        39,
+        965,
+        2310,
+        0
+      ],
+      [
+        20,
+        1000,
+        405,
+        595,
+        4,
+        965,
+        1258,
+        30,
+        1336,
+        1939,
+        0
+      ],
+      [
+        21,
+        1000,
+        405,
+        595,
+        1,
+        821,
+        1235,
+        39,
+        1345,
+        1749,
+        0
+      ],
+      [
+        22,
+        1000,
+        405,
+        595,
+        1,
+        609,
+        906,
+        35,
+        1006,
+        1786,
+        0
+      ],
+      [
+        23,
+        1000,
+        404,
+        596,
+        1,
+        949,
+        904,
+        36,
+        1004,
+        1931,
+        0
+      ],
+      [
+        24,
+        1000,
+        405,
+        595,
+        0,
+        692,
+        905,
+        37,
+        999,
+        1895,
+        0
+      ],
+      [
+        25,
+        998,
+        405,
+        593,
+        3,
+        852,
+        1113,
+        30,
+        1207,
+        2589,
+        0
+      ],
+      [
+        26,
+        1000,
+        405,
+        595,
+        0,
+        715,
+        854,
+        37,
+        963,
+        1852,
+        0
+      ],
+      [
+        27,
+        999,
+        405,
+        594,
+        1,
+        573,
+        1041,
+        32,
+        1112,
+        2222,
+        0
+      ],
+      [
+        28,
+        1000,
+        404,
+        596,
+        3,
+        972,
+        1009,
+        30,
+        1088,
+        1962,
+        0
+      ],
+      [
+        29,
+        1000,
+        405,
+        595,
+        1,
+        610,
+        903,
+        39,
+        1021,
+        1830,
+        0
+      ]
+    ],
+    "detail_policy": "worst_gap_per_100ms_bucket_not_all_gaps;full_counts_above",
+    "bucket_us": 100000,
+    "detail_window_us": 32000000,
+    "gap_columns": [
+      "time_us",
+      "dt_us",
+      "sequence",
+      "latest_notify_age_us",
+      "callback_gap_us",
+      "poll_period_us",
+      "update_us",
+      "convert_us",
+      "pack_us",
+      "publish_us",
+      "total_us",
+      "previous_total_us",
+      "previous_yield_us",
+      "wakes"
+    ],
+    "worst_gap_by_100ms": []
+  },
+  "start_pulse_timing": {
+    "event_index": 1,
+    "pulse_id": 1,
+    "pulse_kind": "strong_start_kick",
+    "t_test_ms": 0,
+    "command_mA": -300,
+    "pulse_width_ms": 100,
+    "pulse_start_us": 52138430,
+    "gyro_sequence_at_start": 17357,
+    "set_current_us": 13,
+    "state_update_us": 1,
+    "current_model_us": 221,
+    "update_pulse_model_us": 30,
+    "pulse_begin_total_us": 270,
+    "first_audit_log_offset_us": 2150,
+    "first_audit_log_us": 838,
+    "imu_update_call_us": 1229,
+    "runner_update_call_us": 1530,
+    "core1_path_us": 2818,
+    "first_imu_dt_after_start_us": 2216,
+    "first_imu_sample_offset_us": 1831,
+    "capture_mask": 7,
+    "complete": true
+  },
+  "profile_weighted": {
+    "owner_iteration": {
+      "count": 15346,
+      "sum_us": 29702863,
+      "mean_us": 1935.5443112211651,
+      "max_us": 7969
+    },
+    "service": {
+      "count": 15346,
+      "sum_us": 752246,
+      "mean_us": 49.01902775967679,
+      "max_us": 1783
+    },
+    "imu_delivery": {
+      "count": 15346,
+      "sum_us": 10333590,
+      "mean_us": 673.3735175289978,
+      "max_us": 2931
+    },
+    "pose_guide": {
+      "count": 15346,
+      "sum_us": 737324,
+      "mean_us": 48.04665710934445,
+      "max_us": 1763
+    },
+    "filter": {
+      "count": 12145,
+      "sum_us": 8240773,
+      "mean_us": 678.5321531494442,
+      "max_us": 4493
+    },
+    "angle_display": {
+      "count": 12146,
+      "sum_us": 439038,
+      "mean_us": 36.14671496789067,
+      "max_us": 2201
+    },
+    "current_roll": {
+      "count": 12145,
+      "sum_us": 242869,
+      "mean_us": 19.997447509263072,
+      "max_us": 2218
+    },
+    "motion": {
+      "count": 12145,
+      "sum_us": 1034458,
+      "mean_us": 85.17562783038288,
+      "max_us": 2821
+    },
+    "log_row": {
+      "count": 2664,
+      "sum_us": 950492,
+      "mean_us": 356.7912912912913,
+      "max_us": 3147
+    },
+    "snapshot": {
+      "count": 15346,
+      "sum_us": 1274617,
+      "mean_us": 83.05858204092272,
+      "max_us": 1748
+    },
+    "publish": {
+      "count": 15346,
+      "sum_us": 345047,
+      "mean_us": 22.484491072592206,
+      "max_us": 2247
+    },
+    "mekf_predict": {
+      "count": 12145,
+      "sum_us": 2390786,
+      "mean_us": 196.85351996706464,
+      "max_us": 2442
+    },
+    "mekf_accel": {
+      "count": 6072,
+      "sum_us": 2207173,
+      "mean_us": 363.50016469038206,
+      "max_us": 3676
+    },
+    "mekf_attitude": {
+      "count": 12145,
+      "sum_us": 1106272,
+      "mean_us": 91.08867846850556,
+      "max_us": 1878
+    },
+    "madgwick": {
+      "count": 6072,
+      "sum_us": 587617,
+      "mean_us": 96.77486824769433,
+      "max_us": 2317
+    },
+    "log_encode": {
+      "count": 2664,
+      "sum_us": 741890,
+      "mean_us": 278.48723723723725,
+      "max_us": 3104
+    },
+    "log_store": {
+      "count": 2664,
+      "sum_us": 100629,
+      "mean_us": 37.773648648648646,
+      "max_us": 1270
+    }
+  },
+  "ordinary_rows": 3141,
+  "rows_by_state": {
+    "6": 239,
+    "3": 2664,
+    "7": 238
+  },
+  "running_rows": 2664,
+  "running_last_t_test_ms": 30001,
+  "all_running_mekf_adopted": true,
+  "all_running_attitude_fields_finite": true,
+  "running_row_sample_age_max_us": 6170,
+  "peak_event_count": 68,
+  "zero_cross_event_count": 68,
+  "foot": {
+    "total_rows": 386,
+    "rows_by_state": {
+      "6": 49,
+      "3": 288,
+      "7": 49
+    },
+    "running_rows": 288,
+    "measurement_observation_validated": true,
+    "overflow": false,
+    "running_frames_per_second": 9.599923840604198,
+    "right_zero_x": 171.59729,
+    "right_support_x": [
+      39.0,
+      182.0
+    ],
+    "right_valid": 381,
+    "right_running_valid": 283,
+    "right_invalid_reasons": {
+      "ambiguous": 5
+    },
+    "right_out_of_range": 0,
+    "right_running_out_of_range": 0,
+    "right_x_min": 142.37366,
+    "right_x_max": 173.17073,
+    "right_running_x_min": 142.37366,
+    "right_running_x_max": 173.17073,
+    "right_deg_min": -0.24411,
+    "right_deg_max": 4.53394,
+    "right_running_deg_min": -0.24411,
+    "right_running_deg_max": 4.53394,
+    "left_zero_x": 171.22789,
+    "left_support_x": [
+      37.0,
+      177.5
+    ],
+    "left_valid": 385,
+    "left_running_valid": 287,
+    "left_invalid_reasons": {
+      "ambiguous": 1
+    },
+    "left_out_of_range": 0,
+    "left_running_out_of_range": 0,
+    "left_x_min": 124.52845,
+    "left_x_max": 172.55113,
+    "left_running_x_min": 124.52845,
+    "left_running_x_max": 172.55113,
+    "left_deg_min": -0.20576,
+    "left_deg_max": 7.26161,
+    "left_running_deg_min": -0.20576,
+    "left_running_deg_max": 7.26161,
+    "running_frame_interval_max_us": 200515
+  },
+  "sha256": {
+    "energy_control_autonomous_run_1_47136279.rwlog": "ab414e072c3194a549172e13ee303a3ae4a89d938d5c04a42d58d5fe70e9a331",
+    "energy_control_autonomous_run_1_47136279_foot.csv": "3f877b8032f0c40b372af12f9d45ad2ddea7d34caedad0a076e590bc384b9da2"
+  },
+  "interpretation": {
+    "completion_boundary": "completion includes measurement state captured before runner.update; acquisition context is transitioned before/after controlStep; the one-count difference is not proof of a drop",
+    "timing_scope": "wall times include preemption; nested stages are not additive; workload cohorts differ across runs",
+    "stack_scan_hypothesis": "owner-local 1Hz control/IMU stack scans are removable real-time work; their contribution was not isolated in this run",
+    "calibration": "observed marker support accepted all valid positions; independent absolute angle accuracy is not established by this free-foot run"
+  }
+}
