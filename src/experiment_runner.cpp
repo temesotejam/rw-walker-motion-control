@@ -3926,14 +3926,16 @@ bool ExperimentRunner::tryTiltPriorityImpl(
     }
   }
 #endif
-#if defined(FAST_CROSSING_TRIAL) && FAST_CROSSING_TRIAL
+#if (defined(FAST_CROSSING_TRIAL) && FAST_CROSSING_TRIAL) || (defined(FAST_CROSSING_SHADOW) && FAST_CROSSING_SHADOW)
   if(!stall_rescue_event_ && !optional_early_event_ && choice.selected && !choice.coast &&
      !event.sway_trim_cap_ms) {
     const uint16_t trim_cap=tilt_priority_.fastCrossingTrimCap(t_test_ms,in.crossing_rate_dps,choice.width_ms);
     if(trim_cap<choice.width_ms) {
       event.fast_trim_before_ms=choice.width_ms;event.fast_trim_cap_ms=trim_cap;
+#if defined(FAST_CROSSING_TRIAL) && FAST_CROSSING_TRIAL
       if(in.hardware_cap_ms>trim_cap)in.hardware_cap_ms=trim_cap;
       choice.width_ms=trim_cap;
+#endif
     }
   }
 #endif

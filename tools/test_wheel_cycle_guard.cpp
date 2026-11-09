@@ -4,6 +4,13 @@
 #include <iostream>
 int main() {
   wheel_cycle_guard::Controller c;
+  // v8 run: replay the last opposite-side RPM before the 19.851 s input.
+  // Compare identical guard state, not the post-trim legacyWidth field.
+  c.limit(1,-183.13f,true,19479,49);
+  auto untrimmed=c,trimmed=c;
+  assert(untrimmed.limit(-1,223.3f,true,19851,45)==45);
+  assert(trimmed.limit(-1,223.3f,true,19851,40)==40);
+  c.reset();
   // Initial alternating samples from run 464 are kept intact.
   assert(c.limit(-1,270.97f,true,417,59)==59);
   assert(c.limit(1,-287.44f,true,814,43)==43);

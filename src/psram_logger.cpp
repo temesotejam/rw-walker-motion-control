@@ -464,6 +464,9 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
 #if defined(FAST_CROSSING_TRIAL) && FAST_CROSSING_TRIAL
   json += "\"fast_crossing_trial\":{\"policy\":\"target8;both_recent_paired_peaks_ge4p5deg;ordinary_abs_crossing_rate_ge44dps;proposal_ge30ms;cap_reduced_5ms;no_double_trim;no_rescue_or_early_change;existing_guards\",\"physical_response_identified\":false,\"hardware_validated\":false},";
 #endif
+#if defined(FAST_CROSSING_SHADOW) && FAST_CROSSING_SHADOW
+  json += "\"fast_crossing_shadow\":{\"policy\":\"candidate_only;not_applied_to_output;other_guards_remain_active\",\"physical_response_identified\":false,\"hardware_validated\":false},";
+#endif
 #if defined(ANGLE_EARLY_TRIAL) && ANGLE_EARLY_TRIAL
   json += "\"angle_early_trial\":{\"policy\":\"inward_abs_angle_gt_0p3_le_1p5_deg;rate_gt_5_dps;constant_rate_eta_gt_20_le_30_ms;max_pulse_15ms;one_per_peak;no_send_zero_reevaluation;ambiguous_write_estop\",\"camera_role\":\"diagnostic_and_existing_balance_only\",\"geometry_worker_enabled\":false,\"applies_during_startup_ramp\":true,\"configured_target_deg\":8,\"pulse_width_changes_alongside_timing\":true,\"physical_timing_validated\":false},";
 #else
@@ -1671,7 +1674,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
     detail += ",\"sway_trim_before_ms\":" + String(e.sway_trim_before_ms);
     detail += ",\"sway_trim_cap_ms\":" + String(e.sway_trim_cap_ms);
 #endif
-#if defined(FAST_CROSSING_TRIAL) && FAST_CROSSING_TRIAL
+#if (defined(FAST_CROSSING_TRIAL) && FAST_CROSSING_TRIAL) || (defined(FAST_CROSSING_SHADOW) && FAST_CROSSING_SHADOW)
     detail += ",\"fast_trim_before_ms\":" + String(e.fast_trim_before_ms);
     detail += ",\"fast_trim_cap_ms\":" + String(e.fast_trim_cap_ms);
 #endif

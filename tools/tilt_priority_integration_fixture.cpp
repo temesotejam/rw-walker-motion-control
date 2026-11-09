@@ -278,6 +278,21 @@ int main(){
   assert(e.fast_trim_before_ms-e.fast_trim_cap_ms==5 && e.pulse_width_ms==e.fast_trim_cap_ms);
  }
 #endif
+#if defined(FAST_CROSSING_SHADOW) && FAST_CROSSING_SHADOW
+ // Shadow records the candidate but leaves the real runner's width intact.
+ {ExperimentRunner r;uint32_t t=prepare_negative(r);
+  for(int side:{1,-1}) {
+   tilt_priority::Choice c;c.selected=true;c.direction=static_cast<int8_t>(side);
+   c.width_ms=30;c.current_ma=1200;c.target_deg=8;
+   r.tilt_priority_.crossing(c.direction,t);r.tilt_priority_.confirm(c.direction,t,c,true);
+   r.tilt_priority_.peak(c.direction,t+100,side>0?5.76f:6.14f);t+=300;
+  }
+  Event e;e.physical_next_peak_side=1;e.zero_cross_abs_rate_dps=46.7354f;bool healthy=false;
+  assert(r.tryTiltPriorityImpl(e,t,&healthy) && healthy && e.output_executed);
+  assert(e.fast_trim_before_ms-e.fast_trim_cap_ms==5);
+  assert(e.pulse_width_ms==e.fast_trim_before_ms);
+ }
+#endif
 #if defined(SWAY_BALANCE_TRIAL) && SWAY_BALANCE_TRIAL
  // Actual runner path: a paired asymmetric observation reduces only the
  // ordinary positive proposal, and downstream guards cannot raise the cap.
