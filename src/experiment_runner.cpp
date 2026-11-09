@@ -3920,7 +3920,20 @@ bool ExperimentRunner::tryTiltPriorityImpl(
       event.sway_trim_before_ms=choice.width_ms;
       event.sway_trim_cap_ms=trim_cap;
       if(in.hardware_cap_ms>trim_cap)in.hardware_cap_ms=trim_cap;
-      choice=tilt_priority_.propose(in);
+      // The proposal already includes the rate taper. Re-proposing with a
+      // smaller hardware cap would taper a second time and remove >5 ms.
+      choice.width_ms=trim_cap;
+    }
+  }
+#endif
+#if defined(FAST_CROSSING_TRIAL) && FAST_CROSSING_TRIAL
+  if(!stall_rescue_event_ && !optional_early_event_ && choice.selected && !choice.coast &&
+     !event.sway_trim_cap_ms) {
+    const uint16_t trim_cap=tilt_priority_.fastCrossingTrimCap(t_test_ms,in.crossing_rate_dps,choice.width_ms);
+    if(trim_cap<choice.width_ms) {
+      event.fast_trim_before_ms=choice.width_ms;event.fast_trim_cap_ms=trim_cap;
+      if(in.hardware_cap_ms>trim_cap)in.hardware_cap_ms=trim_cap;
+      choice.width_ms=trim_cap;
     }
   }
 #endif

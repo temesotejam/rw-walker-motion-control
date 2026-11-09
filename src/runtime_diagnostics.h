@@ -9,7 +9,11 @@
 #if defined(EARLY_RESCUE_TRIAL) && EARLY_RESCUE_TRIAL
 #if defined(SWAY_BALANCE_TRIAL) && SWAY_BALANCE_TRIAL
 #if defined(APPROACH_RESCUE_TRIAL) && APPROACH_RESCUE_TRIAL
+#if defined(FAST_CROSSING_TRIAL) && FAST_CROSSING_TRIAL
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-fast-crossing-v8"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-approach-rescue-v7"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-balance-trim-v6"
 #endif

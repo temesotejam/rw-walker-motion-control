@@ -1134,7 +1134,7 @@ ENERGY_CONTROL_AUTONOMOUS_PEAK_COLUMNS = [
 
 ENERGY_CONTROL_AUTONOMOUS_ZERO_CROSS_COLUMNS = [
     "cg_shift_mm",
-    "event_index", "event_kind", "zero_cross_time_ms", "sway_trim_before_ms", "sway_trim_cap_ms", "zero_cross_rate_dps",
+    "event_index", "event_kind", "zero_cross_time_ms", "sway_trim_before_ms", "sway_trim_cap_ms", "fast_trim_before_ms", "fast_trim_cap_ms", "zero_cross_rate_dps",
     "zero_cross_abs_rate_dps", "previous_peak_time_ms", "previous_peak_side",
     "previous_peak_amplitude_deg", "physical_next_peak_side", "phase",
     "free_next_peak_amplitude_deg", "free_model_revision", "passive_energy_j",

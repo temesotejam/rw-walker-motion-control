@@ -42,6 +42,16 @@ inline uint16_t balanceTrimCap(float plus,float minus,bool paired,bool fresh,
   return width>25 ? static_cast<uint16_t>(width-5) : 20;
 }
 
+// A bounded hypothesis, not an identified torque or turning model. Reduce
+// only a normal input when both recent paired peaks show established motion.
+inline uint16_t fastCrossingTrimCap(float plus,float minus,bool paired,bool fresh,
+    float target,float rate,uint16_t width) {
+  if(!paired || !fresh || target!=8.f || !std::isfinite(plus) || !std::isfinite(minus) ||
+     plus<4.5f || minus<4.5f || !std::isfinite(rate) || rate<44.f || width<30)
+    return width;
+  return static_cast<uint16_t>(width-5);
+}
+
 class Controller {
  public:
   void reset() {*this=Controller{};}
@@ -54,6 +64,14 @@ class Controller {
     const bool fresh=paired && now>=plus.peak_ms && now>=minus.peak_ms &&
         now-plus.peak_ms<=1500 && now-minus.peak_ms<=1500;
     return tilt_priority::balanceTrimCap(plus.peak_deg,minus.peak_deg,paired,fresh,side,target_deg_,width);
+  }
+  uint16_t fastCrossingTrimCap(uint32_t now,float rate,uint16_t width) const {
+    const History& plus=history_[1];const History& minus=history_[0];
+    const bool paired=plus.peak_ms && minus.peak_ms &&
+        plus.paired_ms==plus.peak_ms && minus.paired_ms==minus.peak_ms;
+    const bool fresh=paired && now>=plus.peak_ms && now>=minus.peak_ms &&
+        now-plus.peak_ms<=1500 && now-minus.peak_ms<=1500;
+    return tilt_priority::fastCrossingTrimCap(plus.peak_deg,minus.peak_deg,paired,fresh,target_deg_,rate,width);
   }
   // Optional ordinary-drive upward slew limit. It only ever lowers a cap;
   // safety reductions and coast remain free to take effect immediately.

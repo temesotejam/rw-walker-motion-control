@@ -16,6 +16,16 @@ static Choice step(Controller& c,int side,uint32_t cross,float peak,bool accepte
   c.peak(side,cross+elapsed,peak);return choice;
 }
 int main() {
+  using tilt_priority::fastCrossingTrimCap;
+  assert(fastCrossingTrimCap(5.76f,6.14f,true,true,8.f,46.73f,48)==43);
+  assert(fastCrossingTrimCap(5.76f,6.14f,true,true,8.f,44.f,30)==25);
+  assert(fastCrossingTrimCap(5.76f,6.14f,true,true,8.f,43.99f,48)==48);
+  assert(fastCrossingTrimCap(5.76f,6.14f,true,true,8.f,46.73f,29)==29);
+  assert(fastCrossingTrimCap(4.49f,6.14f,true,true,8.f,46.73f,48)==48);
+  assert(fastCrossingTrimCap(5.76f,6.14f,false,true,8.f,46.73f,48)==48);
+  assert(fastCrossingTrimCap(5.76f,6.14f,true,false,8.f,46.73f,48)==48);
+  assert(fastCrossingTrimCap(5.76f,6.14f,true,true,7.5f,46.73f,48)==48);
+  assert(fastCrossingTrimCap(5.76f,6.14f,true,true,8.f,NAN,48)==48);
   using tilt_priority::balanceTrimCap;
   assert(balanceTrimCap(7.25f,4.47f,true,true,1,8.f,36)==31);
   assert(balanceTrimCap(7.25f,4.47f,true,true,1,8.f,23)==20);
