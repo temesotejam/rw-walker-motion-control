@@ -10,6 +10,8 @@ assert '(peak_side==1 || peak_side==-1)' in rescue and 'SYMMETRIC_RESCUE_TRIAL' 
 assert 'peak_side==1 &&' in rescue
 assert 'angle_deg*peak_side' in rescue and 'rate_dps*peak_side' in rescue
 assert 'stall_rescue_detector_.observe' in rescue and 'observeInwardStallRescue(' in policy
+assert 'APPROACH_RESCUE_TRIAL' in rescue and 'approach_stall_rescue_detector_.observe' in rescue
+assert '25.f,2.5f,4.f' in rescue and 'stall_rescue_attempted_peak_ms_!=energy_control_autonomous_last_peak_ms_' in rescue
 assert 'WAIT_ZERO_CROSS' in policy and '!energy_control_autonomous_zero_cross_consumed_for_peak_' in policy
 assert '(crossing || confirmation_input || rescue)' in policy
 assert 'stall_rescue_event_=rescue' in rescue and 'stall_rescue_event_=false' in rescue
@@ -35,4 +37,5 @@ assert '!span.left.edge_unverified && !span.right.edge_unverified' in cycle
 logger=(root/'src/psram_logger.cpp').read_text(encoding='utf-8')
 assert 'target8_zero_percent_uses_zero_centre_with_explicit_inward_stall_rescue' in logger
 assert 'inward_stall_rescue' in logger
+assert 'approach_inward_stall_rescue' in logger and 'event.event_kind=5' in at_zero
 print('foot timing motion and telemetry wiring PASS')

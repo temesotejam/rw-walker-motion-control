@@ -458,6 +458,9 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
 #if defined(SWAY_BALANCE_TRIAL) && SWAY_BALANCE_TRIAL
   json += "\"sway_balance_trial\":{\"policy\":\"target8;fresh_paired_positive_peak_ge6p5_negative_le4p5_gap_ge2;positive_ordinary_proposal_cap_reduced_up_to5ms;floor20ms;existing_guards;no_rescue_or_early_change\",\"physical_response_identified\":false},";
 #endif
+#if defined(APPROACH_RESCUE_TRIAL) && APPROACH_RESCUE_TRIAL
+  json += "\"approach_stall_rescue_trial\":{\"policy\":\"both_returns;inward_speed_cross_25dps_sustained_6ms_three_samples;angle_2p5_to_4deg;other_existing_rescue_gates_and_15ms_cap;15dps_and_6dps_rescues_remain_available;one_attempt_per_peak\",\"event_kind\":\"approach_inward_stall_rescue\",\"physical_response_identified\":false,\"hardware_validated\":false},";
+#endif
 #if defined(ANGLE_EARLY_TRIAL) && ANGLE_EARLY_TRIAL
   json += "\"angle_early_trial\":{\"policy\":\"inward_abs_angle_gt_0p3_le_1p5_deg;rate_gt_5_dps;constant_rate_eta_gt_20_le_30_ms;max_pulse_15ms;one_per_peak;no_send_zero_reevaluation;ambiguous_write_estop\",\"camera_role\":\"diagnostic_and_existing_balance_only\",\"geometry_worker_enabled\":false,\"applies_during_startup_ramp\":true,\"configured_target_deg\":8,\"pulse_width_changes_alongside_timing\":true,\"physical_timing_validated\":false},";
 #else
@@ -1659,7 +1662,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
 #else
     const char* early_kind="foot_geometry_early_trial";
 #endif
-    detail += ",\"event_kind\":\"" + String(e.event_kind == 1 ? "strong_start_kick" : e.event_kind == 2 ? "inward_stall_rescue" : e.event_kind == 3 ? early_kind : e.event_kind == 4 ? "early_inward_stall_rescue" : "energy_control_zero_cross") + "\"";
+    detail += ",\"event_kind\":\"" + String(e.event_kind == 1 ? "strong_start_kick" : e.event_kind == 2 ? "inward_stall_rescue" : e.event_kind == 3 ? early_kind : e.event_kind == 4 ? "early_inward_stall_rescue" : e.event_kind == 5 ? "approach_inward_stall_rescue" : "energy_control_zero_cross") + "\"";
     detail += ",\"zero_cross_time_ms\":" + String(e.zero_cross_time_ms);
 #if defined(SWAY_BALANCE_TRIAL) && SWAY_BALANCE_TRIAL
     detail += ",\"sway_trim_before_ms\":" + String(e.sway_trim_before_ms);

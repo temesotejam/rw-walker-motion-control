@@ -48,5 +48,15 @@ int main(){
   d.reset();
   assert(!d.observe(21911,21907,21601,8.5371f,2.7f,2.6f,-16.f,-14.f,15.f,.8f,2.5f));
   assert(!d.observe(21916,21911,21601,8.5371f,2.6f,2.5f,-14.f,1.f,15.f,.8f,2.5f));
+  // v6 run 64040782, last negative peak: sparse observations suggest an
+  // earlier candidate, without predicting the response to a changed pulse.
+  d.reset();
+  assert(!d.observe(28193,28189,27931,8.749f,3.11f,3.03f,-25.58f,-22.96f,25.f,2.5f,4.f));
+  assert(!d.observe(28199,28193,27931,8.749f,3.03f,2.95f,-22.96f,-23.51f,25.f,2.5f,4.f));
+  assert(d.observe(28204,28199,27931,8.749f,2.95f,2.81f,-23.51f,-22.96f,25.f,2.5f,4.f));
+  d.reset();
+  assert(!d.observe(28193,28189,27931,8.749f,4.2f,4.1f,-26.f,-23.f,25.f,2.5f,4.f));
+  assert(!d.observe(28199,28193,27931,8.749f,3.03f,2.95f,-23.f,1.f,25.f,2.5f,4.f));
+  assert(!d.observe(28220,28199,27931,8.749f,2.95f,2.81f,-23.f,-22.f,25.f,2.5f,4.f));
   std::puts("inward stall rescue: confirmed low speed, stale/reversal rejection PASS");
 }

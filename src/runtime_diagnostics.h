@@ -8,7 +8,11 @@
 #if defined(SYMMETRIC_RESCUE_TRIAL) && SYMMETRIC_RESCUE_TRIAL
 #if defined(EARLY_RESCUE_TRIAL) && EARLY_RESCUE_TRIAL
 #if defined(SWAY_BALANCE_TRIAL) && SWAY_BALANCE_TRIAL
+#if defined(APPROACH_RESCUE_TRIAL) && APPROACH_RESCUE_TRIAL
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-approach-rescue-v7"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-balance-trim-v6"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-early-rescue-v5"
 #endif

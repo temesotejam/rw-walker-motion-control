@@ -1424,6 +1424,9 @@ void ExperimentRunner::recordV59StateGateEvent(uint32_t crossing_ms, float hprev
 
 void ExperimentRunner::beginStartSync(uint32_t now_ms) {
   stall_rescue_detector_.reset();stall_rescue_attempted_peak_ms_=0;stall_rescue_event_=false;
+#if defined(APPROACH_RESCUE_TRIAL) && APPROACH_RESCUE_TRIAL
+  approach_stall_rescue_detector_.reset();approach_stall_rescue_event_=false;
+#endif
 #if defined(EARLY_RESCUE_TRIAL) && EARLY_RESCUE_TRIAL
   early_stall_rescue_detector_.reset();early_stall_rescue_event_=false;
 #endif
@@ -3242,11 +3245,23 @@ __attribute__((noinline)) bool ExperimentRunner::observeInwardStallRescue(
       stall_rescue_attempted_peak_ms_!=energy_control_autonomous_last_peak_ms_;
   if(!scope) {
     stall_rescue_detector_.reset();
+#if defined(APPROACH_RESCUE_TRIAL) && APPROACH_RESCUE_TRIAL
+    approach_stall_rescue_detector_.reset();approach_stall_rescue_event_=false;
+#endif
 #if defined(EARLY_RESCUE_TRIAL) && EARLY_RESCUE_TRIAL
     early_stall_rescue_detector_.reset();early_stall_rescue_event_=false;
 #endif
     return false;
   }
+#if defined(APPROACH_RESCUE_TRIAL) && APPROACH_RESCUE_TRIAL
+  approach_stall_rescue_event_=approach_stall_rescue_detector_.observe(t_test_ms,
+      energy_control_autonomous_previous_detector_test_ms_,energy_control_autonomous_last_peak_ms_,
+      energy_control_autonomous_last_peak_amplitude_deg_,
+      energy_control_autonomous_previous_detector_relative_angle_deg_*peak_side,angle_deg*peak_side,
+      energy_control_autonomous_previous_detector_rate_dps_*peak_side,rate_dps*peak_side,
+      25.f,2.5f,4.f);
+  if(approach_stall_rescue_event_)return true;
+#endif
 #if defined(EARLY_RESCUE_TRIAL) && EARLY_RESCUE_TRIAL
   early_stall_rescue_event_=early_stall_rescue_detector_.observe(t_test_ms,
       energy_control_autonomous_previous_detector_test_ms_,energy_control_autonomous_last_peak_ms_,
@@ -3269,6 +3284,9 @@ __attribute__((noinline)) void ExperimentRunner::acceptMotionCrossing(bool rescu
   updateEnergyControlAutonomousAtZeroCross(t_test_ms,rate,before,after,alpha,interpolated_time_ms);
   stall_rescue_event_=false;
   stall_rescue_detector_.reset();
+#if defined(APPROACH_RESCUE_TRIAL) && APPROACH_RESCUE_TRIAL
+  approach_stall_rescue_detector_.reset();approach_stall_rescue_event_=false;
+#endif
 #if defined(EARLY_RESCUE_TRIAL) && EARLY_RESCUE_TRIAL
   early_stall_rescue_detector_.reset();early_stall_rescue_event_=false;
 #endif
@@ -4604,6 +4622,9 @@ void ExperimentRunner::updateEnergyControlAutonomousAtZeroCross(uint32_t t_test_
   event.event_kind=stall_rescue_event_ ? 2 : (optional_early_event_ ? 3 : 0);
 #if defined(EARLY_RESCUE_TRIAL) && EARLY_RESCUE_TRIAL
   if(stall_rescue_event_ && early_stall_rescue_event_)event.event_kind=4;
+#endif
+#if defined(APPROACH_RESCUE_TRIAL) && APPROACH_RESCUE_TRIAL
+  if(stall_rescue_event_ && approach_stall_rescue_event_)event.event_kind=5;
 #endif
   // V46s audit begin
   solver_audit::Record audit;
