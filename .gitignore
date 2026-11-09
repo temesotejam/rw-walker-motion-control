@@ -5,3 +5,7 @@ madgwick-build-patch.json
 __pycache__/
 *.pyc
 *.log
+flasher/firmware/
+flasher/smooth/
+flasher/symmetric-rescue/
+flasher/early-rescue/

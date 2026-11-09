@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('assert');
-const {patchFlasherCompletion, patchFlasherAutoStart, installFlasherPatches} = require('../site/flasher-completion.js');
+const {patchFlasherCompletion, patchFlasherAutoStart, installFlasherPatches} = require('../flasher/flasher-completion.js');
 class Dialog { _renderInstall() { return this._client; } }
 assert(patchFlasherCompletion(Dialog));
 const d = new Dialog();

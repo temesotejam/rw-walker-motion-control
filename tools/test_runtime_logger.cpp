@@ -146,7 +146,7 @@ int main(int argc,char** argv){
   const std::string metadata(exportFile.metadata_.c_str());
 #if defined(FOOT_EARLY_TRIAL) && FOOT_EARLY_TRIAL
 #if defined(ANGLE_EARLY_TRIAL) && ANGLE_EARLY_TRIAL
-  assert(metadata.find("\"diagnostic_build_id\":\"angle-early-eta-v1\"")!=std::string::npos);
+  assert(metadata.find("\"diagnostic_build_id\":\"angle-early-weak-zero-v2\"")!=std::string::npos);
   assert(metadata.find("\"geometry_worker_enabled\":false")!=std::string::npos);
   assert(metadata.find("\"applies_during_startup_ramp\":true")!=std::string::npos);
   assert(metadata.find("\"pulse_width_changes_alongside_timing\":true")!=std::string::npos);

@@ -864,6 +864,10 @@ private:
   // Diagnostics are cold and must not change hot member offsets or control.
   GyroHeadingDiagnostic gyro_heading_diagnostic_;
   stall_rescue::Detector stall_rescue_detector_;
+#if defined(EARLY_RESCUE_TRIAL) && EARLY_RESCUE_TRIAL
+  stall_rescue::Detector early_stall_rescue_detector_;
+  bool early_stall_rescue_event_=false;
+#endif
   uint32_t stall_rescue_attempted_peak_ms_=0;
   bool stall_rescue_event_=false;
   bool optional_early_event_=false;

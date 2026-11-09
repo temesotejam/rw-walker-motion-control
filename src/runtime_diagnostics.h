@@ -4,7 +4,19 @@
 #define RUNTIME_VERSION "1.0.99-alternate-foot-trial"
 #if defined(FOOT_EARLY_TRIAL) && FOOT_EARLY_TRIAL
 #if defined(ANGLE_EARLY_TRIAL) && ANGLE_EARLY_TRIAL
-#define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-early-eta-v1"
+#if defined(WALK_SMOOTH_TRIAL) && WALK_SMOOTH_TRIAL
+#if defined(SYMMETRIC_RESCUE_TRIAL) && SYMMETRIC_RESCUE_TRIAL
+#if defined(EARLY_RESCUE_TRIAL) && EARLY_RESCUE_TRIAL
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-early-rescue-v5"
+#else
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-symmetric-rescue-v4"
+#endif
+#else
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-early-smooth-v3"
+#endif
+#else
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-early-weak-zero-v2"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "early-input-geometry-v1"
 #endif

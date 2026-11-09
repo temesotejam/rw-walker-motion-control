@@ -1,0 +1,4 @@
+# These fixtures are verified byte-for-byte against upstream SHA-256 hashes.
+tools/fixtures/adafruit_ahrs_2_4_0/Adafruit_AHRS_FusionInterface.h text eol=lf
+tools/fixtures/adafruit_ahrs_2_4_0/Adafruit_AHRS_Madgwick.cpp text eol=lf
+tools/fixtures/adafruit_ahrs_2_4_0/Adafruit_AHRS_Madgwick.h text eol=lf

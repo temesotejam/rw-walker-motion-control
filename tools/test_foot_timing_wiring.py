@@ -5,7 +5,10 @@ runner=(root/'src/experiment_runner.cpp').read_text(encoding='utf-8')
 policy=runner.split('void ExperimentRunner::updateEnergyControlAutonomousMotion(',1)[1].split('\nvoid ExperimentRunner::updateEnergyControlAutonomousPeakTracker(',1)[0]
 assert 'threshold_deg=tilt_priority_.negativeEarlyThreshold' not in policy
 rescue=runner.split('bool ExperimentRunner::observeInwardStallRescue(',1)[1].split('\nvoid ExperimentRunner::updateEnergyControlAutonomousMotion(',1)[0]
-assert 'energy_control_autonomous_input_peak_percent_==0 && peak_side==1' in rescue
+assert 'energy_control_autonomous_input_peak_percent_==0 &&' in rescue
+assert '(peak_side==1 || peak_side==-1)' in rescue and 'SYMMETRIC_RESCUE_TRIAL' in rescue
+assert 'peak_side==1 &&' in rescue
+assert 'angle_deg*peak_side' in rescue and 'rate_dps*peak_side' in rescue
 assert 'stall_rescue_detector_.observe' in rescue and 'observeInwardStallRescue(' in policy
 assert 'WAIT_ZERO_CROSS' in policy and '!energy_control_autonomous_zero_cross_consumed_for_peak_' in policy
 assert '(crossing || confirmation_input || rescue)' in policy

@@ -1,4 +1,6 @@
 #define FOOT_TREND_CYCLES 2
+#define ANGLE_EARLY_TRIAL 1
+#define WALK_SMOOTH_TRIAL 1
 #include "tilt_priority.h"
 #include "stall_rescue.h"
 #include "long_foot_balance.h"
@@ -113,6 +115,41 @@ class ExperimentRunner {public:
 // EARLY_WRAPPER_SOURCE
 using Event=PsramLogger::EnergyControlAutonomousZeroCrossEvent;
 int main(){
+ // The real selector consumes the same cap in all downstream proposals,
+ // records post-guard command only after a successful ordinary write, and
+ // does not let early/rescue writes pollute that independent history.
+ {ExperimentRunner r;bool healthy=false;r.tilt_priority_.ordinaryResult(1,100,20,true);
+  Event first;first.physical_next_peak_side=1;
+  assert(r.tryTiltPriorityImpl(first,600,&healthy) && healthy && first.output_executed);
+  assert(first.pulse_width_ms==30 && r.tilt_priority_.ordinaryRiseCap(1,601,150)==40);
+  Event other;other.physical_next_peak_side=-1;
+  assert(r.tryTiltPriorityImpl(other,700,&healthy) && other.output_executed);
+  assert(other.pulse_width_ms>30);
+  r.optional_early_event_=true;Event early;early.physical_next_peak_side=1;
+  assert(r.tryTiltPriorityImpl(early,800,&healthy) && early.output_executed && early.pulse_width_ms<=15);
+  assert(r.tilt_priority_.ordinaryRiseCap(1,801,150)==40);
+  r.optional_early_event_=false;r.begin_ok=false;Event failed;failed.physical_next_peak_side=1;
+  assert(r.tryTiltPriorityImpl(failed,900,&healthy) && !failed.output_executed);
+  assert(r.tilt_priority_.ordinaryRiseCap(1,901,150)==150);
+ }
+ // A paired weak result defers the limited early pulse. Exercise the real
+ // dispatch rollback and then let the ordinary ZERO send its own proposal.
+ {ExperimentRunner r;r.tilt_priority_.peak(-1,100,3.f);
+  tilt_priority::Input in;in.now_ms=300;in.preset_deg=8;in.target_deg=8;
+  in.crossing_rate_dps=10;in.next_side=1;in.hardware_cap_ms=150;in.hardware_healthy=true;
+  auto c=r.tilt_priority_.propose(in);assert(c.selected && !c.coast);
+  r.tilt_priority_.crossing(1,300);r.tilt_priority_.confirm(1,300,c,true);
+  r.tilt_priority_.peak(1,480,2.f);
+  r.optional_early_event_=true;Event early;early.physical_next_peak_side=1;
+  assert(r.dispatchTiltPriority(early,600,true,400));
+  assert(!early.output_executed && r.calls==0 && !r.energy_control_autonomous_zero_cross_consumed_for_peak_);
+  assert(r.energy_control_autonomous_half_cycle_state_==EnergyControlAutonomousHalfCycleState::WAIT_ZERO_CROSS);
+  assert(r.energy_control_autonomous_last_accepted_zero_cross_ms_==400);
+  r.optional_early_event_=false;r.energy_control_autonomous_zero_cross_consumed_for_peak_=true;
+  r.energy_control_autonomous_last_accepted_zero_cross_ms_=620;
+  Event zero;zero.physical_next_peak_side=1;zero.zero_cross_time_ms=620;
+  assert(r.dispatchTiltPriority(zero,620,true,400) && zero.output_executed);
+  assert(r.calls==1 && r.finished==1 && r.width>15);}
  // The explicitly invoked future adapter refuses past-centre and repeated
  // attempts and returns to the ordinary zero path after failed output.
  {ExperimentRunner r;r.tilt_priority_.peak(-1,900,3.f);r.begin_ok=false;

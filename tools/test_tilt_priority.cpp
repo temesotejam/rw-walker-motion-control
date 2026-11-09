@@ -16,6 +16,38 @@ static Choice step(Controller& c,int side,uint32_t cross,float peak,bool accepte
   c.peak(side,cross+elapsed,peak);return choice;
 }
 int main() {
+  Controller smooth;
+  assert(smooth.ordinaryRiseCap(1,100,150)==150);
+  smooth.ordinaryResult(1,100,40,true);
+  assert(smooth.ordinaryRiseCap(1,500,150)==50);
+  assert(smooth.ordinaryRiseCap(-1,500,150)==150);
+  assert(smooth.ordinaryRiseCap(1,500,30)==30); // never relax safety
+  assert(smooth.ordinaryRiseCap(1,1701,150)==150); // stale
+  assert(smooth.ordinaryRiseCap(1,99,150)==150); // reversed clock
+  smooth.ordinaryResult(1,500,20,true);
+  assert(smooth.ordinaryRiseCap(1,600,150)==30);
+  smooth.ordinaryResult(1,600,0,false); // failed or coast clears history
+  assert(smooth.ordinaryRiseCap(1,700,150)==150);
+  // A real, paired undershoot can defer an early pulse only when the same
+  // controller currently proposes a larger ordinary command. Deferral does
+  // not issue a command or promise what will be selected at the later ZERO.
+  Controller deferred;deferred.peak(1,100,3.f);
+  auto base=deferred.propose(input(-1,300));assert(base.selected && !base.coast);
+  deferred.crossing(-1,300);deferred.confirm(-1,300,base,true);deferred.peak(-1,480,2.f);
+  Input weak=input(-1,600);weak.hardware_cap_ms=15;
+  auto early_weak=deferred.propose(weak);
+  assert(early_weak.width_ms==15 && deferred.deferEarlyWhenWeak(weak,early_weak,150));
+  assert(!deferred.deferEarlyWhenWeak(weak,early_weak,15));
+  assert(deferred.propose(input(-1,600)).width_ms>15); // normal path unaffected
+  auto unhealthy=weak;unhealthy.hardware_healthy=false;
+  assert(!deferred.deferEarlyWhenWeak(unhealthy,early_weak,150));
+  auto stale_early=weak;stale_early.now_ms=2100;
+  assert(!deferred.deferEarlyWhenWeak(stale_early,early_weak,150));
+  Controller unpaired;unpaired.peak(-1,100,2.f);
+  assert(!unpaired.deferEarlyWhenWeak(weak,early_weak,150));
+  Controller near;near.peak(1,100,3.f);
+  base=near.propose(input(-1,300));near.crossing(-1,300);near.confirm(-1,300,base,true);near.peak(-1,480,4.1f);
+  assert(!near.deferEarlyWhenWeak(weak,near.propose(weak),150));
   // Run 464: one coast is retained after a large incoming peak, but a
   // second coast is replaced by a small startup trial once the return peak
   // has fallen. The replay does not predict the physical result.

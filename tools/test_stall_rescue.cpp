@@ -31,5 +31,22 @@ int main(){
   assert(!d.observe(17270,17267,16796,8.91f,2.93f,2.91f,-3.2f,NAN));
   assert(!d.observe(16900,16897,16796,8.91f,3.1f,3.0f,-3.2f,-2.0f));
   assert(stall_rescue::kMaxPulseMs==15);
+  // Negative-side return in v3 run 185098409, reflected into the detector's
+  // positive-side coordinates. Sparse log samples do not prove device timing.
+  d.reset();
+  assert(!d.observe(19996,19991,19579,7.85f,.82f,.82f,-7.66f,-1.68f));
+  assert(!d.observe(19999,19996,19579,7.85f,.82f,.81f,-1.68f,-2.48f));
+  assert(!d.observe(20001,19999,19579,7.85f,.81f,.78f,-2.48f,-5.28f));
+  assert(d.observe(20008,20001,19579,7.85f,.78f,.76f,-5.28f,-1.93f));
+  // Earlier 15 dps candidate from v4 run 109138637, reflected from
+  // negative-side measurements. No claim about response to an intervention.
+  d.reset();
+  assert(!d.observe(21911,21907,21601,8.5371f,1.90f,1.83f,-15.92f,-14.45f,15.f,.8f,2.5f));
+  assert(!d.observe(21914,21911,21601,8.5371f,1.83f,1.81f,-14.45f,-13.91f,15.f,.8f,2.5f));
+  assert(!d.observe(21916,21914,21601,8.5371f,1.81f,1.76f,-13.91f,-13.72f,15.f,.8f,2.5f));
+  assert(d.observe(21921,21916,21601,8.5371f,1.76f,1.70f,-13.72f,-13.42f,15.f,.8f,2.5f));
+  d.reset();
+  assert(!d.observe(21911,21907,21601,8.5371f,2.7f,2.6f,-16.f,-14.f,15.f,.8f,2.5f));
+  assert(!d.observe(21916,21911,21601,8.5371f,2.6f,2.5f,-14.f,1.f,15.f,.8f,2.5f));
   std::puts("inward stall rescue: confirmed low speed, stale/reversal rejection PASS");
 }

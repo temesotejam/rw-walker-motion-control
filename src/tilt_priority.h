@@ -36,6 +36,24 @@ class Controller {
   void reset() {*this=Controller{};}
   float target()const{return target_deg_;}
   uint16_t widthLimit(int side)const{return history_[index(side)].width_ms;}
+  // Optional ordinary-drive upward slew limit. It only ever lowers a cap;
+  // safety reductions and coast remain free to take effect immediately.
+  // Early, rescue and startup pulses are never entered into this history.
+  uint16_t ordinaryRiseCap(int side,uint32_t now,uint16_t hardware) const {
+    if((side!=1 && side!=-1) || !now)return hardware;
+    const OrdinaryCommand& h=ordinary_[index(side)];
+    if(!h.ms || now<=h.ms || now-h.ms>1500)return hardware;
+    const uint16_t cap=static_cast<uint16_t>(h.width+10u);
+    return cap<hardware ? cap : hardware;
+  }
+  // Call only for an ordinary decision: successful drive records the actual
+  // post-guard width; coast, unavailable or failed output clears the side.
+  void ordinaryResult(int side,uint32_t now,uint16_t width,bool executed) {
+    if(side!=1 && side!=-1)return;
+    OrdinaryCommand& h=ordinary_[index(side)];
+    if(!executed || !now || !width || width>150) {h=OrdinaryCommand{};return;}
+    h.ms=now;h.width=width;
+  }
   // Absolute trial cap: retain the hardware limit and the previously
   // observed time-to-peak guard. The caller may explore around the ordinary
   // ramp/velocity-selected width only while staying under this cap.
@@ -231,7 +249,30 @@ class Controller {
     out.selected=true;out.current_ma=1200;out.width_ms=cap;out.proposed_width_ms=cap;return out;
   }
 
+  // When a measured, paired peak is below the staged target,
+  // don't spend the whole crossing on an early pulse capped below the current
+  // ordinary proposal. This merely defers the decision to the physical ZERO;
+  // the rate and resulting ordinary command may be different there.
+  __attribute__((noinline)) bool deferEarlyWhenWeak(const Input& early,
+                                                    const Choice& early_choice,
+                                                    uint16_t ordinary_cap) const {
+    if(!early.hardware_healthy || (early.next_side!=1 && early.next_side!=-1) ||
+       !early_choice.selected || early_choice.coast || !early_choice.width_ms ||
+       ordinary_cap<=early.hardware_cap_ms || !std::isfinite(early.target_deg)) return false;
+    const History& h=history_[index(early.next_side)];
+    if(!h.peak_ms || h.paired_ms!=h.peak_ms || early.now_ms<h.peak_ms ||
+       early.now_ms-h.peak_ms>1500 || !std::isfinite(h.peak_deg) ||
+       h.peak_deg>=std::fmin(early.target_deg,target_deg_)-.5f) return false;
+    Input ordinary=early;ordinary.hardware_cap_ms=ordinary_cap;
+    const Choice candidate=propose(ordinary);
+    return candidate.selected && !candidate.coast &&
+        candidate.direction==early_choice.direction &&
+        candidate.current_ma==early_choice.current_ma &&
+        candidate.width_ms>early_choice.width_ms;
+  }
+
  private:
+  struct OrdinaryCommand {uint32_t ms=0;uint16_t width=0;};
   struct History {
     float peak_deg=NAN,command_target=NAN;
     uint32_t peak_ms=0,cross_ms=0,paired_ms=0;
@@ -267,6 +308,7 @@ class Controller {
     h.evidence=0;
   }
   History history_[2];
+  OrdinaryCommand ordinary_[2];
   float target_deg_=4.5f;
   uint8_t pair_mask_=0,good_pairs_=0;
   uint8_t unequal_pairs_=0,balanced_pairs_=0;

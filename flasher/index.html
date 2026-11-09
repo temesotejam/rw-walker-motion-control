@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>歩行器ファームウェア書き込み</title>
+  <script src="flasher-completion.js"></script>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10.1.1/dist/web/install-button.js?module"></script>
+  <style>body{font-family:system-ui,sans-serif;max-width:720px;margin:3rem auto;padding:0 1rem;line-height:1.7;color:#203044}main{border:1px solid #dce3eb;border-radius:14px;padding:1.5rem}button{background:#175ab1;color:white;border:0;border-radius:8px;padding:12px 20px;font:inherit;cursor:pointer}.serial-button{background:#435369;margin-top:1rem}code{background:#eef2f7;padding:.15rem .3rem}</style>
+</head>
+<body><main>
+  <h1>歩行器ファームウェア書き込み</h1>
+  <p>今回の試験版 <code>angle-early-weak-zero-v2</code> を書き込みます。歩行器を停止しUSBで接続して、ChromeまたはEdgeで操作してください。</p>
+  <esp-web-install-button manifest="manifest.json">
+    <button slot="activate">試験版を書き込む</button>
+    <span slot="unsupported">PC版ChromeまたはEdgeを使ってください。</span>
+  </esp-web-install-button>
+  <p>書き込みボタンでUSBポートを選択してください。操作中は接続を維持してください。</p>
+</main><script src="soft-boot.js" defer></script></body></html>
