@@ -6,6 +6,9 @@
 #include "foot_angle_estimator.h"
 #include "esp_timer.h"
 #include <new>
+#if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
+#include "cad_support.h"
+#endif
 
 bool FootObserver::begin(OneShotCamera& camera, RunControlWorker& control) {
   camera_ = &camera; control_ = &control;
@@ -78,6 +81,10 @@ void FootObserver::clearRun() {
 void FootObserver::loop() {
   uint32_t seq = 0;
   uint64_t last_valid_us = 0;
+#if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
+  // Single camera-task owner; no geometry work in the real-time control task.
+  foot_pose_prediction::Predictor cad_predictor;
+#endif
   for (;;) {
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::Snapshot);
     const auto run_before = control_->snapshot();
@@ -144,6 +151,29 @@ void FootObserver::loop() {
     f.processing_us = micros() - processing_start;
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::CameraRelease);
     camera_->releaseContinuous(fb);
+#if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
+    const uint32_t cad_start=micros();
+    const uint64_t cad_now=esp_timer_get_time();
+    const bool cad_time=run.measurement_epoch_us && f.frame_us>=run.measurement_epoch_us && cad_now>=f.frame_us;
+    const bool cad_valid=cad_time && f.timestamp_valid && f.frame_valid && f.zero_ready &&
+        f.left_valid && f.right_valid && f.left_in_range && f.right_in_range &&
+        run_before.run_id==run.run_id && run_before.state_id==3 && run.state_id==3 && run.imu_ok;
+    f.cad_prediction=cad_predictor.observe(f.run_id,
+        cad_time ? static_cast<uint32_t>((f.frame_us-run.measurement_epoch_us)/1000) : 0,
+        cad_time ? static_cast<uint32_t>((cad_now-run.measurement_epoch_us)/1000) : 0,
+        cad_valid,f.left_deg,f.right_deg);
+    if(run.mekf_attitude.valid) {
+      const auto& q=run.mekf_attitude.quaternion;
+      f.cad_body_fore_aft_raw=atan2f(2.f*(q.w*q.x+q.y*q.z),1.f-2.f*(q.x*q.x+q.y*q.y))*57.2957795f;
+    }
+    if(f.cad_prediction.ready()) {
+      const auto& p=f.cad_prediction;
+      const bool a=cad_support::switchAngle(p.left,p.right,0,f.cad_switch_positive);
+      const bool b=cad_support::switchAngle(-p.left,-p.right,0,f.cad_switch_negative);
+      f.cad_geometry_valid=a && b;
+    }
+    f.cad_compute_us=micros()-cad_start;
+#endif
     float fps = 0;
     if (f.frame_valid) {
       if (last_valid_us && f.delivered_us > last_valid_us) fps = 1000000.0f / (f.delivered_us - last_valid_us);
@@ -250,6 +280,34 @@ void FootObserver::appendMetadata(PsramString& json) const {
     if (!table.append(row)) { json.fail(); return; }
   }
   if (!table.finish()) { json.fail(); return; }
+#if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
+  // Separate compact table; binary sample format and existing foot fields stay compatible.
+  json += ",\"cad_support_shadow\":{\"revision\":\"supplied_glb_pose_prediction_v1\",\"output_enabled\":false,\"mapping_calibrated\":false,";
+  json += "\"cad_sha256\":\""+String(cad_support::sourceSha256)+"\",";
+  json += "\"geometry\":\"upper_X_hinge_rigid_foot_mesh;nominal_body_pitch_zero;both_foot_sign_hypotheses\",\"camera_positive_direction\":\"forward_for_both_feet_user_confirmed_20261111\",\"lead_ms\":30,";
+  json += "\"timing\":\"prediction_at_camera_processing_plus_lead;not_control_execution_time;frame_exposure_unverified\",\"angle_origin\":\"per_boot_camera_relative_not_CAD_absolute\",";
+  json += "\"reason_names\":[\"ready\",\"warmup\",\"invalid\",\"timestamp\",\"gap\",\"jump\",\"stale\",\"horizon\"],\"records\":";
+  CompactJsonTable<PsramString> cad_table(json);
+  uint32_t cad_stored=0;
+  for(uint32_t i=0;i<s.count;++i) {
+    // Preserve room for the existing metadata tail even in a full log.
+    if(json.length()+4096U>=640U*1024U*8U/10U)break;
+    const auto& f=frames_[i];const auto& p=f.cad_prediction;
+    String row="{\"sequence\":"+String(f.sequence)+",\"reason\":"+String(static_cast<unsigned>(p.reason));
+    row+=",\"age_ms\":"+String(p.age_ms)+",\"horizon_ms\":"+String(p.horizon_ms);
+    row+=",\"left_rate_dps\":"+number(p.left_rate)+",\"right_rate_dps\":"+number(p.right_rate);
+    row+=",\"predicted_left_deg\":"+number(p.left)+",\"predicted_right_deg\":"+number(p.right);
+    row+=",\"switch_sign_plus_deg\":"+number(f.cad_switch_positive)+",\"switch_sign_minus_deg\":"+number(f.cad_switch_negative);
+    row+=",\"body_fore_aft_raw_deg\":"+number(f.cad_body_fore_aft_raw);
+    row+=",\"geometry_valid\":"+String(f.cad_geometry_valid ? "true" : "false");
+    row+=",\"compute_us\":"+String(f.cad_compute_us)+"}";
+    if(!cad_table.append(row)){json.fail();return;}
+    ++cad_stored;
+  }
+  if(!cad_table.finish()){json.fail();return;}
+  json+=",\"stored\":"+String(cad_stored)+",\"total\":"+String(s.count);
+  json+=",\"truncated\":"+String(cad_stored<s.count ? "true" : "false")+"}";
+#endif
   // Sparse supplemental table: [foot_frames row index, observed-delivered us].
   // Keep the existing 80% metadata headroom even in a maximum-size log.
   // A truncated table is explicit; omitted rows always mean unavailable.

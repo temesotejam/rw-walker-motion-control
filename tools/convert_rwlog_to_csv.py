@@ -1236,6 +1236,33 @@ def write_foot_frames(metadata: dict, out_dir: Path) -> int:
         json.dumps(metadata.get("foot_observation", {}), indent=2), encoding="utf-8")
     return len(rows)
 
+
+def write_cad_support_shadow(metadata: dict, out_dir: Path) -> int:
+    block = metadata.get('cad_support_shadow')
+    if block is None:
+        return 0
+    if not isinstance(block, dict) or block.get('output_enabled') is not False:
+        raise ValueError('Invalid CAD shadow metadata')
+    rows = block.get('records')
+    if not isinstance(rows, list):
+        raise ValueError('Invalid CAD shadow records')
+    frames = {f['sequence']: f for f in metadata.get('foot_frames', [])}
+    seen = set()
+    joined = []
+    for row in rows:
+        seq = row.get('sequence')
+        if seq not in frames or seq in seen:
+            raise ValueError('Unmatched or repeated CAD shadow sequence')
+        seen.add(seq)
+        f = frames[seq]
+        joined.append({**{k: f.get(k) for k in ('run_id', 'frame_us', 'delivered_us', 'log_time_us', 'measurement_time_us', 'left_deg', 'right_deg')}, **row})
+    if joined:
+        with (out_dir / 'cad_support_shadow.csv').open('w', newline='', encoding='utf8') as f:
+            writer = csv.DictWriter(f, fieldnames=list(joined[0]))
+            writer.writeheader()
+            writer.writerows(joined)
+    return len(joined)
+
 def convert(path: Path, out_dir: Path) -> None:
     data = path.read_bytes()
     header = parse_header(data)
@@ -1260,6 +1287,7 @@ def convert(path: Path, out_dir: Path) -> None:
     metadata = expand_tables(json.loads(data[metadata_start:metadata_end].decode("utf-8")))
     (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     foot_count = write_foot_frames(metadata, out_dir)
+    cad_count = write_cad_support_shadow(metadata, out_dir)
     e2_shadow_peak_count = write_e2_shadow_peaks(metadata, out_dir)
     q1_shadow_event_count = write_q1_shadow_events(metadata, out_dir)
     q_ident_event_count = write_q_ident_events(metadata, out_dir)
@@ -1286,6 +1314,8 @@ def convert(path: Path, out_dir: Path) -> None:
     print(f"crc_ok={crc_ok}")
     if foot_count:
         print(f"foot_frames={foot_count}")
+    if cad_count:
+        print(f"cad_support_shadow_records={cad_count}")
     if e2_shadow_peak_count:
         print(f"e2_shadow_peak_events={e2_shadow_peak_count}")
     if q1_shadow_event_count:
