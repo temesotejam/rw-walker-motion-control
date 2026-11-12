@@ -4,6 +4,9 @@
 #endif
 #include "control_angle_reference.h"
 #include "experiment_runner.h"
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+#include "compact_json_table.h"
+#endif
 #include "log_quantization.h"
 #include "log_sample_encoder.h"
 #include "madgwick_pitch.h"
@@ -1431,6 +1434,14 @@ void ExperimentRunner::beginStartSync(uint32_t now_ms) {
   early_stall_rescue_detector_.reset();early_stall_rescue_event_=false;
 #endif
   optional_early_event_=false;optional_early_write_uncertain_=false;optional_early_attempted_peak_ms_=0;
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+  foot_pose_=foot_phase_prediction::Projection{};foot_pose_sequence_=0;foot_support_last_check_ms_=0;
+  foot_support_event_=false;foot_support_active_audit_=-1;
+  foot_support_decision_=foot_support_assist::Decision{};
+  foot_support_deceleration_.reset();
+  foot_support_audit_count_=foot_support_audit_total_=0;
+  for(auto& count:foot_support_reason_counts_)count=0;
+#endif
 #if FOOT_EARLY_TRIAL
   early_motion_gate_.clear();early_measurement_epoch_us_=0;
 #if ANGLE_EARLY_TRIAL
@@ -2922,6 +2933,36 @@ void ExperimentRunner::updateEnergyControlAutonomousPulse(uint32_t now_ms) {
     // were completed by the bounded fast selector at the accepted zero crossing.
   }
 }
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+void ExperimentRunner::appendFootSupportMetadata(PsramString& json) const {
+  auto number=[](float v){return std::isfinite(v)?String(v,5):String("null");};
+  json+=",\"foot_support_assist\":{\"revision\":\"pose_transfer_assist_v11\",\"output_enabled\":true,\"cad_mapping_used_for_output\":false,";
+  json+="\"policy\":\"forward_lower_margin_ge1;body_distance_0.8_to_pose_threshold_max5;inward_6_to45dps;ordinary_width_preserved_max60;or_coast_with_deceleration_or_returning_shape_assist15;estimated_zero_lead_width_plus20_to250ms;one_attempt_per_peak;normal_zero_priority\",";
+  json+="\"deceleration\":\"3sample_median;100ms_window;drop4dps;confirmed10ms_3samples;run_peak_gap_reset\",\"coast_override\":\"pose_and_either_deceleration_or_returning_dominant_foot_asymmetry_lower_ge1_incoming_peak_le8.5;unidentified_trial;wheel_and_hardware_guards_retained\",";
+  json+="\"prediction_lead_ms\":0,\"diagnostic_prediction_lead_ms\":30,\"lead_is_measured_motor_latency\":false,\"max_frame_age_ms\":160,\"min_history_score\":0.5,";
+  json+="\"uncertainty_semantics\":\"history_candidate_disagreement_plus_margin_not_error_bound\",\"phase_names\":[\"unknown\",\"stationary\",\"forward\",\"turning\",\"returning\"],";
+  json+="\"reason_names\":[\"selected\",\"inactive\",\"identity\",\"time\",\"pose_unavailable\",\"pose_uncertain\",\"stale_frame\",\"nonfinite\",\"small_forward\",\"wrong_motion\",\"outside_window\",\"speed\",\"no_ordinary_drive\",\"width\",\"insufficient_lead\",\"too_early\",\"coast_needs_evidence\"],\"candidate_check_counts\":[";
+  for(unsigned i=0;i<17;++i){if(i)json+=",";json+=String(foot_support_reason_counts_[i]);}
+  json+="],\"work_control_branch\":16,\"event_kind\":\"angle_rate_early_trial\",\"records\":";
+  CompactJsonTable<PsramString> table(json);uint32_t stored=0;
+  for(uint32_t i=0;i<foot_support_audit_count_;++i){
+    if(json.length()+4096U>=640U*1024U*8U/10U)break;
+    const auto& a=foot_support_audit_[i];
+    String row="{\"time_ms\":"+String(a.time_ms)+",\"peak_ms\":"+String(a.peak_ms)+",\"sequence\":"+String(a.sequence)+",\"frame_ms\":"+String(a.frame_ms);
+    row+=",\"predicted_left_deg\":"+number(a.left)+",\"predicted_right_deg\":"+number(a.right)+",\"confidence\":"+number(a.confidence);
+    row+=",\"left_uncertainty_deg\":"+number(a.left_uncertainty)+",\"right_uncertainty_deg\":"+number(a.right_uncertainty);
+    row+=",\"body_angle_deg\":"+number(a.body_angle)+",\"body_rate_dps\":"+number(a.body_rate)+",\"threshold_deg\":"+number(a.threshold);
+    row+=",\"estimated_zero_ms\":"+number(a.estimated_zero_ms)+",\"normal_width_ms\":"+String(a.normal_width)+",\"requested_width_ms\":"+String(a.requested_width)+",\"guarded_width_ms\":"+String(a.guarded_width);
+    row+=",\"coast_assist\":"+String(a.coast_assist?"true":"false");
+    row+=",\"anticipated_shape_need\":"+String(a.anticipated_shape_need?"true":"false");
+    row+=",\"inward_decelerating\":"+String(a.inward_decelerating?"true":"false");
+    row+=",\"next_side\":"+String(static_cast<int>(a.next_side))+",\"output_executed\":"+String(a.executed?"true":"false")+"}";
+    if(!table.append(row)){json.fail();return;}++stored;
+  }
+  if(!table.finish()){json.fail();return;}
+  json+=",\"stored\":"+String(stored)+",\"total\":"+String(foot_support_audit_total_)+",\"truncated\":"+String(stored<foot_support_audit_total_?"true":"false")+"}";
+}
+#endif
 void ExperimentRunner::observeFootFrame(uint16_t run_id,uint32_t frame_ms,bool left_valid,bool right_valid,float left_deg,float right_deg,float left_px,float right_px,
                                         bool phase_left_detected,bool phase_right_detected,float phase_left_x,float phase_right_x) {
   foot_frame_run_id_=run_id;foot_frame_ms_=frame_ms;
@@ -3279,6 +3320,9 @@ __attribute__((noinline)) bool ExperimentRunner::observeInwardStallRescue(
 
 __attribute__((noinline)) void ExperimentRunner::acceptMotionCrossing(bool rescue,uint32_t t_test_ms,
     float rate,float before,float after,float alpha,float interpolated_time_ms) {
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+  foot_support_deceleration_.reset();
+#endif
   stall_rescue_event_=rescue;
   if(rescue)stall_rescue_attempted_peak_ms_=energy_control_autonomous_last_peak_ms_;
   updateEnergyControlAutonomousAtZeroCross(t_test_ms,rate,before,after,alpha,interpolated_time_ms);
@@ -3352,8 +3396,78 @@ void ExperimentRunner::decideEarlyFootCandidate(uint32_t t_test_ms,uint32_t samp
 }
 
 #if ANGLE_EARLY_TRIAL
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+void ExperimentRunner::tryFootSupportCandidate(uint32_t t_test_ms,uint32_t sample_us,
+    float angle_deg,float rate_dps) {
+  const int8_t side=energy_control_autonomous_last_peak_side_;
+  if(status_.pulse_active || energy_control_autonomous_half_cycle_state_!=EnergyControlAutonomousHalfCycleState::WAIT_ZERO_CROSS ||
+     (side!=1 && side!=-1) || !std::isfinite(angle_deg) || !std::isfinite(rate_dps) ||
+     angle_deg*side<=0 || rate_dps*side>=0 || static_cast<uint32_t>(micros()-sample_us)>10000)
+    foot_support_deceleration_.reset();
+  if(!wheelWorkMode() || energy_control_autonomous_target_peak_deg_!=8.f ||
+     energy_control_autonomous_input_peak_percent_!=0 || status_.emergency_stop || status_.pulse_active ||
+     energy_control_autonomous_half_cycle_state_!=EnergyControlAutonomousHalfCycleState::WAIT_ZERO_CROSS ||
+     !energy_control_autonomous_last_peak_valid_ || energy_control_autonomous_zero_cross_consumed_for_peak_ ||
+     optional_early_attempted_peak_ms_==energy_control_autonomous_last_peak_ms_ ||
+     (energy_control_autonomous_last_accepted_zero_cross_valid_ &&
+      (t_test_ms<=energy_control_autonomous_last_accepted_zero_cross_ms_ ||
+       t_test_ms-energy_control_autonomous_last_accepted_zero_cross_ms_<Config::ENERGY_CONTROL_AUTONOMOUS_MIN_HALF_CYCLE_MS)) ||
+     !std::isfinite(angle_deg) || std::fabs(angle_deg)>5.f ||
+     !std::isfinite(rate_dps) || static_cast<uint32_t>(micros()-sample_us)>10000 ||
+     (foot_support_last_check_ms_ && (t_test_ms<foot_support_last_check_ms_ ||
+       t_test_ms-foot_support_last_check_ms_<5)))return;
+  foot_support_last_check_ms_=t_test_ms;
+  const bool decelerating=foot_support_deceleration_.update(status_.run_id,energy_control_autonomous_last_peak_ms_,t_test_ms,-rate_dps*side);
+  const auto pose=foot_pose_.predict(t_test_ms,0);
+  tilt_priority::Input normal;
+  normal.now_ms=t_test_ms;normal.preset_deg=8.f;normal.target_deg=tilt_priority_.target();
+  normal.next_side=-side;normal.crossing_rate_dps=std::fabs(rate_dps);
+  normal.hardware_cap_ms=tilt_priority_.ordinaryRiseCap(normal.next_side,t_test_ms,Config::WALKING_TARGET8_MAX_PULSE_MS);
+  normal.hardware_healthy=imu_ && imu_->acquisitionHealthy() && !imu_->stale(millis()) && roller_ && roller_->ok();
+  auto ordinary=tilt_priority_.propose(normal);
+  if(ordinary.selected && !ordinary.coast)
+    ordinary.width_ms=tilt_priority_.balanceTrimCap(t_test_ms,normal.next_side,ordinary.width_ms);
+  foot_support_assist::Input in;
+  in.active=true;in.run_id=status_.run_id;in.foot_run_id=foot_pose_.run_id;
+  in.peak_id=energy_control_autonomous_last_peak_ms_;in.peak_side=side;in.now_ms=t_test_ms;in.frame_ms=foot_pose_.frame_ms;
+  in.pose_ready=pose.ready();in.pose_confident=pose.confidence>=.5f && pose.method==foot_phase_prediction::Method::History;
+  in.left_deg=pose.left;in.right_deg=pose.right;
+  in.left_uncertainty_deg=pose.left_uncertainty;in.right_uncertainty_deg=pose.right_uncertainty;
+  in.body_angle_deg=angle_deg;in.body_rate_dps=rate_dps;
+  in.normal_drive_selected=ordinary.selected && !ordinary.coast;in.normal_width_ms=ordinary.width_ms;
+  in.normal_coast_selected=ordinary.selected && ordinary.coast;in.inward_decelerating=decelerating;
+  const bool left_dominant=pose.left-pose.left_uncertainty>=pose.right-pose.right_uncertainty;
+  const auto dominant_phase=left_dominant?pose.phase_left:pose.phase_right;
+  in.anticipated_shape_need=dominant_phase==foot_phase_prediction::Phase::Returning &&
+      std::fabs(pose.left-pose.right)-pose.left_uncertainty-pose.right_uncertainty>=1.f &&
+      energy_control_autonomous_last_peak_amplitude_deg_<=8.5f;
+  const auto decision=foot_support_assist::decide(in);
+  const unsigned reason=static_cast<unsigned>(decision.reason);
+  if(reason<17)++foot_support_reason_counts_[reason];
+  if(!decision.selected)return;
+  FootSupportAudit audit;
+  audit.time_ms=t_test_ms;audit.peak_ms=in.peak_id;audit.sequence=foot_pose_sequence_;audit.frame_ms=in.frame_ms;
+  audit.left=pose.left;audit.right=pose.right;audit.confidence=pose.confidence;
+  audit.left_uncertainty=pose.left_uncertainty;audit.right_uncertainty=pose.right_uncertainty;
+  audit.body_angle=angle_deg;audit.body_rate=rate_dps;audit.threshold=decision.threshold_deg;
+  audit.estimated_zero_ms=decision.estimated_zero_ms;audit.normal_width=ordinary.width_ms;
+  audit.requested_width=decision.width_ms;audit.coast_assist=decision.coast_assist;
+  audit.anticipated_shape_need=in.anticipated_shape_need;audit.inward_decelerating=decelerating;audit.next_side=-side;
+  foot_support_active_audit_=-1;
+  ++foot_support_audit_total_;
+  if(foot_support_audit_count_<96){foot_support_active_audit_=static_cast<int>(foot_support_audit_count_++);foot_support_audit_[foot_support_active_audit_]=audit;}
+  foot_support_decision_=decision;foot_support_sample_us_=sample_us;foot_support_event_=true;
+  const auto pulse_before=status_.pulse_id;
+  acceptOptionalEarlyMotion(t_test_ms,rate_dps,angle_deg);
+  if(foot_support_active_audit_>=0)foot_support_audit_[foot_support_active_audit_].executed=status_.pulse_id!=pulse_before && status_.pulse_active;
+  foot_support_event_=false;foot_support_active_audit_=-1;
+}
+#endif
 void ExperimentRunner::tryAngleEarlyCandidate(uint32_t t_test_ms,uint32_t sample_us,
     float angle_deg,float rate_dps) {
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+  tryFootSupportCandidate(t_test_ms,sample_us,angle_deg,rate_dps);
+#endif
   // Configured target 8 includes the staged 4.5-to-8-degree startup ramp.
   // Cold eligibility is checked at most every 5 ms near centre. Normal ZERO
   // detection remains live on every fresh sample and always takes priority.
@@ -3888,6 +4002,10 @@ bool ExperimentRunner::tryTiltPriorityImpl(
   // Early geometry trial shares the rescue's 15 ms cap; normal ZERO is unchanged.
   in.hardware_cap_ms=(stall_rescue_event_ || optional_early_event_) ?
       stall_rescue::kMaxPulseMs : Config::WALKING_TARGET8_MAX_PULSE_MS;
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+  // Relocate an ordinary proposal, never taper a 15 ms early proposal twice.
+  if(foot_support_event_)in.hardware_cap_ms=Config::WALKING_TARGET8_MAX_PULSE_MS;
+#endif
   in.hardware_healthy=wheelWorkMode() && !status_.emergency_stop &&
       status_.state==ExperimentState::RUNNING_BATCH_SWEEP && !status_.pulse_active &&
       roller_ && roller_->ok() && imu_ && imu_->acquisitionHealthy() && !imu_->stale(millis()) &&
@@ -3899,7 +4017,11 @@ bool ExperimentRunner::tryTiltPriorityImpl(
   if(!in.hardware_healthy) {wheel_cycle_guard_.reset();long_foot_balance_.reset();positive_sway_probe_.interrupt();}
 #if defined(WALK_SMOOTH_TRIAL) && WALK_SMOOTH_TRIAL
   // All downstream proposals see this same optional upward ceiling.
-  if(!stall_rescue_event_ && !optional_early_event_) {
+  if(!stall_rescue_event_ && (!optional_early_event_
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+      || foot_support_event_
+#endif
+      )) {
     if(!in.hardware_healthy)tilt_priority_.ordinaryResult(in.next_side,t_test_ms,0,false);
     else in.hardware_cap_ms=tilt_priority_.ordinaryRiseCap(in.next_side,t_test_ms,in.hardware_cap_ms);
   }
@@ -3913,8 +4035,23 @@ bool ExperimentRunner::tryTiltPriorityImpl(
   const uint16_t active_negative_extra=negative_recovery_enabled ?
       negative_cap_recovery_.extraCap(t_test_ms,in.hardware_healthy) : 0;
   auto choice=tilt_priority_.propose(in);
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+  if(foot_support_event_ && foot_support_decision_.coast_assist) {
+    // A foot-qualified, sustained inward slowdown can require force despite
+    // a large preceding rocking peak. This explicitly overrides only a
+    // normal coast proposal; it is a bounded, unidentified 15 ms trial.
+    if(!choice.selected || !choice.coast)return false;
+    choice.coast=false;choice.current_ma=1200;choice.width_ms=15;choice.proposed_width_ms=15;
+    const uint16_t timing_cap=tilt_priority_.timingCap(in.next_side,t_test_ms,in.hardware_cap_ms);
+    if(choice.width_ms>timing_cap)choice.width_ms=timing_cap;
+  }
+#endif
 #if defined(SWAY_BALANCE_TRIAL) && SWAY_BALANCE_TRIAL
-  if(!stall_rescue_event_ && !optional_early_event_ && choice.selected && !choice.coast) {
+  if(!stall_rescue_event_ && (!optional_early_event_
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+      || foot_support_event_
+#endif
+      ) && choice.selected && !choice.coast) {
     const uint16_t trim_cap=tilt_priority_.balanceTrimCap(t_test_ms,in.next_side,choice.width_ms);
     if(trim_cap<choice.width_ms) {
       event.sway_trim_before_ms=choice.width_ms;
@@ -3942,7 +4079,11 @@ bool ExperimentRunner::tryTiltPriorityImpl(
   if(stall_rescue_event_)negative_cap_recovery_.interrupt();
   if((stall_rescue_event_ || optional_early_event_) && (!choice.selected || choice.coast))return false;
 #if ANGLE_EARLY_TRIAL
-  if(optional_early_event_ && tilt_priority_.deferEarlyWhenWeak(
+  if(optional_early_event_
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+      && !foot_support_event_
+#endif
+      && tilt_priority_.deferEarlyWhenWeak(
       in,choice,Config::WALKING_TARGET8_MAX_PULSE_MS))return false;
 #endif
   // Record every accepted healthy crossing, even when ordinary control is
@@ -4055,7 +4196,23 @@ bool ExperimentRunner::tryTiltPriorityImpl(
   event.wheel_guard_legacy_ms=wheel_cycle_guard_.legacyWidth();
   event.wheel_guard_extra_ms=wheel_cycle_guard_.extraReduction();
   event.wheel_guard_trial_eligible=wheel_cycle_guard_.trialEligible();
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+  if(foot_support_event_) {
+    if(foot_support_active_audit_>=0)foot_support_audit_[foot_support_active_audit_].guarded_width=choice.width_ms;
+    const uint32_t fresh_now=millis()-run_start_ms_;
+    const auto fresh=foot_pose_.predict(fresh_now,0);
+    if(foot_pose_.run_id!=status_.run_id || !fresh.ready() || fresh.confidence<.5f ||
+       fresh_now<t_test_ms || fresh_now-t_test_ms>5 ||
+       static_cast<uint32_t>(micros()-foot_support_sample_us_)>10000 ||
+       foot_support_decision_.estimated_zero_ms<choice.width_ms+20.f+(fresh_now-t_test_ms) ||
+       fresh.age_ms>foot_support_assist::kMaxFrameAgeMs || fresh.left_uncertainty>.75f || fresh.right_uncertainty>.75f ||
+       !foot_support_assist::widthPreserved(foot_support_decision_,choice.width_ms))return false;
+  }
+#endif
   event.work_control_branch=15;event.energy_model_extrapolated=true;
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+  if(foot_support_event_)event.work_control_branch=16;
+#endif
   event.work_prediction_cross_condition=true;
   event.work_brake_cap_ms=choice.width_ms;
   event.solver_selected_integer_width_ms=choice.width_ms;
@@ -4074,6 +4231,15 @@ bool ExperimentRunner::tryTiltPriorityImpl(
   event.pulse_start_ms=choice.coast ? 0 : t_test_ms;
   event.pulse_end_ms=choice.coast ? 0 : t_test_ms+choice.width_ms;
   event.valid=false;event.output_executed=false;
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+  if(foot_support_event_) {
+    // Check again immediately before the only actuator call. A preempted
+    // speculative decision must leave normal ZERO available.
+    const uint32_t fresh_now=millis()-run_start_ms_;
+    if(fresh_now<t_test_ms || fresh_now-t_test_ms>5 ||
+       static_cast<uint32_t>(micros()-foot_support_sample_us_)>10000)return false;
+  }
+#endif
   if(!choice.coast && !beginEnergyControlAutonomousPulse(run_start_ms_+t_test_ms,t_test_ms,
                                         choice.direction,choice.width_ms,choice.current_ma)) {
 #if defined(WALK_SMOOTH_TRIAL) && WALK_SMOOTH_TRIAL

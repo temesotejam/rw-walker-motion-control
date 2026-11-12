@@ -4,6 +4,9 @@
 #include "psram_string.h"
 #include "foot_zero.h"
 #include "white_marker_tracker.h"
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+#include "foot_phase_prediction.h"
+#endif
 #if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
 #include "foot_pose_prediction.h"
 #endif
@@ -26,6 +29,10 @@ struct FootFrame {
   uint8_t right_candidates = 0, left_candidates = 0;
   float right_ambiguity = 0, left_ambiguity = 0;
   FootZeroReason zero_reason = FootZeroReason::Waiting;
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+  foot_phase_prediction::Projection pose_projection;
+  uint32_t pose_compute_us=0;
+#endif
 #if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
   foot_pose_prediction::Result cad_prediction;
   float cad_switch_positive=NAN,cad_switch_negative=NAN;

@@ -17,7 +17,9 @@
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-approach-rescue-v7"
 #endif
 #else
-#if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "foot-support-assist-v11"
+#elif defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "cad-support-shadow-v10"
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "angle-balance-trim-v6"

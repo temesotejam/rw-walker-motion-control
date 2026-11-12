@@ -81,6 +81,9 @@ void FootObserver::clearRun() {
 void FootObserver::loop() {
   uint32_t seq = 0;
   uint64_t last_valid_us = 0;
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+  foot_phase_prediction::Predictor pose_predictor;
+#endif
 #if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
   // Single camera-task owner; no geometry work in the real-time control task.
   foot_pose_prediction::Predictor cad_predictor;
@@ -151,6 +154,23 @@ void FootObserver::loop() {
     f.processing_us = micros() - processing_start;
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::CameraRelease);
     camera_->releaseContinuous(fb);
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+    const uint32_t pose_start=micros();
+    const uint64_t pose_now=esp_timer_get_time();
+    const bool pose_time=run.measurement_epoch_us && f.frame_us>=run.measurement_epoch_us && pose_now>=f.frame_us;
+    const bool pose_valid=pose_time && f.timestamp_valid && f.frame_valid && f.zero_ready &&
+        f.left_valid && f.right_valid && f.left_in_range && f.right_in_range &&
+        run_before.run_id==run.run_id && run_before.state_id==3 && run.state_id==3 && run.imu_ok;
+    pose_predictor.observe(f.run_id,
+        pose_time ? static_cast<uint32_t>((f.frame_us-run.measurement_epoch_us)/1000) : 0,
+        pose_time ? static_cast<uint32_t>((pose_now-run.measurement_epoch_us)/1000) : 0,
+        pose_valid,f.left_deg,f.right_deg);
+    f.pose_projection=pose_predictor.projection();
+    // Availability includes history matching; a driver timestamp is not a
+    // verified exposure timestamp. No history matching runs on Core1.
+    if(pose_time)f.pose_projection.received_ms=static_cast<uint32_t>((esp_timer_get_time()-run.measurement_epoch_us)/1000);
+    f.pose_compute_us=micros()-pose_start;
+#endif
 #if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
     const uint32_t cad_start=micros();
     const uint64_t cad_now=esp_timer_get_time();
@@ -280,6 +300,25 @@ void FootObserver::appendMetadata(PsramString& json) const {
     if (!table.append(row)) { json.fail(); return; }
   }
   if (!table.finish()) { json.fail(); return; }
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+  json+=",\"foot_pose_prediction\":{\"revision\":\"causal_three_frame_history_v1\",\"timing\":\"driver_frame_timestamp;ready_after_camera_processing_and_prediction;exposure_unverified\",\"confidence_semantics\":\"history_match_score_not_probability\",\"uncertainty_semantics\":\"candidate_disagreement_margin_not_error_bound\",\"records\":";
+  CompactJsonTable<PsramString> pose_table(json);uint32_t pose_stored=0;
+  for(uint32_t i=0;i<s.count;++i){
+    if(json.length()+16384U>=640U*1024U*8U/10U)break;
+    const auto& f=frames_[i];const auto& p=f.pose_projection;
+    const auto q=p.predict(p.received_ms,30);
+    String row="{\"sequence\":"+String(f.sequence)+",\"ready_ms\":"+String(p.received_ms);
+    row+=",\"reason\":"+String(static_cast<unsigned>(q.reason))+",\"confidence\":"+number(q.confidence);
+    row+=",\"predicted_left_deg\":"+number(q.left)+",\"predicted_right_deg\":"+number(q.right);
+    row+=",\"left_uncertainty_deg\":"+number(q.left_uncertainty)+",\"right_uncertainty_deg\":"+number(q.right_uncertainty);
+    row+=",\"left_phase\":"+String(static_cast<unsigned>(q.phase_left))+",\"right_phase\":"+String(static_cast<unsigned>(q.phase_right));
+    row+=",\"age_ms\":"+String(q.age_ms)+",\"horizon_ms\":"+String(q.horizon_ms);
+    row+=",\"compute_us\":"+String(f.pose_compute_us)+"}";
+    if(!pose_table.append(row)){json.fail();return;}++pose_stored;
+  }
+  if(!pose_table.finish()){json.fail();return;}
+  json+=",\"stored\":"+String(pose_stored)+",\"total\":"+String(s.count)+",\"truncated\":"+String(pose_stored<s.count?"true":"false")+"}";
+#endif
 #if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
   // Separate compact table; binary sample format and existing foot fields stay compatible.
   json += ",\"cad_support_shadow\":{\"revision\":\"supplied_glb_pose_prediction_v1\",\"output_enabled\":false,\"mapping_calibrated\":false,";

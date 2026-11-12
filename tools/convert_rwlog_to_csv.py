@@ -1263,6 +1263,35 @@ def write_cad_support_shadow(metadata: dict, out_dir: Path) -> int:
             writer.writerows(joined)
     return len(joined)
 
+def write_foot_support_diagnostics(metadata: dict, out_dir: Path) -> int:
+    frames = {f['sequence']: f for f in metadata.get('foot_frames', [])}
+    count = 0
+    for name in ('foot_pose_prediction', 'foot_support_assist'):
+        block = metadata.get(name)
+        if block is None:
+            continue
+        if not isinstance(block, dict) or not isinstance(block.get('records'), list):
+            raise ValueError('Invalid foot support diagnostics')
+        if name == 'foot_support_assist' and block.get('output_enabled') is not True:
+            raise ValueError('Unspecified foot support output policy')
+        joined, seen = [], set()
+        for row in block['records']:
+            seq = row.get('sequence')
+            key = seq if name == 'foot_pose_prediction' else (row.get('time_ms'), row.get('peak_ms'))
+            if seq not in frames or key in seen:
+                raise ValueError('Unmatched or repeated foot support diagnostic')
+            seen.add(key)
+            frame = frames[seq]
+            joined.append({**{k: frame.get(k) for k in ('run_id', 'frame_us', 'delivered_us', 'log_time_us', 'measurement_time_us')}, **row})
+        if joined:
+            with (out_dir / (name + '.csv')).open('w', newline='', encoding='utf8') as f:
+                writer = csv.DictWriter(f, fieldnames=list(joined[0]))
+                writer.writeheader()
+                writer.writerows(joined)
+        count += len(joined)
+    return count
+
+
 def convert(path: Path, out_dir: Path) -> None:
     data = path.read_bytes()
     header = parse_header(data)
@@ -1288,6 +1317,7 @@ def convert(path: Path, out_dir: Path) -> None:
     (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     foot_count = write_foot_frames(metadata, out_dir)
     cad_count = write_cad_support_shadow(metadata, out_dir)
+    support_count = write_foot_support_diagnostics(metadata, out_dir)
     e2_shadow_peak_count = write_e2_shadow_peaks(metadata, out_dir)
     q1_shadow_event_count = write_q1_shadow_events(metadata, out_dir)
     q_ident_event_count = write_q_ident_events(metadata, out_dir)
@@ -1316,6 +1346,8 @@ def convert(path: Path, out_dir: Path) -> None:
         print(f"foot_frames={foot_count}")
     if cad_count:
         print(f"cad_support_shadow_records={cad_count}")
+    if support_count:
+        print(f"foot_support_diagnostic_records={support_count}")
     if e2_shadow_peak_count:
         print(f"e2_shadow_peak_events={e2_shadow_peak_count}")
     if q1_shadow_event_count:

@@ -4,7 +4,7 @@
 
 ## 現在の状態
 
-- 最新は2026-11-11のv10診断版2試行。前進する区間はあるが、連続歩行の成功とは扱わない。揺動は30秒近くまで継続し、足の前振れの山には揺動約2往復ごとのパターンがある。足角度は制御側で最初に受け取る時点で約77 ms前の観測（ドライバ時刻基準）。新しいCAD予測による追加出力は未実装。詳細は末尾と `analysis/2026-11-11-walking/v10_2試行の結果.md`。
+- 最新は2026-11-12に準備した足姿勢支援の試験版v11。遅延した足観測から現在姿勢を推定し、通常入力の前倒し、または形状条件付きcoast解除15 msを実装。ビルド・統合テスト・専用ページ配信は確認済み、実機の書き込みと歩行改善は未検証。最新の実測はv10の2試行で、連続歩行の成功とは扱わない。手順と限界は `docs/FOOT_SUPPORT_ASSIST_V11.md`、詳細は末尾。
 
 - v8 `angle-fast-crossing-v8` の実機試験を確認。CRC正常、測定は30秒で FINISHED、エラーなし。高速通過時の抑制が1回実行され、最後の記録ピークは20.054秒。その後は中心を通らない小さな揺れに収束し、自然歩行の30秒継続を意味しない。
 - v7 `angle-approach-rescue-v7` の実機試験ログを確認。CRC正常、測定は30秒で FINISHED、エラーなし。新しい `approach_inward_stall_rescue` は発生せず、この試行から新しい救済の効果は評価できない。最後のピークは27.480秒。
@@ -299,3 +299,16 @@ python tools\prepare_symmetric_rescue_flasher.py
 
 - ユーザーから「承認します。」と明示承認を受け、既存origin/mainへ5dce698・afa697f・6d34a32の3コミットを通常pushした。送信先は https://github.com/temesotejam/rw-walker-motion-control.git 。リモート先行がないことをfetchで確認してから実行し、mainがbda1dddから6d34a32へ進んだことを確認。
 - この同期結果の引き継ぎ追記も保存・同期する。元動画・RWLOG・変換CSV・抽出画像・バイナリは送信していない。ローカルの未追跡解析出力は保持。ファームウェアや研究結果の変更は今回なし。
+
+## 足姿勢と遅延を考慮する実行試験版v11（2026-11-12）
+
+- ユーザー依頼によりサブエージェント3担当で、足予測、支持入力の設計、独立因果再生を分担。主担当が統合・時刻/重複/送信ガード・ビルド/配信を確認。新環境 `atoms3cam-foot-support-assist`、build ID `foot-support-assist-v11`。v10と旧環境は保持。
+- Core0が過去の似た左右3フレームの軌跡から4点Projectionを作り、Core1は現在の実行判断時刻へ補間。候補間の不一致も内部余裕へ反映。無効フレームのProjectionも転送して失効。入力判断の予測先は0 ms、30 ms先は診断だけで、実測モータ遅延とは扱わない。
+- 7ログの実C++因果比較で6ログのMAEが保持より低下。今回run2/run3のdirect future-frame比較は0.273/0.283度（保持0.304/0.330、旧直線0.435/0.462）。v9は0.416対保持0.413で小悪化。最大誤差・方向取り違えは残り、独立角度真値や歩行成功の検証ではない。
+- 既存早期15 msは通常入力への追加ではなく置換。通常drive時はその時点の通常幅を保持して前倒し（上限60 ms、ガードで縮めば不採用）。通常coast時は最大15 ms/1200 mA指令を、足姿勢と持続減速または先回り形状条件に限って許可。先回り条件はdominant lower-margin footのReturning、前方量下限1度・左右差下限1度、incoming peak8.5度以下。機体ピークを支持切替成功とは見なさない。coast解除は未同定の限定実験であることを明記。
+- 共通範囲: confidence>=0.5、内部余裕左右<=0.75度、画像年齢160 ms以内、向心位置0.8〜足依存最大5度、速度6〜45dps、推定ZEROまで幅+20 ms以上/250 ms以下。未校正CAD根や股関節高さは出力・仕事量換算へ使わない。実行直前に判定経過5 ms以内/IMU年齢10 ms以内を確認。通常ZERO優先・一ピーク一早期試行・未送信の復元・曖昧書込時停止を維持。
+- 実制御shadowの旧軌道再生でrun2候補5、run3候補1、旧279候補2。制御受け取りを15 ms遅くすると4/1/2。現在2試行は旧coast決定より67〜88 ms前の15 ms補助候補。候補は実行や新入力後の応答を示さず、下流ガードで拒否され得る。旧279停止26.5秒直前には候補がなく、停止防止は未実証。
+- ログ: branch16、free_model_revisionはfoot_support_transfer_unmodeled_v11、arrival_energy_model_revisionはnull。RWLOGv56を維持し、converterはfoot_pose_prediction.csvとfoot_support_assist.csvを追加。候補/実行、通常/要求/ガード後幅、形状先回り/実減速を分けて記録。容量不足は明示的truncated。
+- 最終テスト: 新予測/selector/deceleration、実runner統合、旧runner4構成、compactmetadata結合、旧CAD診断互換、足時刻3テスト、足側マッピングPASS。PlatformIO最終SUCCESS、RAM122348/327680、Flash1839161/3342336。firmware.bin1839520 bytes、SHA-256 0371d38f468318ad8ea126a2b3e252eb9c587f97cc19592f244bbbcd6f20d551。
+- 専用ページ http://127.0.0.1:8767/foot-support-assist/ 。manifestと4バイナリHTTP200、配信/ビルド全bytes一致。再準備は `python tools/prepare_foot_support_flasher.py`。実機の今回書き込みは未実施。
+- 仕様/手順: docs/FOOT_SUPPORT_ASSIST_V11.md、docs/FOOT_SUPPORT_ASSIST_DESIGN.md。比較: analysis/2026-11-11-walking/foot_phase_prediction_comparison.md、foot_support_assist_v11_final.md。次はv11の動画とRWLOGで、毎回の足運び・支持移動・前進と、候補/実際の出力を照合する。

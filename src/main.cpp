@@ -308,6 +308,10 @@ static bool controlStep(void*) {
 #if FOOT_EARLY_TRIAL && !ANGLE_EARLY_TRIAL
     earlySubmitFrame(fs,foot_observed_us,measurement_epoch_us);
 #endif
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+    // Even a timestamp-invalid new frame must cancel the previous forecast.
+    runner.observeFootProjection(f.sequence,f.pose_projection);
+#endif
     if(f.sequence!=foot_observation_sequence && f.frame_us>=measurement_epoch_us && f.timestamp_valid) {
       feet.recordControlObservation(f.run_id,f.sequence,foot_observed_us);
       foot_observation_sequence=f.sequence;

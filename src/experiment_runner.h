@@ -57,6 +57,11 @@
 #endif
 #include "long_foot_balance.h"
 #include "negative_cap_recovery.h"
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+#include "foot_phase_prediction.h"
+#include "foot_support_assist.h"
+#include "foot_support_deceleration.h"
+#endif
 
 class ExperimentRunner {
 public:
@@ -67,6 +72,10 @@ public:
   void updateImuDynamicBetaContext();
   void observeFootFrame(uint16_t run_id,uint32_t frame_ms,bool left_valid,bool right_valid,float left_deg,float right_deg,float left_px,float right_px,
                         bool phase_left_detected,bool phase_right_detected,float phase_left_x,float phase_right_x);
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+  void observeFootProjection(uint32_t sequence,const foot_phase_prediction::Projection& p){foot_pose_sequence_=sequence;foot_pose_=p;}
+  void appendFootSupportMetadata(PsramString& json) const; // sealed export only
+#endif
   void setLoopDt(uint32_t dt_us) { status_.loop_dt_us = dt_us; }
   void recordTimingProbeLoop(uint32_t imu_update_us, uint32_t runner_update_us, uint32_t core1_path_us);
 
@@ -876,6 +885,26 @@ private:
   bool stall_rescue_event_=false;
   bool optional_early_event_=false;
   bool optional_early_write_uncertain_=false;
+#if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+  foot_phase_prediction::Projection foot_pose_;
+  uint32_t foot_pose_sequence_=0,foot_support_last_check_ms_=0;
+  uint32_t foot_support_sample_us_=0;
+  bool foot_support_event_=false;
+  foot_support_assist::Decision foot_support_decision_;
+  foot_support_deceleration::Tracker foot_support_deceleration_;
+  struct FootSupportAudit {
+    uint32_t time_ms=0,peak_ms=0,sequence=0,frame_ms=0;
+    float left=NAN,right=NAN,confidence=0,left_uncertainty=NAN,right_uncertainty=NAN;
+    float body_angle=NAN,body_rate=NAN,threshold=NAN,estimated_zero_ms=NAN;
+    uint16_t normal_width=0,requested_width=0,guarded_width=0;
+    int8_t next_side=0;bool executed=false,coast_assist=false,anticipated_shape_need=false,inward_decelerating=false;
+  };
+  FootSupportAudit foot_support_audit_[96];
+  uint32_t foot_support_audit_count_=0,foot_support_audit_total_=0;
+  uint32_t foot_support_reason_counts_[17]={};
+  int foot_support_active_audit_=-1;
+  void __attribute__((optimize("Os", "no-fast-math"),noinline)) tryFootSupportCandidate(uint32_t t_test_ms,uint32_t sample_us,float angle_deg,float rate_dps);
+#endif
 #if FOOT_EARLY_TRIAL
 #if ANGLE_EARLY_TRIAL
   uint32_t angle_late_blocked_peak_ms_=0,angle_last_check_ms_=0;
