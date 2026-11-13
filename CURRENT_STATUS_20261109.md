@@ -4,6 +4,8 @@
 
 ## 現在の状態
 
+- 制御構成の確認（2026-11-13）: 現行v13の±8度試験はMEKFの姿勢/角速度を使う角度振幅優先のパルス幅調整（branch15）と足補助（branch18）が主。エネルギー逆算コード/計測/画面名は残るが、実入力は前段のtilt_priorityが優先し、直近2ログの開始キック以外はbranch15/18。必要エネルギーを毎回逆算する制御やMPCが実行の中心だと説明しない。詳細は末尾「現行v13の制御構成」。
+
 - 最新は2026-11-13のv13実機2試行97855607/241508524。両試行で足ゼロ確定、CRC正常、測定終盤まで足の交替/前進を映像で確認。1本目はbranch18が4回実行、28.894秒Source3の生60+6→実guard65 ms後も正3.387→負6.517→正5.378度と継続。2本目は新補助0回で、22秒付近に従来救済後正0.164度まで弱まり足運びが一時停滞して回復。全区間の滑らかな連続歩行/新加算の因果効果は未確立。頂点付近の横ばいと他脚の微小移動が判定から漏れる弱点を確認。詳細 `analysis/2026-11-13-walking/v13実機2試行_97855607_241508524.md`。今回はファームウェア変更なし。
 
 - 2026-11-13、改善試験版v13 `foot-support-transfer-v13` を実装・検証・ビルドし、`http://127.0.0.1:8767/foot-support-transfer/` を準備。大前振れの初回小反転をsource3で限定的に早く使用し、足量に応じ生通常幅へ最大12 ms加算（生/保護後80 ms以内）。611622951停止窓の再生で実v12より約105 ms早い28.753秒66 ms候補、追加受信遅れ10/25 msでも94/83 ms前の候補。実機歩行改善は未確認。8度開始に足ゼロ/左右有効/新鮮画像を必須化しUIも修正、backend不採用理由を記録する。詳細 `docs/FOOT_SUPPORT_TRANSFER_V13.md`。
@@ -348,3 +350,12 @@ python tools\prepare_symmetric_rescue_flasher.py
 - 配信: `http://127.0.0.1:8767/foot-support-local/` のページ/manifest/4バイナリHTTP200、全バイト一致。再準備 `python tools/prepare_foot_support_local_flasher.py`。実機には今回書き込んでいない。
 - 保存: `docs/FOOT_SUPPORT_LOCAL_V12.md`、`docs/FOOT_SUPPORT_ASSIST_V12_DESIGN.md`、`tools/replay_foot_support_v12.py`、`analysis/2026-11-13-walking/v12_causal_replay.md`、`v12_causal_latency_sensitivity.md`、`v12_build_verification.json`。ソース/テスト/文書/小さい検証結果だけをGitHub同期対象とし、動画/RWLOG/CSV/画像/バイナリ/詳細JSONはローカル保持。
 - 次: v12を専用ページで書き込み、同条件の動画とRWLOGを取得。readyから制御受信までの遅れ、局所候補の実行、支持切り替え、左右交互の足運びと前進の継続を確認する。30秒記録や中心通過数だけで歩行成功と判定しない。
+
+## 現行v13の制御構成（2026-11-13確認）
+
+- ユーザーからエネルギー制御/姿勢推定/足角度/MPCの実使用を質問され、現行ソースと最新2ログmetadata/実行branchを照合。制御コードは変更なし。
+- エネルギー: work_mode、エネルギー換算/記録、必要仕事/電流応答からの逆算コードは保持。しかし±8度ではexperiment_runner.cppのdispatchTiltPriorityが通常エネルギーselectorより先にreturnする。実入力はtilt_priority.hの角度ピークに応じた段階目標/幅更新、角速度によるtaper、足/車輪/時機の保護と補助が主。直近978はbranch15が58件/18が4件/開始0が1件、241はbranch15が66件/開始0が1件。足量による最大12ms加算も必要エネルギーから同定した値ではない。画面/metadataのenergy_model名だけで実行方式を判断しない。
+- 姿勢: MEKF_6state_error_state。クォータニオン姿勢、姿勢誤差3成分/ジャイロバイアス3成分を扱い、ジャイロでpredict、加速度の重力方向を信頼度付きでupdateAccel。制御はMEKF事後姿勢と生ジャイロをMEKFバイアスで補正した角速度を使用。±8度work modeはMEKF絶対角0度基準で、姿勢の時間先読みは無効。磁気をMEKF補正に使わず、dynamic-beta Madgwickは比較/記録用。
+- 足角度: カメラ白マーカー位置を校正表/ゼロ点でカメラ相対角度へ変換。履歴一致予測と直近局所のForward/Turning/Returningを使い、足の出量/左右差/機体位相で補助時機を決め、v13は限定初回戻りと最大12ms加算を使用。周期の足の振れ幅を使う通常入力幅の調整も残る。接地荷重/地面上の足位置やCADから必要仕事を直接計算する方式ではない。遅いカメラ観測を最新の真値と同一視しない。
+- MPC: peak_mpcコードは残るが現行±8度経路では無効。metadata peak_mpc.active=false。choosePeakMpcの呼出はtarget!=8条件、関数内部の選択はtarget==8条件で、現在の8度試験では実行されない。足角度の予測は多段先の入力列最適化ではなく、MPCとは区別する。
+- 参照: src/experiment_runner.cppのMEKF predict/updateAccel、dispatchTiltPriority、choosePeakMpc呼出、src/tilt_priority.h、src/mekf6.cpp/.hpp、src/foot_angle_estimator.cpp、src/foot_support_pose.h、src/foot_support_assist_v13.h、analysis/2026-11-13-walking/97855607/metadata.jsonと241508524/metadata.json。
