@@ -10,16 +10,17 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from analyze_v12_trial import rows, num, stats
+from analyze_v12_trial import rows, num, stats, measurement_rows
 
 
 def compare(directory, video):
     samples = rows(directory, 'timeseries')
-    samples = [r for r in samples if 0 < num(r['t_test_ms']) <= 30000]
+    samples = measurement_rows(samples)
     t = np.array([num(r['t_test_ms']) / 1000 for r in samples])
     angle = np.array([num(r['pitch_mekf_detector_relative_deg']) for r in samples])
     metadata = json.loads((directory/'metadata.json').read_text(encoding='utf8'))
     assists = metadata['foot_support_assist']['records']
+    branch = str(metadata['foot_support_assist'].get('work_control_branch', 17))
     events = rows(directory, 'energy_control_autonomous_zero_cross_events')
     peaks = rows(directory, 'energy_control_autonomous_peak_events')
     feet = rows(directory, 'foot_angles')
@@ -28,7 +29,7 @@ def compare(directory, video):
     transitions = [(a,b) for a,b in zip(nz[:-1],nz[1:]) if angle[a]*angle[b] < 0]
     for support in assists:
         ms = support['time_ms']
-        matches = [r for r in events if r['work_control_branch']=='17'
+        matches = [r for r in events if r['work_control_branch']==branch
                    and abs(num(r['pulse_start_ms'])-ms) <= 10 and r['output_executed']=='True']
         matched = matches[0] if len(matches)==1 else None
         next_peaks = [r for r in peaks if num(r['peak_time_ms'])>ms]
@@ -39,7 +40,9 @@ def compare(directory, video):
         within = (t>=ms/1000) & (t<=min(30,ms/1000+.5))
         measurement = [r for r in samples if ms<=num(r['t_test_ms'])<=ms+100]
         audit.append(dict(support,
-            matched_branch17=matched is not None,
+            matched_support_branch=matched is not None,
+            matched_branch17=matched is not None and branch=='17',
+            matched_branch18=matched is not None and branch=='18',
             matched_pulse_start_ms=num(matched['pulse_start_ms']) if matched else None,
             matched_width_ms=num(matched['pulse_width_ms']) if matched else None,
             next_sampled_sign_cross_bracket_s=[float(t[crossing[0]]),float(t[crossing[1]])] if crossing else None,
@@ -92,7 +95,9 @@ def compare(directory, video):
         'measurement_to_video_offset_s':offset,'fit_mse_deg2':mse,'gain':gain,'bias':bias,'drift_dps':drift,
         'alternative_fits_separated_300ms':[x for x in sorted(fits) if abs(x[1]-offset)>.3][:3]}
     fig,axes=plt.subplots(3,1,figsize=(13,9),constrained_layout=True)
-    for ax,(lo,hi) in zip(axes,[(0,30),(22.7,24.5),(27.8,30)]):
+    center = assists[-1]['time_ms']/1000 if assists else 28.8
+    middle = assists[-2]['time_ms']/1000 if len(assists)>1 else 15.7
+    for ax,(lo,hi) in zip(axes,[(0,30),(max(0,middle-.7),min(30,middle+1)),(27.8,30)]):
         vt=optical[:,0]-offset
         ax.plot(t,angle,label='IMU detector',lw=1)
         ax.plot(vt,(optical[:,1]-bias-drift*vt)/gain,label='white body markers, affine/drift fit',lw=1)
@@ -102,8 +107,11 @@ def compare(directory, video):
     axes[-1].set_xlabel('Approximate measurement time [s]')
     fig.savefig(directory/'motion_alignment.png',dpi=140);plt.close(fig)
     cap=cv2.VideoCapture(str(video))
-    for name,start,step,count in [('assist_9561',9.3,.1,12),('assist_23661',23.3,.1,16),
-                                   ('assist_28858',28.45,.1,20),('end',29.3,.15,12)]:
+    windows=[(f'assist_{a["time_ms"]}',a['time_ms']/1000-.35,.1,16) for a in assists]
+    windows += [(f'rescue_{e["zero_cross_time_ms"]}',num(e['zero_cross_time_ms'])/1000-.35,.1,20)
+                for e in events if 'rescue' in e['event_kind'] and e['output_executed']=='True']
+    windows += [('end',28.2,.15,20),('after_end',30,.2,12)]
+    for name,start,step,count in windows:
         fig,axs=plt.subplots((count+3)//4,4,figsize=(12,2.5*((count+3)//4)))
         for i,ax in enumerate(axs.flat):
             ax.axis('off')
@@ -117,7 +125,7 @@ def compare(directory, video):
     cap.release()
     result={'video_sha256':hashlib.sha256(video.read_bytes()).hexdigest(),
             'fps':fps,'frames':frame_id,'tracked_marker_frames':len(optical),
-            'alignment':alignment,'support_audits':audit}
+            'alignment':alignment,'support_branch':branch,'support_audits':audit}
     (directory/'video_audit.json').write_text(json.dumps(result,indent=2),encoding='utf8')
     print(json.dumps(result,indent=2))
 

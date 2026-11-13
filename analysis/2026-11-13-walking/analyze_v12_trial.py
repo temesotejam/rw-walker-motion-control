@@ -27,6 +27,13 @@ def num(value):
         return float('nan')
 
 
+def measurement_rows(samples):
+    # Format56 state3 is the actual measurement; states6/7 are LED sync.
+    # END sync retains t_test_ms=30000 for another ~5s. Folding those rows
+    # onto t=30 invents extra crossings and corrupts terminal statistics.
+    return [r for r in samples if r['state_id'] == '3' and 0 <= num(r['t_test_ms']) <= 30000]
+
+
 def stats(values):
     values = np.asarray(values, dtype=float)
     values = values[np.isfinite(values)]
@@ -46,9 +53,7 @@ def analyze(directory, original):
     assist = rows(directory, 'foot_support_assist')
     peaks = rows(directory, 'energy_control_autonomous_peak_events')
     events = rows(directory, 'energy_control_autonomous_zero_cross_events')
-    # t_test_ms is the recorded measurement clock; pre-sync samples have no
-    # positive measurement time and must not be folded onto the first sample.
-    measured = [r for r in samples if 0 < num(r['t_test_ms']) <= 30000]
+    measured = measurement_rows(samples)
     t = np.array([num(r['t_test_ms']) / 1000 for r in measured])
     angle = np.array([num(r['pitch_mekf_detector_relative_deg']) for r in measured])
     rate = np.array([num(r['physical_roll_rate_dps']) for r in measured])
@@ -63,12 +68,14 @@ def analyze(directory, original):
         ['timestamp_valid', 'frame_valid', 'zero_ready', 'left_valid',
          'right_valid', 'left_in_range', 'right_in_range'])]
     support = metadata.get('foot_support_assist', {})
+    support_branch = str(support.get('work_control_branch', 17))
     zero_locked = bool(feet) and all(r['zero_ready'] == 'True' for r in feet)
     reject = dict(zip(support.get('reason_names', []), support.get('candidate_check_counts', [])))
     summary = {
         'input_sha256': hashlib.sha256(original.read_bytes()).hexdigest(),
         'build_id': metadata.get('diagnostic_build_id'),
         'format_version': header['format_version'], 'samples': len(samples),
+        'measurement_samples': len(measured),
         'terminal': metadata.get('terminal_state'),
         'feet': len(feet), 'fully_control_valid_feet': len(full_valid),
         'zero_ready': dict(Counter(r['zero_ready'] for r in feet)),
@@ -80,6 +87,9 @@ def analyze(directory, original):
         'support_audits': len(assist), 'support_total': support.get('total'),
         'support_candidate_checks': reject,
         'branch17_executed': sum(r['work_control_branch'] == '17' for r in executed),
+        'branch18_executed': sum(r['work_control_branch'] == '18' for r in executed),
+        'support_branch': support_branch,
+        'support_executed': sum(r['work_control_branch'] == support_branch for r in executed),
         'executed': dict(Counter(r['event_kind'] for r in executed)),
         'peaks': len(peaks),
         'last_peaks': [{k: r[k] for k in ['peak_time_ms', 'physical_peak_side',
@@ -121,14 +131,14 @@ def analyze(directory, original):
         for r in executed:
             tm = num(r['pulse_start_ms']) / 1000
             width = num(r['pulse_width_ms']) * num(r['physical_next_peak_side'])
-            color = 'red' if r['work_control_branch'] == '17' else 'green'
+            color = 'red' if r['work_control_branch'] == support_branch else 'green'
             axes[3].vlines(tm, 0, width, color=color)
         axes[3].set_ylabel('Command width x side [ms]')
         axes[3].set_xlabel('Measurement time [s]')
         for ax in axes:
             ax.set_xlim(*limits)
             ax.grid(alpha=.3)
-        fig.suptitle(f'v12 trial {directory.name}: branch17 outputs={summary["branch17_executed"]}; '
+        fig.suptitle(f'{summary["build_id"]} trial {directory.name}: support outputs={summary["support_executed"]}; '
                      + ('foot zero locked' if zero_locked else 'foot zero unconfirmed'))
         fig.savefig(directory / (name + '.png'), dpi=140)
         plt.close(fig)
