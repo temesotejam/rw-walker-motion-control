@@ -168,7 +168,11 @@ void tick() {
   }
   if (report_sent == report_length && (now - last_report_ms >= 1000 || !last_report_ms)) {
     report_sent = report_length = 0; report_started_ms = last_report_ms = now;
+#if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
+    append("\nUSBDBG,boot,version=" RUNTIME_VERSION ",build=" RUNTIME_DIAGNOSTIC_BUILD_ID ",id=%u,reset=%s,reset_id=%u,stage=%s,failures=0x%08x,observer=%u,observer_stack_bytes=%u,usb_dropped=%u\n",
+#else
     append("\nUSBDBG,boot,version=" RUNTIME_VERSION ",id=%u,reset=%s,reset_id=%u,stage=%s,failures=0x%08x,observer=%u,observer_stack_bytes=%u,usb_dropped=%u\n",
+#endif
         current_boot.id, reason(current_boot.reset), current_boot.reset, stageName(get(boot_stage)),
         get(boot_failures), observer_started, heavyAllowed() ? uxTaskGetStackHighWaterMark(nullptr) : 0, dropped);
     append("USBDBG,mode,enabled=1,run_quiet=%u,heavy_scans_allowed=%u\n", runActive(), heavyAllowed());

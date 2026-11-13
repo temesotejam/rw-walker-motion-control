@@ -1292,6 +1292,22 @@ def write_foot_support_diagnostics(metadata: dict, out_dir: Path) -> int:
     return count
 
 
+def write_walking_energy_diagnostics(metadata: dict, out_dir: Path) -> int:
+    block = metadata.get('walking_energy')
+    if block is None:
+        return 0
+    if not isinstance(block, dict) or not isinstance(block.get('records'), list):
+        raise ValueError('Invalid walking energy diagnostics')
+    rows = block['records']
+    if rows:
+        fields = list(dict.fromkeys(key for row in rows for key in row))
+        with (out_dir / 'walking_energy.csv').open('w', newline='', encoding='utf8') as f:
+            writer = csv.DictWriter(f, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(rows)
+    return len(rows)
+
+
 def convert(path: Path, out_dir: Path) -> None:
     data = path.read_bytes()
     header = parse_header(data)
@@ -1318,6 +1334,7 @@ def convert(path: Path, out_dir: Path) -> None:
     foot_count = write_foot_frames(metadata, out_dir)
     cad_count = write_cad_support_shadow(metadata, out_dir)
     support_count = write_foot_support_diagnostics(metadata, out_dir)
+    walking_energy_count = write_walking_energy_diagnostics(metadata, out_dir)
     e2_shadow_peak_count = write_e2_shadow_peaks(metadata, out_dir)
     q1_shadow_event_count = write_q1_shadow_events(metadata, out_dir)
     q_ident_event_count = write_q_ident_events(metadata, out_dir)
@@ -1348,6 +1365,8 @@ def convert(path: Path, out_dir: Path) -> None:
         print(f"cad_support_shadow_records={cad_count}")
     if support_count:
         print(f"foot_support_diagnostic_records={support_count}")
+    if walking_energy_count:
+        print(f"walking_energy_records={walking_energy_count}")
     if e2_shadow_peak_count:
         print(f"e2_shadow_peak_events={e2_shadow_peak_count}")
     if q1_shadow_event_count:

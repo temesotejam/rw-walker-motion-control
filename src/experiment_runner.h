@@ -10,6 +10,9 @@
 #include "autonomous_input_current.h"
 #include "autonomous_brake_limit.h"
 #include "lateral_energy_control.h"
+#if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
+#include "walking_energy_policy.h"
+#endif
 #include "wheel_work_energy_control.h"
 #include "walking_energy_loss.h"
 #include "low_peak_energy.h"
@@ -665,6 +668,22 @@ private:
       Config::ENERGY_CONTROL_V0_CG_HEIGHT_M,Config::ENERGY_CONTROL_V0_RADIUS_M,
       Config::ENERGY_CONTROL_V0_INNER_EDGE_X_M,Config::ENERGY_CONTROL_V0_OUTER_EDGE_X_M};
   lateral_energy::CurrentTable lateral_current_table_;
+#if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
+  lateral_energy::CurrentTable walking_energy_current_;
+  float walking_energy_peaks_[2]={NAN,NAN};
+  uint32_t walking_energy_peak_ms_[2]={0,0};
+  struct WalkingEnergyAudit {
+    uint32_t time_ms=0,peak_ms=0;int8_t side=0;
+    uint16_t requested_ms=0,guarded_ms=0;
+    bool executed=false,optional=false,rescue=false;
+    walking_energy_policy::Decision decision;
+  };
+  WalkingEnergyAudit walking_energy_audit_[192];
+  uint32_t walking_energy_count_=0,walking_energy_total_=0;
+  bool tryWalkingEnergy(PsramLogger::EnergyControlAutonomousZeroCrossEvent& event,uint32_t t,bool* healthy);
+  void tryWalkingEnergyFoot(uint32_t t,uint32_t sample,float angle,float rate);
+  void appendWalkingEnergyMetadata(PsramString& json) const;
+#endif
   lateral_energy::CurrentTable positive_current_probe_tables_[2];
   peak_error_adaptation::Model peak_error_model_;
   bool peak_adaptation_enabled_ = false;
