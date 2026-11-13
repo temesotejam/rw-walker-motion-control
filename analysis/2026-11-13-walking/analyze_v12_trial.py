@@ -63,6 +63,7 @@ def analyze(directory, original):
         ['timestamp_valid', 'frame_valid', 'zero_ready', 'left_valid',
          'right_valid', 'left_in_range', 'right_in_range'])]
     support = metadata.get('foot_support_assist', {})
+    zero_locked = bool(feet) and all(r['zero_ready'] == 'True' for r in feet)
     reject = dict(zip(support.get('reason_names', []), support.get('candidate_check_counts', [])))
     summary = {
         'input_sha256': hashlib.sha256(original.read_bytes()).hexdigest(),
@@ -94,23 +95,27 @@ def analyze(directory, original):
         'driver_to_control_ms': stats([(num(r['control_observed_us']) - num(r['frame_us'])) / 1000 for r in observed]),
         'delivery_to_control_ms': stats([(num(r['control_observed_us']) - num(r['delivered_us'])) / 1000 for r in observed]),
         'control_observation_capture': metadata.get('foot_control_observations'),
-        'scope': 'no video; provisional nominal-zero angles are not calibrated control observations; no contact or forward-displacement inference',
+        'scope': ('log audit only; camera-relative foot angles; no contact or forward-displacement inference'
+                  if zero_locked else 'log audit only; provisional nominal-zero angles are not calibrated control observations; no contact or forward-displacement inference'),
     }
     # Avoid duplicating detail rows in the compact output.
     summary['control_observation_capture'] = {k: v for k, v in
         (summary['control_observation_capture'] or {}).items() if k != 'rows'}
     ft = np.array([num(r['measurement_time_us']) / 1e6 for r in feet])
-    for name, limits in [('timeline', (0, 30)), ('stop_detail', (23.7, 26.3))]:
+    last_input_s = num(executed[-1]['pulse_start_ms']) / 1000 if executed else 25
+    detail_start = max(0, last_input_s - 1)
+    for name, limits in [('timeline', (0, 30)), ('stop_detail', (detail_start, min(30, last_input_s + 1.6)))]:
         fig, axes = plt.subplots(4, 1, figsize=(13, 10), sharex=True, constrained_layout=True)
         axes[0].plot(t, angle, lw=.8, color='purple')
         axes[0].axhline(0, color='black', lw=.5)
         axes[0].set_ylabel('Body detector [deg]')
         for side, color in [('left', 'tab:blue'), ('right', 'tab:red')]:
             values = [num(r[side + '_deg']) if r[side + '_reason'] == 'detected'
-                      and r[side + '_in_range'] == 'True' else np.nan for r in feet]
+                      and r[side + '_in_range'] == 'True'
+                      and (not zero_locked or r[side + '_valid'] == 'True') else np.nan for r in feet]
             axes[1].plot(ft, values, '.--', color=color, ms=3, label=side)
         axes[1].legend()
-        axes[1].set_ylabel('Provisional foot [deg]\nZERO NOT LOCKED; invalid')
+        axes[1].set_ylabel('Camera foot [deg]' if zero_locked else 'Provisional foot [deg]\nZERO NOT LOCKED; invalid')
         axes[2].plot(t, rate, lw=.8, color='tab:orange')
         axes[2].set_ylabel('Body rate [deg/s]')
         for r in executed:
@@ -123,7 +128,8 @@ def analyze(directory, original):
         for ax in axes:
             ax.set_xlim(*limits)
             ax.grid(alpha=.3)
-        fig.suptitle('v12 trial 43750941: no branch17 output; foot zero unconfirmed')
+        fig.suptitle(f'v12 trial {directory.name}: branch17 outputs={summary["branch17_executed"]}; '
+                     + ('foot zero locked' if zero_locked else 'foot zero unconfirmed'))
         fig.savefig(directory / (name + '.png'), dpi=140)
         plt.close(fig)
     (directory / 'trial_audit.json').write_text(json.dumps(summary, indent=2), encoding='utf8')
