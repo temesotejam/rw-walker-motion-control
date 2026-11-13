@@ -4,7 +4,7 @@
 
 ## 現在の状態
 
-- 最新は2026-11-12に準備した足姿勢支援の試験版v11。遅延した足観測から現在姿勢を推定し、通常入力の前倒し、または形状条件付きcoast解除15 msを実装。ビルド・統合テスト・専用ページ配信は確認済み、実機の書き込みと歩行改善は未検証。最新の実測はv10の2試行で、連続歩行の成功とは扱わない。手順と限界は `docs/FOOT_SUPPORT_ASSIST_V11.md`、詳細は末尾。
+- 最新は2026-11-13のv11実機試行141282685。新しい先回り補助は7.429/9.034/10.652秒に各15 ms実行されたが、27.622秒の負ピーク後に中心を通れず足運びが途切れた。連続歩行の成功とは扱わない。終盤の大きな前振れは有効観測なのに反復予測の対象外となり、さらに通常70 ms案が前倒し上限60 msを超える独立した制約がある。詳細は `analysis/2026-11-13-walking/v11実機試験_141282685.md` と末尾。
 
 - v8 `angle-fast-crossing-v8` の実機試験を確認。CRC正常、測定は30秒で FINISHED、エラーなし。高速通過時の抑制が1回実行され、最後の記録ピークは20.054秒。その後は中心を通らない小さな揺れに収束し、自然歩行の30秒継続を意味しない。
 - v7 `angle-approach-rescue-v7` の実機試験ログを確認。CRC正常、測定は30秒で FINISHED、エラーなし。新しい `approach_inward_stall_rescue` は発生せず、この試行から新しい救済の効果は評価できない。最後のピークは27.480秒。
@@ -312,3 +312,16 @@ python tools\prepare_symmetric_rescue_flasher.py
 - 最終テスト: 新予測/selector/deceleration、実runner統合、旧runner4構成、compactmetadata結合、旧CAD診断互換、足時刻3テスト、足側マッピングPASS。PlatformIO最終SUCCESS、RAM122348/327680、Flash1839161/3342336。firmware.bin1839520 bytes、SHA-256 0371d38f468318ad8ea126a2b3e252eb9c587f97cc19592f244bbbcd6f20d551。
 - 専用ページ http://127.0.0.1:8767/foot-support-assist/ 。manifestと4バイナリHTTP200、配信/ビルド全bytes一致。再準備は `python tools/prepare_foot_support_flasher.py`。実機の今回書き込みは未実施。
 - 仕様/手順: docs/FOOT_SUPPORT_ASSIST_V11.md、docs/FOOT_SUPPORT_ASSIST_DESIGN.md。比較: analysis/2026-11-11-walking/foot_phase_prediction_comparison.md、foot_support_assist_v11_final.md。次はv11の動画とRWLOGで、毎回の足運び・支持移動・前進と、候補/実際の出力を照合する。
+
+## v11実機試験141282685（2026-11-13）
+
+- 入力: Pictures/Camera Roll/WIN_20261113_11_32_46_Pro.mp4、Downloads/energy_control_autonomous_run_2_141282685.rwlog。CRC正常、build ID foot-support-assist-v11、10299サンプル、足397フレーム、66ピーク。元データは変更なし。
+- 新補助3件は全てbranch16実行イベント・pulse ID15/18/21と一致。7.429/9.034/10.652秒に正側1200mA指令15ms、normal0/request15/guard15。全て先回り形状条件で、実減速検出ではない。同半周期の通常ZEROとの二重入力はなし。1200mAは指令で、100ms内readback最大は約123/122/127mA、実電流や必要トルクと同一視しない。
+- 次の制御中心通過65/77/85ms後は確認したが、支持移動や歩行改善とは断定しない。段階目標8度は23.215秒以降に到達したが、v10との同条件反復比較ではなく新補助の因果効果は不明。
+- 終盤: 最終制御中心通過27.409秒頃、負ピーク27.622秒/8.152度。その後30秒まで負側のままで最大でも約-0.95度。従来救済27.958秒/正15msも出たが通過せず。動画では一方の足が前に出た姿勢を残し、足運びが途切れて小さい揺動へ移る。連続歩行成功としない。
+- 映像対応: 白機体マーカーとIMUの近似波形対応で動画時刻≒測定+9.81秒。停止過程は動画約37.4〜39.8秒。LED同期ではなく、接地反力/滑り/仕事量は未計測。主図timeline.png、stop_detail.png、stop_selected_frames.png、motion_alignment.pngを目視確認。
+- 反復モデルの弱点: 27.655〜27.955秒の両足は有効・範囲内・reason Readyだが、右足が過去4秒最大約3.229度から5.757度へ増え類似履歴なし。confidence0、既定余裕1.25度で支援不可。27.917秒には5.757→5.369→3.958度の2区間連続減少が処理済みなのに、局所観測と反復モデルの確信を混同し位相Unknownへ落としている。
+- 別の独立制約: 実C++通常shadowは段階66/66一致。27.806〜27.955秒の26時点で通常proposalはcoastではなくdrive70ms。v11の通常移動上限60msで不採用になる。27.921秒以降は一定速度ZERO所要時間250ms超でTooEarly条件にも該当する。実際はPoseUncertainが先に拒否するため、これらは後段の独立gateを分けた診断と明記。confidenceだけを緩めても直らない。
+- 遅延/予測: 初回制御観測77.29ms中央値/86.81ms95%点（保存64標本）、新予測計算152us中央値/932us最大。実ready時刻C++再生は理由397/397一致、保存予測差最大0.00001165度、実制御audit3件も一致。未使用データの現在0ms direct frame MAE0.327度/保持0.358/旧直線0.485。平均改善と停止時の適用可否を区別する。+30ms診断のconfidence/margin条件通過は25〜30秒12/49枚へ低下（制御可能率ではない）。
+- 保存先: analysis/2026-11-13-walking/v11実機試験_141282685.md、analyze_trial.py、141282685/ の変換CSV/JSON・図・映像抜粋・audit_review.md/json・prediction_review.md/json・review_prediction.py・failure_review.md/json。今回ファームウェアは変更していない。
+- 次: 有効な局所観測と反復モデルの確信を分離し、大きい前振れ/失速を扱う推定と支援を検討。通常幅を保持する前倒し上限、中心手前の減速を早過ぎと扱う時間条件も同時に見直す。必要仕事と支持移動の実機効果は未同定で、無条件の一致度緩和や一律出力増量にしない。
