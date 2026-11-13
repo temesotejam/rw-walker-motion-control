@@ -15,6 +15,9 @@
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
 #include "walking_energy_policy_v15.h"
 #endif
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+#include "energy_pulse_completion.h"
+#endif
 #endif
 #include "wheel_work_energy_control.h"
 #include "walking_energy_loss.h"
@@ -682,9 +685,23 @@ private:
     bool executed=false,optional=false,rescue=false;
     bool early_budget_checked=false,early_budget_admitted=false;
     walking_energy_policy::Decision decision;
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+    uint32_t trigger_ms=0,output_end_ms=0;
+    uint8_t completion_reason=0;
+    float start_i0_ma=NAN,start_goal_ma=NAN,start_tau_s=NAN,start_rate_dps=NAN;
+    energy_pulse_completion::Result completion;
+#endif
   };
   WalkingEnergyAudit walking_energy_audit_[192];
   uint32_t walking_energy_count_=0,walking_energy_total_=0;
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+  int16_t walking_energy_active_audit_=-1;
+  bool walking_energy_completion_pending_=false;
+  uint8_t walking_energy_stop_reason_=2;
+  WalkingEnergyAudit walking_energy_active_pulse_;
+  float walking_pulse_start_i0_ma_=NAN,walking_pulse_goal_ma_=NAN,walking_pulse_tau_s_=NAN;
+  void finishWalkingEnergyPulse(uint32_t now_ms,uint8_t reason);
+#endif
   bool tryWalkingEnergy(PsramLogger::EnergyControlAutonomousZeroCrossEvent& event,uint32_t t,bool* healthy);
   void tryWalkingEnergyFoot(uint32_t t,uint32_t sample,float angle,float rate);
   void appendWalkingEnergyMetadata(PsramString& json) const;

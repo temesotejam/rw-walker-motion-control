@@ -62,7 +62,7 @@ def analyze(trial):
     predictions = read(folder, "foot_pose_prediction.csv")
     local = read(folder, "foot_local_prediction.csv")
     ready = {r["sequence"]: r for r in predictions}
-    active_feet = [r for r in feet if num(r["measurement_time_us"]) is not None and 0 <= float(r["measurement_time_us"]) <= 30000000]
+    active_feet = [r for r in feet if num(r["measurement_time_us"]) is not None and 0 <= float(r["measurement_time_us"]) <= 30000000 and r["state_id"] == "3"]
     for r in active_feet:
         r["frame_ms"] = float(r["measurement_time_us"]) / 1000
         epoch = float(r["frame_us"]) - float(r["measurement_time_us"])
@@ -81,6 +81,8 @@ def analyze(trial):
                          left_valid=sum(r["left_valid"] == "True" for r in ff), right_valid=sum(r["right_valid"] == "True" for r in ff),
                          left_deg=stats([num(r["left_deg"]) for r in ff if r["left_valid"] == "True"]),
                          right_deg=stats([num(r["right_deg"]) for r in ff if r["right_valid"] == "True"]),
+                         left_qualified_deg=stats([num(r["left_deg"]) for r in ff if r["left_valid"] == "True" and r["left_in_range"] == "True"]),
+                         right_qualified_deg=stats([num(r["right_deg"]) for r in ff if r["right_valid"] == "True" and r["right_in_range"] == "True"]),
                          body_angle_deg=stats([num(r["pitch_mekf_detector_relative_deg"]) for r in ss]),
                          body_rate_dps=stats([num(r["physical_roll_rate_dps"]) for r in ss]),
                          peak_plus_deg=stats([float(r["peak_amplitude_deg"]) for r in pp if r["physical_peak_side"] == "1"]),
@@ -107,7 +109,8 @@ def analyze(trial):
     for side in ("left", "right"):
         valid = [r for r in active_feet if r[f"{side}_valid"] == "True"]
         ranked = sorted(valid, key=lambda r: float(r[f"{side}_deg"]), reverse=True)[:8]
-        forward_extremes[side] = [dict(frame_ms=r["frame_ms"], angle_deg=float(r[f"{side}_deg"]), ready_ms=r["ready_ms"], sequence=r["sequence"]) for r in ranked]
+        forward_extremes[side] = [dict(frame_ms=r["frame_ms"], angle_deg=float(r[f"{side}_deg"]), ready_ms=r["ready_ms"], sequence=r["sequence"],
+                                     in_calibration_range=r[f"{side}_in_range"] == "True") for r in ranked]
     foot_metadata = m.get("foot_support_assist", {})
     counts = foot_metadata.get("candidate_check_counts", [])
     names = foot_metadata.get("reason_names", [])
@@ -119,13 +122,33 @@ def analyze(trial):
         pp = [r for r in active_peaks if low <= float(r["peak_time_ms"]) < high]
         comparisons[label] = dict(left_deg=stats([num(r["left_deg"]) for r in ff if r["left_valid"] == "True"]),
                                  right_deg=stats([num(r["right_deg"]) for r in ff if r["right_valid"] == "True"]),
+                                 left_qualified_deg=stats([num(r["left_deg"]) for r in ff if r["left_valid"] == "True" and r["left_in_range"] == "True"]),
+                                 right_qualified_deg=stats([num(r["right_deg"]) for r in ff if r["right_valid"] == "True" and r["right_in_range"] == "True"]),
                                  plus_peak_deg=stats([float(r["peak_amplitude_deg"]) for r in pp if r["physical_peak_side"] == "1"]),
                                  minus_peak_deg=stats([float(r["peak_amplitude_deg"]) for r in pp if r["physical_peak_side"] == "-1"]))
     threshold_last = {}
     for side in ("left", "right"):
         forward = [r for r in active_feet if r[f"{side}_valid"] == "True" and float(r[f"{side}_deg"]) >= 1.5]
-        threshold_last[side] = dict(count=len(forward), last_frame_ms=forward[-1]["frame_ms"] if forward else None)
+        in_range = [r for r in forward if r[f"{side}_in_range"] == "True"]
+        threshold_last[side] = dict(count=len(forward), last_frame_ms=forward[-1]["frame_ms"] if forward else None,
+                                   in_range_count=len(in_range), in_range_last_frame_ms=in_range[-1]["frame_ms"] if in_range else None)
     peak_gaps = [float(b["peak_time_ms"]) - float(a["peak_time_ms"]) for a, b in zip(active_peaks, active_peaks[1:])]
+    long_gaps = []
+    for before, after in zip(active_peaks, active_peaks[1:]):
+        low, high = float(before["peak_time_ms"]), float(after["peak_time_ms"])
+        if high - low <= 600:  # Descriptive review threshold, not a controller gate.
+            continue
+        ff = [r for r in active_feet if low <= r["frame_ms"] <= high]
+        ee = [r for r in events if low < float(r["zero_cross_time_ms"]) < high]
+        long_gaps.append(dict(before_ms=low, after_ms=high, gap_ms=high-low,
+                              before_side=int(before["physical_peak_side"]), before_amplitude_deg=float(before["peak_amplitude_deg"]),
+                              after_side=int(after["physical_peak_side"]), after_amplitude_deg=float(after["peak_amplitude_deg"]),
+                              invalid_left_frames=[dict(frame_ms=r["frame_ms"], reason=r["left_reason"]) for r in ff if r["left_valid"] != "True"],
+                              left_qualified_deg=stats([num(r["left_deg"]) for r in ff if r["left_valid"] == "True" and r["left_in_range"] == "True"]),
+                              right_qualified_deg=stats([num(r["right_deg"]) for r in ff if r["right_valid"] == "True" and r["right_in_range"] == "True"]),
+                              events=[dict(**{k:r[k] for k in ("zero_cross_time_ms", "event_kind", "previous_peak_time_ms", "zero_cross_rate_dps", "pulse_width_ms", "output_executed", "valid", "reason")},
+                                           incoming_peak_age_ms=float(r["zero_cross_time_ms"])-float(r["previous_peak_time_ms"])) for r in ee]))
+    stage8 = [r for r in active_peaks if float(r["target_peak_deg"]) >= 8]
     decision_ages = []
     for event in energy:
         t = float(event["time_ms"])
@@ -151,8 +174,13 @@ def analyze(trial):
                                     preceding_event_kind=last_event["event_kind"] if last_event else None,
                                     preceding_executed=last_event["output_executed"] if last_event else None))
     result = dict(trial=trial, firmware=m.get("diagnostic_build_id"), total_foot_frames=len(feet), active_foot_frames=len(active_feet),
-                  duration_ms=30000, valid_left=sum(r["left_valid"] == "True" for r in active_feet),
+                  analysis_window_end_ms=30000,
+                  last_running_sample_ms=max((float(r["t_test_ms"]) for r in active_samples), default=None),
+                  last_recorded_sample_ms=max((float(r["t_test_ms"]) for r in samples if num(r["t_test_ms"]) is not None), default=None),
+                  valid_left=sum(r["left_valid"] == "True" for r in active_feet),
                   valid_right=sum(r["right_valid"] == "True" for r in active_feet),
+                  valid_in_range_left=sum(r["left_valid"] == "True" and r["left_in_range"] == "True" for r in active_feet),
+                  valid_in_range_right=sum(r["right_valid"] == "True" and r["right_in_range"] == "True" for r in active_feet),
                   zero_ready_count=sum(r["zero_ready"] == "True" for r in active_feet),
                   foot_prediction_ready_reason_counts=dict(Counter(r["reason"] for r in active_predictions)),
                   local_prediction_reason_counts=dict(Counter(r["reason"] for r in active_local)),
@@ -163,7 +191,12 @@ def analyze(trial):
                   nominal_target8_potential_mj=nominal_potential_mj(8),
                   accepted_peak_sequence=dict(n=len(active_peaks), gap_ms=stats(peak_gaps),
                                               repeated_side_pairs=sum(a["physical_peak_side"] == b["physical_peak_side"] for a, b in zip(active_peaks, active_peaks[1:]))),
+                  long_peak_gap_review_threshold_ms=600, long_peak_gaps=long_gaps,
+                  stage8_peaks=dict(first_ms=float(stage8[0]["peak_time_ms"]) if stage8 else None,
+                                    plus_deg=stats([float(r["peak_amplitude_deg"]) for r in stage8 if r["physical_peak_side"] == "1"]),
+                                    minus_deg=stats([float(r["peak_amplitude_deg"]) for r in stage8 if r["physical_peak_side"] == "-1"])),
                   foot_assist=dict(stored=foot_metadata.get("stored"), total=foot_metadata.get("total"),
+                                   executed_records=sum(r.get("output_executed") is True or r.get("output_executed") == "True" for r in foot_metadata.get("records", []) if isinstance(r, dict)),
                                    reason_counts={names[i] if i < len(names) else str(i): n for i, n in enumerate(counts) if n}),
                   energy_counts=dict(records=len(energy), optional=sum(r["optional"] == "True" for r in energy),
                                      rescue=sum(r["rescue"] == "True" for r in energy),
@@ -173,7 +206,7 @@ def analyze(trial):
                                      widths=dict(Counter(r["guarded_ms"] for r in energy)),
                                      kinds=dict(Counter(r["event_kind"] for r in events))),
                   neutral_interpretation="Foot-relative angular excursions can be compared in time, but there is no calibrated camera/CAD absolute zero or CAD-roll/MEKF mapping. No absolute theta_E, barrier work, contact or forward displacement is identified by these rows. A near-constant relative foot angle does not establish zero energy-neutral offset.",
-                  observed_motion_interpretation="Body peaks remain alternating while recorded foot excursions shrink. This establishes continuing lateral rocking, not continuing walking. After the brief initial large foot-angle episodes, no foot-timing assist is selected. External synchronized video is needed for alternating ground steps and forward progress.",
+                  observed_motion_interpretation="Body peaks and camera-relative foot excursions are summarized independently. Trends depend on the trial; see time windows and calibration-qualified columns. Lateral rocking or large relative foot motion alone does not establish continuous alternating ground steps. External synchronized video is needed for ground contact and forward progress. Weak creep can coexist with small relative excursions.",
                   latency_interpretation="Use prediction ready_ms and control_observed_us for causal availability. delivered_us precedes recognition processing, so frame-to-delivery alone understates foot-angle age.")
     (folder / "foot_energy_review.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(dict(trial=trial, foot_assist=result["foot_assist"], energy_counts=result["energy_counts"], latency=latencies,

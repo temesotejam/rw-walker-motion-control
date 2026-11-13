@@ -1,0 +1,51 @@
+{
+  "build_id": "energy-pulse-lifecycle-v16",
+  "environment": "atoms3cam-energy-pulse-lifecycle",
+  "build_success": true,
+  "ram_used": 166780,
+  "ram_capacity": 327680,
+  "flash_used": 1879405,
+  "flash_capacity": 3342336,
+  "firmware_bytes": 1879776,
+  "firmware_sha256": "f41dc856fc00d43d15d49f90c32e790b8947a296454daf9dc047c00a051a36c2",
+  "energy_selector_sha256": "2972df621f57eef2e24433aeeac01911ea5c0c65d64852f387fd15bb11509d62",
+  "completion_helper_sha256": "58787871644188f303cd527c90a87de747ab42e60d24b3a2ca43240423e0ada4",
+  "url": "http://127.0.0.1:8767/energy-pulse-lifecycle/",
+  "page_verified": true,
+  "parts": [
+    {
+      "path": "firmware/bootloader.bin",
+      "offset": 0,
+      "bytes": 15104,
+      "sha256": "1776e4dd896a69d0a5c2e79957b0e2a88aa4129b1381d6478683515a1f6af343",
+      "http_bytes_match": true
+    },
+    {
+      "path": "firmware/partitions.bin",
+      "offset": 32768,
+      "bytes": 3072,
+      "sha256": "1d9cca96de0fe07ad7fc0648b9878ddecd9ce565e38b589ad20fea698ed4c80c",
+      "http_bytes_match": true
+    },
+    {
+      "path": "firmware/boot_app0.bin",
+      "offset": 57344,
+      "bytes": 8192,
+      "sha256": "f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0",
+      "http_bytes_match": true
+    },
+    {
+      "path": "firmware/firmware.bin",
+      "offset": 65536,
+      "bytes": 1879776,
+      "sha256": "f41dc856fc00d43d15d49f90c32e790b8947a296454daf9dc047c00a051a36c2",
+      "http_bytes_match": true
+    }
+  ],
+  "v14_baseline_preserved_http": true,
+  "v14_baseline_sha256": "9ee01f4a518eaec0d691b886718a9d3640987050040652d2eab03b25270f6ab9",
+  "hardware_flashed": false,
+  "physical_current_edge_measured": false,
+  "walking_validated": false,
+  "energy_model_refitted": false
+}

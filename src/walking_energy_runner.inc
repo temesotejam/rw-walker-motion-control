@@ -1,5 +1,34 @@
 // Shared by the separately identified v14 and v15 energy builds.
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+void ExperimentRunner::finishWalkingEnergyPulse(uint32_t now_ms,uint8_t reason){
+  const int index=walking_energy_active_audit_;
+  if(!walking_energy_completion_pending_)return;
+  walking_energy_completion_pending_=false;
+  walking_energy_active_audit_=-1; // One completion, even through nested stop paths.
+  auto& a=walking_energy_active_pulse_;
+  if(!a.executed || a.completion_reason)return;
+  a.output_end_ms=now_ms-run_start_ms_;a.completion_reason=reason;
+  energy_pulse_completion::Input in;in.side=a.side;in.rate_dps=a.start_rate_dps;
+  in.initial_current_ma=a.start_i0_ma;in.goal_current_ma=a.start_goal_ma;in.tau_s=a.start_tau_s;
+  in.available_j=a.decision.available_j;in.request_j=a.decision.request_j;
+  in.planned_ms=a.guarded_ms;
+  in.actual_elapsed_ms=static_cast<uint32_t>(now_ms-(run_start_ms_+a.output_start_ms));
+  a.completion=energy_pulse_completion::evaluate(in);
+  if(index>=0 && static_cast<uint32_t>(index)<walking_energy_count_)
+    walking_energy_audit_[index]=a;
+  if(a.completion.valid){
+    predicted_signed_current_end_mA_=a.side*a.completion.current_end_ma;
+    predicted_current_end_ms_=now_ms;
+  }
+  if(energy_control_autonomous_pending_peak_ &&
+      energy_control_autonomous_pending_zero_ms_==a.trigger_ms &&
+      energy_control_autonomous_pending_next_side_==a.side){
+    energy_control_autonomous_pending_q_command_mA_s_=a.completion.valid?a.completion.q_mas:NAN;
+    energy_control_autonomous_pending_model_energy_j_=a.completion.work_valid?a.completion.arrival_j:NAN;
+  }
+}
+#endif
 bool ExperimentRunner::tryWalkingEnergy(
     PsramLogger::EnergyControlAutonomousZeroCrossEvent& e,uint32_t t,bool* healthy_out){
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
@@ -17,7 +46,9 @@ bool ExperimentRunner::tryWalkingEnergy(
   if(healthy_out)*healthy_out=healthy;
   noteFootSupportBackend(healthy?2:1);
   e.work_control_branch=
-#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+      21;
+#elif defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
       20;
 #else
       19;
@@ -28,7 +59,16 @@ bool ExperimentRunner::tryWalkingEnergy(
   e.reason=Config::ENERGY_CONTROL_AUTONOMOUS_REASON_VALID_NO_OUTPUT;
   WalkingEnergyAudit a;a.time_ms=t;a.peak_ms=energy_control_autonomous_last_peak_ms_;
   a.side=side;a.optional=optional_early_event_;a.rescue=stall_rescue_event_;
-  auto save=[&](){++walking_energy_total_;if(walking_energy_count_<192)walking_energy_audit_[walking_energy_count_++]=a;};
+  auto save=[&](){++walking_energy_total_;int16_t stored_index=-1;
+    if(walking_energy_count_<192){stored_index=static_cast<int16_t>(walking_energy_count_);
+      walking_energy_audit_[walking_energy_count_++]=a;}
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+    if(a.executed){walking_energy_active_audit_=stored_index;walking_energy_active_pulse_=a;
+      walking_energy_completion_pending_=true;}
+#else
+    (void)stored_index;
+#endif
+  };
   if(!healthy){save();return true;} // Never fall through to the old selector.
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
   const uint32_t decision_sample_us=foot_support_event_?foot_support_sample_us_:
@@ -152,6 +192,11 @@ bool ExperimentRunner::tryWalkingEnergy(
   if(!actual.coast){e.pulse_start_ms=active_pulse_start_test_ms_;
     e.pulse_end_ms=e.pulse_start_ms+width;a.output_start_ms=e.pulse_start_ms;}
 #endif
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+  a.trigger_ms=e.zero_cross_time_ms;a.start_rate_dps=in.rate_dps;
+  a.start_i0_ma=walking_pulse_start_i0_ma_;a.start_goal_ma=walking_pulse_goal_ma_;
+  a.start_tau_s=walking_pulse_tau_s_;
+#endif
   tilt_priority::Choice confirmation;confirmation.selected=true;confirmation.coast=actual.coast;
   confirmation.current_ma=actual.coast?0:1200;confirmation.width_ms=width;
   confirmation.direction=side;confirmation.target_deg=in.target_deg;
@@ -255,7 +300,13 @@ void ExperimentRunner::tryWalkingEnergyFoot(uint32_t t,uint32_t sample,float ang
 void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
   auto n=[](float x){return std::isfinite(x)?String(x,9):String("null");};
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+  json+=",\"walking_energy\":{\"revision\":\"energy_pulse_lifecycle_v16\",\"output_enabled\":true,\"branch\":21,";
+  json+="\"selector_revision\":\"walking_early_energy_main_v15\",\"completion_revision\":\"actual_elapsed_pulse_completion_v16\",\"timer_clock\":\"fresh_millis_after_motion_and_enqueue\",\"completion_reason_names\":[\"not_observed\",\"timer\",\"interrupted\",\"estop\",\"run_end\"],";
+  json+="\"elapsed_semantics\":\"software_queue_accept_to_stop_request_not_physical_current_edges\",\"completion_independent_of_log_capacity\":true,";
+#else
   json+=",\"walking_energy\":{\"revision\":\"walking_early_energy_main_v15\",\"output_enabled\":true,\"branch\":20,";
+#endif
   json+="\"width_selection\":\"minimum_integer_predicted_work_reaches_request\",\"early_admission\":\"positive_budget_fulfilled_after_guard;otherwise_no_transport_and_keep_ordinary_opportunity\",\"generic_early_15ms_cap_active\":false,";
   json+="\"main_ceiling_ms\":80,\"main_ceiling_basis\":\"inherited_normal_experimental_envelope_not_physics_derived\",\"rescue_ceiling_ms\":15,\"rescue_ceiling_basis\":\"separate_legacy_low_speed_trial_not_derived\",\"online_reversal_cutoff_active\":false,";
   json+="\"energy_fulfillment_scope\":\"predicted_work_only;model_error_and_unmodelled_motion_can_leave_actual_deficit\",\"record_prediction_semantics\":\"postguard_candidate;output_predictions_are_zero_when_unsent\",";
@@ -288,6 +339,15 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     row+=",\"available_j\":"+n(d.available_j)+",\"target_j\":"+n(d.target_j)+",\"deficit_j\":"+n(d.deficit_j)+",\"request_j\":"+n(d.request_j);
     row+=",\"q_mas\":"+n(d.q_mas)+",\"predicted_work_j\":"+n(d.predicted_work_j)+",\"predicted_arrival_j\":"+n(d.predicted_arrival_j)+",\"unmet_j\":"+n(d.unmet_j);
     row+=",\"output_q_pred_mas\":"+n(a.executed?d.q_mas:0.f)+",\"output_work_pred_j\":"+n(a.executed?d.predicted_work_j:0.f)+",\"unmet_after_command_j\":"+n(a.executed?d.unmet_j:d.request_j);
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+    row+=",\"completion_reason\":"+String(a.completion_reason)+",\"output_end_ms\":"+String(a.output_end_ms);
+    row+=",\"actual_elapsed_ms\":"+String(a.completion.actual_elapsed_ms)+",\"planned_duration_completed\":"+String(a.completion.duration_completed?"true":"false");
+    row+=",\"completion_valid\":"+String(a.completion.valid?"true":"false")+",\"completion_work_valid\":"+String(a.completion.work_valid?"true":"false");
+    row+=",\"start_i0_ma\":"+n(a.start_i0_ma)+",\"start_goal_ma\":"+n(a.start_goal_ma)+",\"start_tau_s\":"+n(a.start_tau_s)+",\"start_rate_dps\":"+n(a.start_rate_dps);
+    row+=",\"elapsed_q_pred_mas\":"+n(a.completion.q_mas)+",\"elapsed_current_end_pred_ma\":"+n(a.completion.current_end_ma);
+    row+=",\"elapsed_work_pred_j\":"+n(a.completion.work_j)+",\"elapsed_arrival_pred_j\":"+n(a.completion.arrival_j)+",\"elapsed_unmet_pred_j\":"+n(a.completion.unmet_j);
+    row+=",\"completion_width_supported\":"+String(a.completion.width_supported?"true":"false")+",\"completion_extrapolated\":"+String(a.completion.extrapolated?"true":"false");
+#endif
     row+=",\"passive_rate_supported\":"+String(d.passive_rate_supported?"true":"false")+",\"work_rate_supported\":"+String(d.work_rate_supported?"true":"false")+",\"charge_supported\":"+String(d.charge_supported?"true":"false");
     row+=",\"passive_intercept_rolloff\":"+String(d.passive_intercept_rolloff?"true":"false")+",\"early_state_transfer\":"+String(d.early_state_transfer?"true":"false");
     row+=",\"coast_residual_q_mas\":"+n(d.coast_residual_q_mas)+"}";

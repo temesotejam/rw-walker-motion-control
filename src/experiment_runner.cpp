@@ -2628,6 +2628,12 @@ void ExperimentRunner::resetEnergyControlAutonomous() {
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
   walking_energy_peaks_[0]=walking_energy_peaks_[1]=NAN;
   walking_energy_peak_ms_[0]=walking_energy_peak_ms_[1]=0;walking_energy_count_=walking_energy_total_=0;
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+  walking_energy_active_audit_=-1;
+  walking_energy_completion_pending_=false;walking_energy_active_pulse_=WalkingEnergyAudit{};
+  walking_energy_stop_reason_=2;
+  walking_pulse_start_i0_ma_=walking_pulse_goal_ma_=walking_pulse_tau_s_=NAN;
+#endif
 #endif
   positive_left_boost_.reset();positive_left_input_=positive_left_boost::Input{};tilt_priority_.reset();wheel_cycle_guard_.reset();positive_sway_probe_.reset();span_observer_sequence_=0;
   span_positive_decision_next_=0;
@@ -2825,6 +2831,11 @@ bool ExperimentRunner::beginEnergyControlAutonomousPulse(uint32_t now_ms, uint32
   const float target_current_mA = direction * predictCurrentGoalMa(
       requested_current_mA, v);
   const float tau_s = predictRiseTauS(requested_current_mA);
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+  walking_pulse_start_i0_ma_=direction*i0;
+  walking_pulse_goal_ma_=direction*target_current_mA;
+  walking_pulse_tau_s_=tau_s;
+#endif
   const float width_s = static_cast<float>(pulse_width_ms) / 1000.0f;
   predicted_signed_current_end_mA_ = target_current_mA +
       (i0 - target_current_mA) * expf(-width_s / tau_s);
@@ -2936,6 +2947,12 @@ void ExperimentRunner::beginEnergyControlAutonomousStartKick(uint32_t now_ms) {
   }
 }
 void ExperimentRunner::updateEnergyControlAutonomousPulse(uint32_t now_ms) {
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+  // update() captured its argument before motion/driver work could start a
+  // pulse. Read the clock after that work: old_now - post_write_start would
+  // otherwise wrap and immediately expire the newly accepted command.
+  now_ms=millis();
+#endif
   if (!energy_control_autonomous_mode_) { stopMotor(); return; }
   if (!status_.pulse_active ||
       static_cast<uint32_t>(now_ms - active_pulse_start_ms_) < status_.pulse_width_ms_setting) return;
@@ -3012,7 +3029,9 @@ void ExperimentRunner::appendFootSupportMetadata(PsramString& json) const {
   for(unsigned i=0;i<sizeof(foot_support_reason_counts_)/sizeof(foot_support_reason_counts_[0]);++i){if(i)json+=",";json+=String(foot_support_reason_counts_[i]);}
   json+="],\"work_control_branch\":";
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
-#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+  json+="21";
+#elif defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
   json+="20";
 #else
   json+="19";
@@ -5668,6 +5687,9 @@ void ExperimentRunner::updateMekfComparisonRelativeAngles() {
 // V46z comparison-zero end
 
 void ExperimentRunner::requestEmergencyStop(const char* reason) {
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+  walking_energy_stop_reason_=3;
+#endif
   upright_reference_capture_.cancel("upright_reference_cancelled");
   setSyncLed(false);
   stopMotor();
@@ -6407,6 +6429,10 @@ void ExperimentRunner::stopActivePulse(uint32_t now_ms) {
   status_.pulse_active = false;
   status_.pulse_direction = 0;
   last_pulse_end_ms_ = now_ms;
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+  // Queue the stop first; completion accounting must not delay its request.
+  finishWalkingEnergyPulse(now_ms,1);
+#endif
   if (!zero_cross_mode_) {
     next_pulse_start_test_ms_ = active_pulse_start_test_ms_ + status_.input_interval_ms;
   }
@@ -8170,6 +8196,9 @@ void ExperimentRunner::logSampleNow() {
 }
 
 void ExperimentRunner::finishRun() {
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+  walking_energy_stop_reason_=4;
+#endif
   stopMotor();
   status_.measure_elapsed_ms = measurementTotalDurationMs();
   status_.remaining_ms = 0;
@@ -8181,6 +8210,10 @@ void ExperimentRunner::finishRun() {
 }
 
 void ExperimentRunner::stopMotor() {
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+  const uint32_t stop_request_ms=millis();
+  const uint8_t stop_reason=walking_energy_stop_reason_;walking_energy_stop_reason_=2;
+#endif
   q_ident_pulse_authorized_ = false;
   energy_control_v0_pulse_authorized_ = false;
   energy_control_autonomous_pulse_authorized_ = false;
@@ -8188,6 +8221,9 @@ void ExperimentRunner::stopMotor() {
   status_.motor_cmd_mA = 0;
   status_.pulse_active = false;
   status_.pulse_direction = 0;
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+  finishWalkingEnergyPulse(stop_request_ms,stop_reason);
+#endif
   if (roller_) status_.roller_actual_current_mA = roller_->telemetrySnapshot().actual_current_mA;
 }
 

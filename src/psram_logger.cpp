@@ -474,7 +474,11 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
   json += "\"fast_crossing_shadow\":{\"policy\":\"candidate_only;not_applied_to_output;other_guards_remain_active\",\"physical_response_identified\":false,\"hardware_validated\":false},";
 #endif
 #if defined(ANGLE_EARLY_TRIAL) && ANGLE_EARLY_TRIAL
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX && defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+  json += "\"angle_early_trial\":{\"policy\":\"v15_energy_main_selector_with_v16_pulse_lifecycle;existing_generic_timing_window;postguard_predicted_budget_required;experimental_main_ceiling80ms;rescue15ms_separate;one_attempt_per_peak;queue_rejection_not_physical_ACK\",\"physical_timing_validated\":false},";
+#else
   json += "\"angle_early_trial\":{\"policy\":\"inward_abs_angle_gt_0p3_le_1p5_deg;rate_gt_5_dps;constant_rate_eta_gt_20_le_30_ms;max_pulse_15ms;one_per_peak;no_send_zero_reevaluation;ambiguous_write_estop\",\"camera_role\":\"diagnostic_and_existing_balance_only\",\"geometry_worker_enabled\":false,\"applies_during_startup_ramp\":true,\"configured_target_deg\":8,\"pulse_width_changes_alongside_timing\":true,\"physical_timing_validated\":false},";
+#endif
 #else
   const auto early = g_early_diag.snapshot();
   json += "\"foot_early_trial\":{\"exposure\":\"unverified_frame_timestamp_plus_minus_20ms\",\"pitch_origin\":\"initial_pose_plus_minus_2deg_unverified\",\"geometry\":\"discrete_hypotheses_not_contact_ground_truth\",";
@@ -541,6 +545,11 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
       const bool early_budget_mode=false;
       const char* active_walking_revision=walking_energy_policy::kRevision;
 #endif
+#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+      const bool pulse_lifecycle_mode=true;
+#else
+      const bool pulse_lifecycle_mode=false;
+#endif
       json += "\"work_target_deg\":8.0,\"work_target_experimental\":true,";
       json += "\"wheel_work_model_revision\":\"" + String(active_walking_revision) + "\",";
       json += "\"wheel_work_model_scope\":\"walking_target8;nominal_zero_CG_U;paired_successive_peak_common_and_differential_energy_feedback;empirical_passive_rate_plus_provisional_pulse_Q_arrival_work\",";
@@ -550,7 +559,8 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
       }
       json += "\"peak_mpc\":{\"active\":false,\"scope\":\"inactive_legacy\"},";
       json += "\"foot_timing\":{\"active\":true,\"policy\":\"" + String(early_budget_mode ? "foot_pose_and_generic_early_timing;no_additive_width;generic_early_and_foot_use_same_existing_experimental80ms_ceiling;postguard_full_predicted_budget_required;infeasible_early_defers_without_consuming_normal_opportunity;stall_rescue15ms_is_separate_legacy_trial;no_reversal_cutoff" : "foot_pose_timing_only;no_additive_width_or_forced_input;normal_and_foot_energy_cap80ms;nonfoot_early_and_stall_rescue_cap15ms;guards_can_shorten") + "\"},";
-      json += "\"work_control_branch_codes\":" + String(early_budget_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\"}" : "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\"}") + ",";
+      json += "\"work_control_branch_codes\":" + String(pulse_lifecycle_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\",\"21\":\"energy_pulse_lifecycle_v16\"}" : early_budget_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\"}" : "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\"}") + ",";
+      json += "\"pulse_lifecycle\":{\"active\":" + String(pulse_lifecycle_mode ? "true" : "false") + ",\"revision\":\"energy_pulse_lifecycle_v16\",\"selector_revision\":\"" + String(active_walking_revision) + "\",\"energy_model_changed\":false,\"clock\":\"fresh_millis_at_update;queue_acceptance_start_to_stop_request\",\"setCurrentMa_success\":\"desired_current_queued_or_already_requested_not_bus_ACK_or_physical_current_edge\",\"completion\":\"analytic_signed_Q_and_provisional_work_from_actual_software_elapsed_no_duration_clamp\",\"physical_delivery_measured\":false},";
       json += "\"early_energy_main\":{\"active\":" + String(early_budget_mode ? "true" : "false") + ",\"revision\":\"" + String(active_walking_revision) + "\",\"selection\":\"" + String(early_budget_mode ? "least_integer_width_with_predicted_work_at_least_request;cap_limited_retains_unmet;surplus_only_coasts" : "v14_nearest_energy_error") + "\",\"postguard_budget_required\":" + String(early_budget_mode ? "true" : "false") + ",\"experimental_ceiling_ms\":80,\"ceiling_physics_derived\":false,\"reversal_cutoff_active\":false,\"physical_zero_deficit_guaranteed\":false},";
       json += "\"wheel_work_model_interpretation\":\"passive_rate_and_pulse_Q_effective_arrival_surrogates;no_measured_body_inertia;no_measured_actuator_efficiency;no_new_pulse_coast_can_retain_current_and_stored_energy;no_closed_loop_validation_claim\",";
       json += "\"walking_passive_fit\":{\"plus_offset_J\":0.0001630156686,\"plus_omega2_J\":0.0003345881499,\"plus_rate_support_dps\":[22.2512,37.5379],\"minus_offset_J\":0.0002624748594,\"minus_omega2_J\":0.0002164565952,\"minus_rate_support_dps\":[20.313,35.5657],\"train_runs\":[137267573,267557373,141282685,611622951],\"heldout_runs\":[97855607,241508524],\"low_rate_rolloff_validated\":false,\"powered_response_transfer_validated\":false},";
@@ -1778,11 +1788,11 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
     const bool work_event = e.work_control_branch != 0;
     const bool inverse_event = energy_bridge_enabled_ && !negative_probe_mode_ &&
         autonomous_brake_max_ms_ == 25 && e.physical_next_peak_side < 0;
-    detail += ",\"free_model_revision\":\"" + String(e.work_control_branch==20 ? walking_energy_policy_v15::kRevision : e.work_control_branch==19 ? walking_energy_policy::kRevision : e.work_control_branch==18 ? "foot_support_amount_unmodeled_v13" : e.work_control_branch==17 ? "foot_support_local_unmodeled_v12" : e.work_control_branch==16 ? "foot_support_transfer_unmodeled_v11" : e.work_control_branch==15 ? "gradual_sway_unmodeled_trial_or_coast" : e.work_control_branch==14 ? "positive_asymmetry_unmodeled_trial" : e.work_control_branch==13 ? "weak_side_assist_v1_unmodeled" : (e.work_control_branch==10 || e.work_control_branch==11) ? walking_energy_loss::kRevision : (e.work_control_branch>=4) ? wheel_work_energy_control::kRevision :
+    detail += ",\"free_model_revision\":\"" + String((e.work_control_branch==20 || e.work_control_branch==21) ? walking_energy_policy_v15::kRevision : e.work_control_branch==19 ? walking_energy_policy::kRevision : e.work_control_branch==18 ? "foot_support_amount_unmodeled_v13" : e.work_control_branch==17 ? "foot_support_local_unmodeled_v12" : e.work_control_branch==16 ? "foot_support_transfer_unmodeled_v11" : e.work_control_branch==15 ? "gradual_sway_unmodeled_trial_or_coast" : e.work_control_branch==14 ? "positive_asymmetry_unmodeled_trial" : e.work_control_branch==13 ? "weak_side_assist_v1_unmodeled" : (e.work_control_branch==10 || e.work_control_branch==11) ? walking_energy_loss::kRevision : (e.work_control_branch>=4) ? wheel_work_energy_control::kRevision :
         inverse_event ? one_peak_energy_inverse::kRevision :
         energy_bridge_enabled_ ? lateral_energy::kRevision : lateral_energy::kQuadraticRevision) + "\"";
     if (work_event && e.work_control_branch!=13 && e.work_control_branch!=14 && e.work_control_branch!=15 && e.work_control_branch!=16 && e.work_control_branch!=17 && e.work_control_branch!=18)
-      detail += ",\"arrival_energy_model_revision\":\"" + String(e.work_control_branch==20 ? walking_energy_policy_v15::kRevision : e.work_control_branch==19 ? walking_energy_policy::kRevision : (e.work_control_branch==10 || e.work_control_branch==11) ? walking_energy_loss::kRevision : control_target_cdeg_==1200 ? "target12_state_work_20261027" : wheel_work_energy_control::kRevision) + "\"";
+      detail += ",\"arrival_energy_model_revision\":\"" + String((e.work_control_branch==20 || e.work_control_branch==21) ? walking_energy_policy_v15::kRevision : e.work_control_branch==19 ? walking_energy_policy::kRevision : (e.work_control_branch==10 || e.work_control_branch==11) ? walking_energy_loss::kRevision : control_target_cdeg_==1200 ? "target12_state_work_20261027" : wheel_work_energy_control::kRevision) + "\"";
     else
       // The compact table stores one shared field list for every row. Startup
       // and fallback events must keep the work-model column, with a null value.
@@ -1851,7 +1861,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
     appendAutonomousNullable("integral_energy_j", e.integral_energy_j, 8);
     appendAutonomousNullable("commanded_energy_deficit_j", e.commanded_energy_deficit_j, 8);
     appendAutonomousNullable("unclamped_energy_request_j", e.unclamped_energy_request_j, 8);
-    appendAutonomousNullable("maximum_input_work_j", e.work_control_branch==19 || e.work_control_branch==20 || !energy_bridge_enabled_ ? e.maximum_input_work_j : NAN, 8);
+    appendAutonomousNullable("maximum_input_work_j", e.work_control_branch==19 || e.work_control_branch==20 || e.work_control_branch==21 || !energy_bridge_enabled_ ? e.maximum_input_work_j : NAN, 8);
     appendAutonomousNullable("maximum_effective_arrival_energy_increment_j", energy_bridge_enabled_ ? e.maximum_input_work_j : NAN, 8);
     appendAutonomousNullable("unapplied_energy_request_j", e.unapplied_energy_request_j, 8);
     appendAutonomousNullable("predicted_current_goal_mA", e.predicted_current_goal_mA, 4);

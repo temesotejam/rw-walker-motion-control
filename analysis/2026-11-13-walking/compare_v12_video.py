@@ -13,11 +13,12 @@ import matplotlib.pyplot as plt
 from analyze_v12_trial import rows, num, stats, measurement_rows
 
 
-def compare(directory, video):
+def compare(directory, video, fit_end_s=27.5):
     samples = rows(directory, 'timeseries')
     samples = measurement_rows(samples)
     t = np.array([num(r['t_test_ms']) / 1000 for r in samples])
     angle = np.array([num(r['pitch_mekf_detector_relative_deg']) for r in samples])
+    measurement_end = min(30., float(t[-1]))
     metadata = json.loads((directory/'metadata.json').read_text(encoding='utf8'))
     assists = metadata['foot_support_assist']['records']
     branch = str(metadata['foot_support_assist'].get('work_control_branch', 17))
@@ -84,7 +85,9 @@ def compare(directory, video):
     fits=[]
     for offset in np.arange(2,13,.005):
         vt=optical[:,0]-offset
-        mask=(vt>=.15)&(vt<=27.5)
+        # ESTOP trials may end before30s. Later handling/fall images are not
+        # samples of the measured body waveform and must not enter the fit.
+        mask=(vt>=.15)&(vt<=min(fit_end_s,measurement_end))
         x=np.interp(vt[mask],t,angle); y=optical[mask,1]
         coef=np.linalg.lstsq(np.c_[x,np.ones(len(x)),vt[mask]],y,rcond=None)[0]
         if not .4<abs(coef[0])<1.8:continue
@@ -93,11 +96,12 @@ def compare(directory, video):
     mse,offset,gain,bias,drift=min(fits)
     alignment={'method':'white-body-marker waveform fit; affine gain/bias/slow drift; not LED/exposure/contact sync',
         'measurement_to_video_offset_s':offset,'fit_mse_deg2':mse,'gain':gain,'bias':bias,'drift_dps':drift,
+        'fit_measurement_interval_s':[.15,min(fit_end_s,measurement_end)],
         'alternative_fits_separated_300ms':[x for x in sorted(fits) if abs(x[1]-offset)>.3][:3]}
     fig,axes=plt.subplots(3,1,figsize=(13,9),constrained_layout=True)
     center = assists[-1]['time_ms']/1000 if assists else 28.8
     middle = assists[-2]['time_ms']/1000 if len(assists)>1 else 15.7
-    for ax,(lo,hi) in zip(axes,[(0,30),(max(0,middle-.7),min(30,middle+1)),(27.8,30)]):
+    for ax,(lo,hi) in zip(axes,[(0,30),(max(0,middle-.7),min(measurement_end,middle+1)),(max(0,measurement_end-2.2),measurement_end)]):
         vt=optical[:,0]-offset
         ax.plot(t,angle,label='IMU detector',lw=1)
         ax.plot(vt,(optical[:,1]-bias-drift*vt)/gain,label='white body markers, affine/drift fit',lw=1)
@@ -110,7 +114,7 @@ def compare(directory, video):
     windows=[(f'assist_{a["time_ms"]}',a['time_ms']/1000-.35,.1,16) for a in assists]
     windows += [(f'rescue_{e["zero_cross_time_ms"]}',num(e['zero_cross_time_ms'])/1000-.35,.1,20)
                 for e in events if 'rescue' in e['event_kind'] and e['output_executed']=='True']
-    windows += [('end',28.2,.15,20),('after_end',30,.2,12)]
+    windows += [('end',max(0,measurement_end-1.8),.15,20),('after_end',measurement_end,.2,12)]
     for name,start,step,count in windows:
         fig,axs=plt.subplots((count+3)//4,4,figsize=(12,2.5*((count+3)//4)))
         for i,ax in enumerate(axs.flat):
@@ -125,11 +129,12 @@ def compare(directory, video):
     cap.release()
     result={'video_sha256':hashlib.sha256(video.read_bytes()).hexdigest(),
             'fps':fps,'frames':frame_id,'tracked_marker_frames':len(optical),
-            'alignment':alignment,'support_branch':branch,'support_audits':audit}
+            'alignment':alignment,'measurement_end_s':measurement_end,'support_branch':branch,'support_audits':audit}
     (directory/'video_audit.json').write_text(json.dumps(result,indent=2),encoding='utf8')
     print(json.dumps(result,indent=2))
 
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('converted',type=Path);p.add_argument('video',type=Path)
-    a=p.parse_args();compare(a.converted,a.video)
+    p.add_argument('--fit-end',type=float,default=27.5,help='Last measured second used for the waveform fit; restrict before 3D rotation/handling.')
+    a=p.parse_args();compare(a.converted,a.video,a.fit_end)
