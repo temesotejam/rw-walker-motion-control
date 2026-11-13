@@ -18,7 +18,11 @@
 #endif
 #else
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "foot-support-local-v12"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "foot-support-assist-v11"
+#endif
 #elif defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "cad-support-shadow-v10"
 #else

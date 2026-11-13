@@ -59,8 +59,11 @@
 #include "negative_cap_recovery.h"
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
 #include "foot_phase_prediction.h"
-#include "foot_support_assist.h"
+#include "foot_support_policy.h"
 #include "foot_support_deceleration.h"
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+#include "foot_support_pose.h"
+#endif
 #endif
 
 class ExperimentRunner {
@@ -74,6 +77,9 @@ public:
                         bool phase_left_detected,bool phase_right_detected,float phase_left_x,float phase_right_x);
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
   void observeFootProjection(uint32_t sequence,const foot_phase_prediction::Projection& p){foot_pose_sequence_=sequence;foot_pose_=p;}
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+  void observeLocalFootProjection(const foot_local_prediction::Projection& p){foot_local_pose_=p;}
+#endif
   void appendFootSupportMetadata(PsramString& json) const; // sealed export only
 #endif
   void setLoopDt(uint32_t dt_us) { status_.loop_dt_us = dt_us; }
@@ -890,7 +896,12 @@ private:
   uint32_t foot_pose_sequence_=0,foot_support_last_check_ms_=0;
   uint32_t foot_support_sample_us_=0;
   bool foot_support_event_=false;
-  foot_support_assist::Decision foot_support_decision_;
+  foot_support_policy::Decision foot_support_decision_;
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+  foot_local_prediction::Projection foot_local_pose_;
+  foot_support_pose::Source foot_support_source_=foot_support_pose::Source::Unknown;
+  foot_support_policy::Input foot_support_input_;
+#endif
   foot_support_deceleration::Tracker foot_support_deceleration_;
   struct FootSupportAudit {
     uint32_t time_ms=0,peak_ms=0,sequence=0,frame_ms=0;
@@ -898,10 +909,22 @@ private:
     float body_angle=NAN,body_rate=NAN,threshold=NAN,estimated_zero_ms=NAN;
     uint16_t normal_width=0,requested_width=0,guarded_width=0;
     int8_t next_side=0;bool executed=false,coast_assist=false,anticipated_shape_need=false,inward_decelerating=false;
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+    uint8_t prediction_source=0,mode=0,candidate_mode=0;bool stall_route=false,local_returning=false;
+    uint32_t checked_ms=0;
+    float local_evidence=0;
+    uint16_t normal_guarded_width=0;
+    float preview_speed_rpm=NAN;
+    uint32_t preview_speed_age_us=0;
+#endif
   };
   FootSupportAudit foot_support_audit_[96];
   uint32_t foot_support_audit_count_=0,foot_support_audit_total_=0;
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+  uint32_t foot_support_reason_counts_[19]={};
+#else
   uint32_t foot_support_reason_counts_[17]={};
+#endif
   int foot_support_active_audit_=-1;
   void __attribute__((optimize("Os", "no-fast-math"),noinline)) tryFootSupportCandidate(uint32_t t_test_ms,uint32_t sample_us,float angle_deg,float rate_dps);
 #endif

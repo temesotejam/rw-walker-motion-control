@@ -6,6 +6,9 @@
 #include "white_marker_tracker.h"
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
 #include "foot_phase_prediction.h"
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+#include "foot_local_prediction.h"
+#endif
 #endif
 #if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
 #include "foot_pose_prediction.h"
@@ -31,6 +34,10 @@ struct FootFrame {
   FootZeroReason zero_reason = FootZeroReason::Waiting;
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
   foot_phase_prediction::Projection pose_projection;
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+  foot_local_prediction::Projection local_projection;
+  uint32_t local_compute_us=0;
+#endif
   uint32_t pose_compute_us=0;
 #endif
 #if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW

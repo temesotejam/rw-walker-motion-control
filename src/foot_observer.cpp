@@ -83,6 +83,9 @@ void FootObserver::loop() {
   uint64_t last_valid_us = 0;
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
   foot_phase_prediction::Predictor pose_predictor;
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+  foot_local_prediction::Predictor local_predictor;
+#endif
 #endif
 #if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
   // Single camera-task owner; no geometry work in the real-time control task.
@@ -166,9 +169,21 @@ void FootObserver::loop() {
         pose_time ? static_cast<uint32_t>((pose_now-run.measurement_epoch_us)/1000) : 0,
         pose_valid,f.left_deg,f.right_deg);
     f.pose_projection=pose_predictor.projection();
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+    const uint32_t local_start=micros();
+    local_predictor.observe(f.run_id,
+        pose_time ? static_cast<uint32_t>((f.frame_us-run.measurement_epoch_us)/1000) : 0,
+        pose_time ? static_cast<uint32_t>((pose_now-run.measurement_epoch_us)/1000) : 0,
+        pose_valid,f.left_deg,f.right_deg);
+    f.local_projection=local_predictor.projection();
+    f.local_compute_us=micros()-local_start;
+#endif
     // Availability includes history matching; a driver timestamp is not a
     // verified exposure timestamp. No history matching runs on Core1.
     if(pose_time)f.pose_projection.received_ms=static_cast<uint32_t>((esp_timer_get_time()-run.measurement_epoch_us)/1000);
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+    f.local_projection.received_ms=f.pose_projection.received_ms;
+#endif
     f.pose_compute_us=micros()-pose_start;
 #endif
 #if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
@@ -318,6 +333,23 @@ void FootObserver::appendMetadata(PsramString& json) const {
   }
   if(!pose_table.finish()){json.fail();return;}
   json+=",\"stored\":"+String(pose_stored)+",\"total\":"+String(s.count)+",\"truncated\":"+String(pose_stored<s.count?"true":"false")+"}";
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+  json+=",\"foot_local_prediction\":{\"revision\":\"three_frame_local_returning_v12\",\"lead_ms\":0,\"uncertainty_semantics\":\"heuristic_local_margin_not_error_bound\",\"evidence_semantics\":\"fraction_of_feet_with_local_evidence_not_history_score_or_probability\",\"records\":";
+  CompactJsonTable<PsramString> local_table(json);uint32_t local_stored=0;
+  for(uint32_t i=0;i<s.count;++i){
+    if(json.length()+16384U>=640U*1024U*8U/10U)break;
+    const auto& f=frames_[i];const auto& p=f.local_projection;const auto q=p.predict(p.received_ms,0);
+    String row="{\"sequence\":"+String(f.sequence)+",\"ready_ms\":"+String(p.received_ms);
+    row+=",\"reason\":"+String(static_cast<unsigned>(q.reason))+",\"local_evidence\":"+number(q.confidence);
+    row+=",\"predicted_left_deg\":"+number(q.left)+",\"predicted_right_deg\":"+number(q.right);
+    row+=",\"left_uncertainty_deg\":"+number(q.left_uncertainty)+",\"right_uncertainty_deg\":"+number(q.right_uncertainty);
+    row+=",\"left_phase\":"+String(static_cast<unsigned>(q.phase_left))+",\"right_phase\":"+String(static_cast<unsigned>(q.phase_right));
+    row+=",\"age_ms\":"+String(q.age_ms)+",\"compute_us\":"+String(f.local_compute_us)+"}";
+    if(!local_table.append(row)){json.fail();return;}++local_stored;
+  }
+  if(!local_table.finish()){json.fail();return;}
+  json+=",\"stored\":"+String(local_stored)+",\"total\":"+String(s.count)+",\"truncated\":"+String(local_stored<s.count?"true":"false")+"}";
+#endif
 #endif
 #if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
   // Separate compact table; binary sample format and existing foot fields stay compatible.

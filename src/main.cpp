@@ -302,7 +302,14 @@ static bool controlStep(void*) {
 #if FOOT_EARLY_TRIAL && !ANGLE_EARLY_TRIAL
   if(measurement && measurement_epoch_us) {earlySyncIdentity();earlyReceive();}
 #endif
-  if(measurement && measurement_epoch_us && millis()-foot_observation_poll_ms>=25) {
+  // v12's local evidence can be short-lived. Poll its already-computed
+  // snapshot more promptly; image processing stays on Core0.
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+  constexpr uint32_t foot_poll_interval_ms=10;
+#else
+  constexpr uint32_t foot_poll_interval_ms=25;
+#endif
+  if(measurement && measurement_epoch_us && millis()-foot_observation_poll_ms>=foot_poll_interval_ms) {
     foot_observation_poll_ms=millis();
     const auto fs=feet.snapshot();const uint64_t foot_observed_us=esp_timer_get_time();const auto& f=fs.latest;
 #if FOOT_EARLY_TRIAL && !ANGLE_EARLY_TRIAL
@@ -311,6 +318,9 @@ static bool controlStep(void*) {
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
     // Even a timestamp-invalid new frame must cancel the previous forecast.
     runner.observeFootProjection(f.sequence,f.pose_projection);
+#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+    runner.observeLocalFootProjection(f.local_projection);
+#endif
 #endif
     if(f.sequence!=foot_observation_sequence && f.frame_us>=measurement_epoch_us && f.timestamp_valid) {
       feet.recordControlObservation(f.run_id,f.sequence,foot_observed_us);

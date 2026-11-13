@@ -4,6 +4,8 @@
 
 ## 現在の状態
 
+- 2026-11-13、改善試験版v12 `foot-support-local-v12` を実装・ビルドし、専用書き込みページ `http://127.0.0.1:8767/foot-support-local/` を準備。履歴モデル外の局所的な足の戻り、保護後通常幅80 ms以下の前倒し、Local採用時の限定的な失速経路を追加した。今回の停止窓では生70→車輪保護後68 msを従来救済の26〜37 ms前へ出す候補が成立する。実機書き込み・歩行改善は未確認。詳細は `docs/FOOT_SUPPORT_LOCAL_V12.md` と末尾。
+
 - 最新は2026-11-13のv11実機試行141282685。新しい先回り補助は7.429/9.034/10.652秒に各15 ms実行されたが、27.622秒の負ピーク後に中心を通れず足運びが途切れた。連続歩行の成功とは扱わない。終盤の大きな前振れは有効観測なのに反復予測の対象外となり、さらに通常70 ms案が前倒し上限60 msを超える独立した制約がある。詳細は `analysis/2026-11-13-walking/v11実機試験_141282685.md` と末尾。
 
 - v8 `angle-fast-crossing-v8` の実機試験を確認。CRC正常、測定は30秒で FINISHED、エラーなし。高速通過時の抑制が1回実行され、最後の記録ピークは20.054秒。その後は中心を通らない小さな揺れに収束し、自然歩行の30秒継続を意味しない。
@@ -325,3 +327,16 @@ python tools\prepare_symmetric_rescue_flasher.py
 - 遅延/予測: 初回制御観測77.29ms中央値/86.81ms95%点（保存64標本）、新予測計算152us中央値/932us最大。実ready時刻C++再生は理由397/397一致、保存予測差最大0.00001165度、実制御audit3件も一致。未使用データの現在0ms direct frame MAE0.327度/保持0.358/旧直線0.485。平均改善と停止時の適用可否を区別する。+30ms診断のconfidence/margin条件通過は25〜30秒12/49枚へ低下（制御可能率ではない）。
 - 保存先: analysis/2026-11-13-walking/v11実機試験_141282685.md、analyze_trial.py、141282685/ の変換CSV/JSON・図・映像抜粋・audit_review.md/json・prediction_review.md/json・review_prediction.py・failure_review.md/json。今回ファームウェアは変更していない。
 - 次: 有効な局所観測と反復モデルの確信を分離し、大きい前振れ/失速を扱う推定と支援を検討。通常幅を保持する前倒し上限、中心手前の減速を早過ぎと扱う時間条件も同時に見直す。必要仕事と支持移動の実機効果は未同定で、無条件の一致度緩和や一律出力増量にしない。
+
+## v12局所戻り支援の準備（2026-11-13）
+
+- 環境 `atoms3cam-foot-support-local`、build ID `foot-support-local-v12`。v11環境とは分離。履歴モデルが既存品質条件を満たす時は優先し、それ以外に同run/frameの局所3点と2区間連続Returningを補完として使う。反復モデルのconfidence0を水増しせず、局所根拠を別に監査する。
+- 生の通常proposalを車輪ガードのコピーで確認し、保護後通常幅80 ms以下をselectorへ渡す。backendは生proposalへ実ガードを一度だけ適用し、要求幅と一致する場合に送信。今回の生70→保護後68 msを維持する。古い/無効な車輪観測、実ガードとの差、送信直前のsourceや条件変化は拒否し、通常ZERO状態を復元する。
+- 中心所要時間250〜500 msの別経路は、採用sourceがLocal、局所Returning、足形状根拠、実際の内向き減速が揃う場合だけ。内向き6度/s以上、幅+20 ms下限、同ピーク一回、通常ZERO優先、曖昧な送信時の停止を維持。静止や外向きは対象外。局所推定は戻り補正最大25 ms/0.5度で、未観測の頂点を越えて外挿しない。
+- v12だけ足snapshot確認間隔25→10 ms。画像認識/局所計算はCore0、Core1は小さい照会。実時間期限を保証したものではない。branch17 `foot_support_local_unmodeled_v12`、arrival model null、format56維持。局所予測CSV、source/mode/stall、生通常幅/preview幅/要求幅/実幅、候補時と最終再判定を記録する。
+- 実C++ヘッダ因果再生: 27.921秒はv11 PoseUncertain→局所のみWidth→80 ms化のみTooEarly→失速経路追加で68 ms候補。ready受信追加遅れ0/10/15 msでは従来救済27.958秒より37/31/26 ms前、25 ms遅れでは候補なし。8ログで通常段階一致。旧848にも59 ms候補、旧279停止には追加候補なし。元の観測/指令上の比較であり、新入力後の物理応答や歩行改善の再現ではない。
+- 局所モデルの内部marginは誤差上限ではない。今回のfallback32角値MAE0.570度（保持0.613、旧直線0.558）、margin内65.6%。方向取り違えも残る。局所観測の根拠と、現在足方向・接地・必要仕事の保証を混同しない。
+- 検証: 局所予測/source選択/v12 portable条件、旧v11との縮小範囲56,448ケース一致、実runner統合、旧runner4構成、ログ変換/足時刻/足側対応が成功。PlatformIO SUCCESS、RAM124932/327680、Flash1847117/3342336 bytes。firmware.bin1847488 bytes、SHA-256 `0bf29d3abadd7e9cc2ed2b9b28f45866c163aa2c69e842d03c3e859f57d1eb0f`。
+- 配信: `http://127.0.0.1:8767/foot-support-local/` のページ/manifest/4バイナリHTTP200、全バイト一致。再準備 `python tools/prepare_foot_support_local_flasher.py`。実機には今回書き込んでいない。
+- 保存: `docs/FOOT_SUPPORT_LOCAL_V12.md`、`docs/FOOT_SUPPORT_ASSIST_V12_DESIGN.md`、`tools/replay_foot_support_v12.py`、`analysis/2026-11-13-walking/v12_causal_replay.md`、`v12_causal_latency_sensitivity.md`、`v12_build_verification.json`。ソース/テスト/文書/小さい検証結果だけをGitHub同期対象とし、動画/RWLOG/CSV/画像/バイナリ/詳細JSONはローカル保持。
+- 次: v12を専用ページで書き込み、同条件の動画とRWLOGを取得。readyから制御受信までの遅れ、局所候補の実行、支持切り替え、左右交互の足運びと前進の継続を確認する。30秒記録や中心通過数だけで歩行成功と判定しない。

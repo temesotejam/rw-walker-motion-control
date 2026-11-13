@@ -30,13 +30,25 @@ def method(name, result):
 # Use the established fixture's real portable controllers and minimal doubles.
 # Replace its main: old tests intentionally expect the separate 15 ms path.
 fixture = fixture.split("int main(){", 1)[0]
-fixture = '#include "foot_phase_prediction.h"\n#include "foot_support_assist.h"\n#include "foot_support_deceleration.h"\n' + fixture
+fixture = '#include "foot_phase_prediction.h"\n#include "foot_support_assist.h"\n#include "foot_support_policy.h"\n#include "foot_support_deceleration.h"\n' + fixture
 fixture = fixture.replace("uint32_t millis(){return 10000;}",
                           "uint32_t mock_us=2000000,mock_ms=1300;\nuint32_t micros(){return mock_us;}\nuint32_t millis(){return mock_ms;}")
 fixture = fixture.replace("struct Status {bool emergency_stop=false,pulse_active=false;",
                           "struct Status {uint16_t run_id=3;uint32_t pulse_id=0;bool emergency_stop=false,pulse_active=false;")
-members = "  foot_phase_prediction::Projection foot_pose_;" + header.split(
-    "  foot_phase_prediction::Projection foot_pose_;", 1)[1].split("#endif", 1)[0]
+member_start = "  foot_phase_prediction::Projection foot_pose_;"
+member_lines = [member_start]
+member_depth = 1
+for member_line in header.split(member_start, 1)[1].splitlines():
+    directive = member_line.strip()
+    if directive.startswith("#if"):
+        member_depth += 1
+    elif directive.startswith("#endif"):
+        member_depth -= 1
+        if member_depth == 0:
+            break
+    member_lines.append(member_line)
+assert member_depth == 0
+members = "\n".join(member_lines)
 fixture = fixture.replace("class ExperimentRunner {public:", "class ExperimentRunner {public:\n" + members + "\n")
 fixture = fixture.replace("Status status_;Imu", "float energy_control_autonomous_last_peak_amplitude_deg_=3.f;\n float simulated_rpm=20;bool simulated_side_mismatch=false;\n PsramLogger::EnergyControlAutonomousZeroCrossEvent last_finished_event;\n Status status_;Imu")
 fixture = fixture.replace("void finishFootEnergyDecision(PsramLogger::EnergyControlAutonomousZeroCrossEvent&,uint32_t){++finished;}",

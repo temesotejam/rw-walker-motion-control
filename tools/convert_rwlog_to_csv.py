@@ -1266,7 +1266,7 @@ def write_cad_support_shadow(metadata: dict, out_dir: Path) -> int:
 def write_foot_support_diagnostics(metadata: dict, out_dir: Path) -> int:
     frames = {f['sequence']: f for f in metadata.get('foot_frames', [])}
     count = 0
-    for name in ('foot_pose_prediction', 'foot_support_assist'):
+    for name in ('foot_pose_prediction', 'foot_local_prediction', 'foot_support_assist'):
         block = metadata.get(name)
         if block is None:
             continue
@@ -1277,7 +1277,7 @@ def write_foot_support_diagnostics(metadata: dict, out_dir: Path) -> int:
         joined, seen = [], set()
         for row in block['records']:
             seq = row.get('sequence')
-            key = seq if name == 'foot_pose_prediction' else (row.get('time_ms'), row.get('peak_ms'))
+            key = (row.get('time_ms'), row.get('peak_ms')) if name == 'foot_support_assist' else seq
             if seq not in frames or key in seen:
                 raise ValueError('Unmatched or repeated foot support diagnostic')
             seen.add(key)
