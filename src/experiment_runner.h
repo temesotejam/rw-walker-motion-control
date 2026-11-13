@@ -12,6 +12,9 @@
 #include "lateral_energy_control.h"
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
 #include "walking_energy_policy.h"
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+#include "walking_energy_policy_v15.h"
+#endif
 #endif
 #include "wheel_work_energy_control.h"
 #include "walking_energy_loss.h"
@@ -674,8 +677,10 @@ private:
   uint32_t walking_energy_peak_ms_[2]={0,0};
   struct WalkingEnergyAudit {
     uint32_t time_ms=0,peak_ms=0;int8_t side=0;
+    uint32_t output_start_ms=0;
     uint16_t requested_ms=0,guarded_ms=0;
     bool executed=false,optional=false,rescue=false;
+    bool early_budget_checked=false,early_budget_admitted=false;
     walking_energy_policy::Decision decision;
   };
   WalkingEnergyAudit walking_energy_audit_[192];

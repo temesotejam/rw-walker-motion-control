@@ -1,7 +1,12 @@
-// Included by experiment_runner.cpp only for the separately identified v14.
+// Shared by the separately identified v14 and v15 energy builds.
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
 bool ExperimentRunner::tryWalkingEnergy(
     PsramLogger::EnergyControlAutonomousZeroCrossEvent& e,uint32_t t,bool* healthy_out){
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+  namespace energy=walking_energy_policy_v15;
+#else
+  namespace energy=walking_energy_policy;
+#endif
   const int side=e.physical_next_peak_side;
   const bool healthy=wheelWorkMode() && e.target_peak_deg==8.f &&
       (side==1 || side==-1) && !status_.emergency_stop && !status_.pulse_active &&
@@ -11,7 +16,13 @@ bool ExperimentRunner::tryWalkingEnergy(
       e.pre_input_wheel_speed_age_us<=50000 && std::isfinite(e.pre_input_wheel_speed_rpm);
   if(healthy_out)*healthy_out=healthy;
   noteFootSupportBackend(healthy?2:1);
-  e.work_control_branch=19; // Even invalid/coast stays in the energy path.
+  e.work_control_branch=
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+      20;
+#else
+      19;
+#endif
+  // Even invalid/coast stays in the energy path.
   e.valid=false;e.output_executed=false;
   e.cg_shift_mm=0;
   e.reason=Config::ENERGY_CONTROL_AUTONOMOUS_REASON_VALID_NO_OUTPUT;
@@ -19,8 +30,16 @@ bool ExperimentRunner::tryWalkingEnergy(
   a.side=side;a.optional=optional_early_event_;a.rescue=stall_rescue_event_;
   auto save=[&](){++walking_energy_total_;if(walking_energy_count_<192)walking_energy_audit_[walking_energy_count_++]=a;};
   if(!healthy){save();return true;} // Never fall through to the old selector.
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+  const uint32_t decision_sample_us=foot_support_event_?foot_support_sample_us_:
+      energy_control_autonomous_last_motion_sample_us_;
+  auto early_fresh=[&](){const uint32_t now=millis()-run_start_ms_;
+    return now>=t && now-t<=5 && decision_sample_us &&
+        static_cast<uint32_t>(micros()-decision_sample_us)<=10000;};
+  if(optional_early_event_ && !early_fresh()){save();return true;}
+#endif
   if(!e.previous_peak_time_ms || t<e.previous_peak_time_ms || t-e.previous_peak_time_ms>1500){save();return true;}
-  walking_energy_policy::Input in;in.side=side;in.rate_dps=e.zero_cross_abs_rate_dps;
+  energy::Input in;in.side=side;in.rate_dps=e.zero_cross_abs_rate_dps;
   in.body_angle_deg=(optional_early_event_ || stall_rescue_event_)?e.detector_angle_after_deg:0.f;
   in.target_deg=tilt_priority_.target();in.previous_peak_deg=e.previous_peak_amplitude_deg;
   const unsigned index=side>0?1:0;
@@ -29,7 +48,13 @@ bool ExperimentRunner::tryWalkingEnergy(
   in.initial_current_ma=side*e.i0_estimated_mA;
   in.goal_current_ma=predictCurrentGoalMa(1200,e.vbat_mV*.001f);
   in.cap_ms=tilt_priority_.timingCap(side,t,80); // timing protection only
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+  // Main-input relocation gets the same envelope as normal ZERO. The
+  // separate low-speed rescue trial retains its old, provisional ceiling.
+  if(stall_rescue_event_)
+#else
   if((optional_early_event_ && !foot_support_event_) || stall_rescue_event_)
+#endif
     if(in.cap_ms>15)in.cap_ms=15;
   if(foot_support_event_){
     noteFootSupportBackend(4);
@@ -37,13 +62,13 @@ bool ExperimentRunner::tryWalkingEnergy(
     if(now<t || now-t>5 || static_cast<uint32_t>(micros()-foot_support_sample_us_)>10000){save();return true;}
     in.body_angle_deg+=e.zero_cross_rate_dps*(now-t)*.001f;
   }
-  const auto selected=walking_energy_policy::decide(lateral_energy_geometry_,walking_energy_current_,in);
+  const auto selected=energy::decide(lateral_energy_geometry_,walking_energy_current_,in);
   a.decision=selected;a.requested_ms=selected.width_ms;
   if(!selected.valid){noteFootSupportBackend(6);save();return true;}
   auto guard=wheel_cycle_guard_;
   const uint16_t width=selected.coast?0:guard.limit(side,e.pre_input_wheel_speed_rpm,true,t,selected.width_ms);
   a.guarded_ms=width;
-  const auto actual=walking_energy_policy::evaluateWidth(lateral_energy_geometry_,walking_energy_current_,in,width);
+  const auto actual=energy::evaluateWidth(lateral_energy_geometry_,walking_energy_current_,in,width);
   a.decision=actual;
   if(!actual.valid || width>selected.width_ms){noteFootSupportBackend(7);save();return true;}
   if(foot_support_event_){
@@ -82,10 +107,40 @@ bool ExperimentRunner::tryWalkingEnergy(
   e.command_current_mA=actual.coast?0:1200;e.pulse_width_ms=width;
   e.q_command_direction=actual.coast?0:side;e.command_matches_zero_cross_motion=!actual.coast;
   e.pulse_start_ms=actual.coast?0:t;e.pulse_end_ms=actual.coast?0:t+width;
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+  if(optional_early_event_){
+    a.early_budget_checked=true;
+    a.early_budget_admitted=energy::earlyAdmissible(actual);
+    if(!a.early_budget_admitted){
+      // No transport, no consumed main-input opportunity. The outer
+      // optional wrapper restores WAIT_ZERO_CROSS before the ordinary pass.
+      e.command_current_mA=0;e.pulse_width_ms=0;e.q_command_direction=0;
+      e.command_matches_zero_cross_motion=false;e.pulse_start_ms=e.pulse_end_ms=0;
+      e.q_command_mA_s=e.q_effective_pred_mA_s=0;e.solver_selected_integer_width_ms=0;
+      e.predicted_input_work_j=0;e.predicted_energy_j=actual.available_j;
+      e.predicted_next_peak_amplitude_deg=e.free_next_peak_amplitude_deg;
+      e.unapplied_energy_request_j=actual.request_j;
+      save();return true;
+    }
+  }
+#endif
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+  if(optional_early_event_ && !early_fresh()){
+    a.early_budget_admitted=false;
+    e.command_current_mA=0;e.pulse_width_ms=0;e.q_command_direction=0;
+    e.q_command_mA_s=e.q_effective_pred_mA_s=0;e.solver_selected_integer_width_ms=0;
+    e.command_matches_zero_cross_motion=false;e.pulse_start_ms=e.pulse_end_ms=0;
+    e.predicted_input_work_j=0;e.predicted_energy_j=actual.available_j;
+    e.predicted_next_peak_amplitude_deg=e.free_next_peak_amplitude_deg;
+    e.unapplied_energy_request_j=actual.request_j;save();return true;
+  }
+#endif
+#if !defined(EARLY_ENERGY_MAIN) || !EARLY_ENERGY_MAIN
   if(foot_support_event_){
     const uint32_t now=millis()-run_start_ms_;
     if(now<t || now-t>5 || static_cast<uint32_t>(micros()-foot_support_sample_us_)>10000){noteFootSupportBackend(4);save();return true;}
   }
+#endif
   noteFootSupportBackend(8);
   if(!actual.coast && !beginEnergyControlAutonomousPulse(run_start_ms_+t,t,side,width,1200)){
     e.reason=Config::ENERGY_CONTROL_AUTONOMOUS_REASON_CURRENT_WRITE_FAILED;
@@ -93,6 +148,10 @@ bool ExperimentRunner::tryWalkingEnergy(
     save();return true;
   }
   wheel_cycle_guard_=guard;
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+  if(!actual.coast){e.pulse_start_ms=active_pulse_start_test_ms_;
+    e.pulse_end_ms=e.pulse_start_ms+width;a.output_start_ms=e.pulse_start_ms;}
+#endif
   tilt_priority::Choice confirmation;confirmation.selected=true;confirmation.coast=actual.coast;
   confirmation.current_ma=actual.coast?0:1200;confirmation.width_ms=width;
   confirmation.direction=side;confirmation.target_deg=in.target_deg;
@@ -117,6 +176,11 @@ bool ExperimentRunner::tryWalkingEnergy(
 }
 
 void ExperimentRunner::tryWalkingEnergyFoot(uint32_t t,uint32_t sample,float angle,float rate){
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+  namespace energy=walking_energy_policy_v15;
+#else
+  namespace energy=walking_energy_policy;
+#endif
   const int side=energy_control_autonomous_last_peak_side_;
   if((side!=1 && side!=-1) || !wheelWorkMode() || energy_control_autonomous_target_peak_deg_!=8.f ||
      energy_control_autonomous_input_peak_percent_!=0 || status_.emergency_stop || status_.pulse_active ||
@@ -135,7 +199,7 @@ void ExperimentRunner::tryWalkingEnergyFoot(uint32_t t,uint32_t sample,float ang
   const auto telemetry=roller_->telemetrySnapshot();
   if(!telemetry.speed_valid || !telemetry.speed_sample_time_us ||
       static_cast<uint32_t>(micros()-telemetry.speed_sample_time_us)>50000 || !std::isfinite(telemetry.speed_rpm))return;
-  walking_energy_policy::Input model;model.side=-side;model.rate_dps=std::fabs(rate);model.body_angle_deg=angle;
+  energy::Input model;model.side=-side;model.rate_dps=std::fabs(rate);model.body_angle_deg=angle;
   model.previous_peak_deg=energy_control_autonomous_last_peak_amplitude_deg_;
   const unsigned index=model.side>0?1:0;
   model.same_side_peak_deg=walking_energy_peak_ms_[index] && t>=walking_energy_peak_ms_[index] &&
@@ -145,16 +209,20 @@ void ExperimentRunner::tryWalkingEnergyFoot(uint32_t t,uint32_t sample,float ang
       expf(-static_cast<float>(run_start_ms_+t-predicted_current_end_ms_)/70.f);
   model.goal_current_ma=predictCurrentGoalMa(1200,status_.beta_model_vbat_mV*.001f);
   model.cap_ms=tilt_priority_.timingCap(-side,t,80);
-  const auto energy=walking_energy_policy::decide(lateral_energy_geometry_,walking_energy_current_,model);
-  if(!energy.valid || energy.coast)return; // No energy deficit, no forced foot pulse.
+  const auto preview=energy::decide(lateral_energy_geometry_,walking_energy_current_,model);
+  if(!preview.valid || preview.coast)return; // No energy deficit, no forced foot pulse.
   auto guard=wheel_cycle_guard_;
-  const auto width=guard.limit(-side,telemetry.speed_rpm,true,t,energy.width_ms);
+  const auto width=guard.limit(-side,telemetry.speed_rpm,true,t,preview.width_ms);
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+  const auto guarded=energy::evaluateWidth(lateral_energy_geometry_,walking_energy_current_,model,width);
+  if(!energy::earlyAdmissible(guarded))return;
+#endif
   foot_support_policy::Input in;in.active=true;in.run_id=status_.run_id;in.foot_run_id=foot_pose_.run_id;
   in.peak_id=energy_control_autonomous_last_peak_ms_;in.peak_side=side;in.now_ms=t;in.frame_ms=foot_pose_.frame_ms;
   in.pose_ready=s.pose.ready();in.pose_confident=s.usable;in.left_deg=s.pose.left;in.right_deg=s.pose.right;
   in.left_uncertainty_deg=s.pose.left_uncertainty;in.right_uncertainty_deg=s.pose.right_uncertainty;
   in.body_angle_deg=angle;in.body_rate_dps=rate;in.normal_drive_selected=true;
-  in.normal_width_ms=width;in.raw_normal_width_ms=energy.width_ms;in.boosted_guarded_width_ms=width;
+  in.normal_width_ms=width;in.raw_normal_width_ms=preview.width_ms;in.boosted_guarded_width_ms=width;
   in.raw_boost_ms=0;in.local_turn_confirmed=s.local_turn_confirmed;in.local_returning_confirmed=s.local_returning_confirmed;
   in.prediction_source=static_cast<foot_support_policy::PredictionSource>(s.source);
   in.inward_decelerating=foot_support_deceleration_.update(status_.run_id,in.peak_id,t,-rate*side);
@@ -169,8 +237,8 @@ void ExperimentRunner::tryWalkingEnergyFoot(uint32_t t,uint32_t sample,float ang
   FootSupportAudit a;a.time_ms=t;a.peak_ms=in.peak_id;a.sequence=foot_pose_sequence_;a.frame_ms=in.frame_ms;
   a.left=in.left_deg;a.right=in.right_deg;a.left_uncertainty=in.left_uncertainty_deg;a.right_uncertainty=in.right_uncertainty_deg;
   a.confidence=s.pose.confidence;a.body_angle=angle;a.body_rate=rate;a.threshold=timing.threshold_deg;
-  a.estimated_zero_ms=timing.estimated_zero_ms;a.normal_width=energy.width_ms;a.normal_guarded_width=width;
-  a.requested_width=energy.width_ms;a.boosted_guarded_width=width;a.next_side=-side;
+  a.estimated_zero_ms=timing.estimated_zero_ms;a.normal_width=preview.width_ms;a.normal_guarded_width=width;
+  a.requested_width=preview.width_ms;a.boosted_guarded_width=width;a.next_side=-side;
   a.prediction_source=static_cast<uint8_t>(s.source);a.local_turn=s.local_turn_confirmed;a.local_returning=s.local_returning_confirmed;
   a.local_evidence=s.local_evidence;a.mode=static_cast<uint8_t>(timing.mode);a.candidate_mode=a.mode;
   a.stall_route=timing.stall_route;a.anticipated_shape_need=in.anticipated_shape_need;a.inward_decelerating=in.inward_decelerating;
@@ -186,7 +254,14 @@ void ExperimentRunner::tryWalkingEnergyFoot(uint32_t t,uint32_t sample,float ang
 
 void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
   auto n=[](float x){return std::isfinite(x)?String(x,9):String("null");};
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+  json+=",\"walking_energy\":{\"revision\":\"walking_early_energy_main_v15\",\"output_enabled\":true,\"branch\":20,";
+  json+="\"width_selection\":\"minimum_integer_predicted_work_reaches_request\",\"early_admission\":\"positive_budget_fulfilled_after_guard;otherwise_no_transport_and_keep_ordinary_opportunity\",\"generic_early_15ms_cap_active\":false,";
+  json+="\"main_ceiling_ms\":80,\"main_ceiling_basis\":\"inherited_normal_experimental_envelope_not_physics_derived\",\"rescue_ceiling_ms\":15,\"rescue_ceiling_basis\":\"separate_legacy_low_speed_trial_not_derived\",\"online_reversal_cutoff_active\":false,";
+  json+="\"energy_fulfillment_scope\":\"predicted_work_only;model_error_and_unmodelled_motion_can_leave_actual_deficit\",\"record_prediction_semantics\":\"postguard_candidate;output_predictions_are_zero_when_unsent\",";
+#else
   json+=",\"walking_energy\":{\"revision\":\"walking_peak_rate_energy_v14\",\"output_enabled\":true,\"branch\":19,";
+#endif
   json+="\"origin\":\"nominal_zero_CG_rocker_U_same_for_current_peak_target\",\"physical_body_inertia_identified\":false,\"MPC_active\":false,";
   json+="\"mechanical_reference_deg\":0,\"energy_neutral_model\":\"nominal_only;moving_foot_potential_minimum_not_yet_identified\",\"paired_feedback_is_energy_neutral_estimation\":false,";
   json+="\"paired_semantics\":\"successive_peak_mean_and_difference_not_two_simultaneous_energy_stores\",\"foot_role\":\"timing_only_no_ms_boost_no_forced_coast_override\",";
@@ -201,8 +276,10 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     if(json.length()+4096U>=640U*1024U*8U/10U)break;
     const auto& a=walking_energy_audit_[i];const auto& d=a.decision;
     String row="{\"time_ms\":"+String(a.time_ms)+",\"peak_ms\":"+String(a.peak_ms)+",\"side\":"+String(a.side);
+    row+=",\"output_start_ms\":"+String(a.output_start_ms);
     row+=",\"requested_ms\":"+String(a.requested_ms)+",\"guarded_ms\":"+String(a.guarded_ms);
     row+=",\"executed\":"+String(a.executed?"true":"false")+",\"optional\":"+String(a.optional?"true":"false")+",\"rescue\":"+String(a.rescue?"true":"false");
+    row+=",\"early_budget_checked\":"+String(a.early_budget_checked?"true":"false")+",\"early_budget_admitted\":"+String(a.early_budget_admitted?"true":"false");
     row+=",\"valid\":"+String(d.valid?"true":"false")+",\"coast\":"+String(d.coast?"true":"false")+",\"saturated\":"+String(d.saturated?"true":"false")+",\"extrapolated\":"+String(d.extrapolated?"true":"false");
     row+=",\"potential_j\":"+n(d.potential_j)+",\"effective_rate_energy_j\":"+n(d.effective_kinetic_j)+",\"fitted_offset_j\":"+n(d.fitted_offset_j);
     row+=",\"incoming_peak_energy_j\":"+n(d.peak_energy_j)+",\"same_side_peak_energy_j\":"+n(d.same_side_peak_energy_j);
@@ -210,6 +287,7 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     row+=",\"common_correction_j\":"+n(d.common_correction_j)+",\"redistribution_j\":"+n(d.redistribution_j);
     row+=",\"available_j\":"+n(d.available_j)+",\"target_j\":"+n(d.target_j)+",\"deficit_j\":"+n(d.deficit_j)+",\"request_j\":"+n(d.request_j);
     row+=",\"q_mas\":"+n(d.q_mas)+",\"predicted_work_j\":"+n(d.predicted_work_j)+",\"predicted_arrival_j\":"+n(d.predicted_arrival_j)+",\"unmet_j\":"+n(d.unmet_j);
+    row+=",\"output_q_pred_mas\":"+n(a.executed?d.q_mas:0.f)+",\"output_work_pred_j\":"+n(a.executed?d.predicted_work_j:0.f)+",\"unmet_after_command_j\":"+n(a.executed?d.unmet_j:d.request_j);
     row+=",\"passive_rate_supported\":"+String(d.passive_rate_supported?"true":"false")+",\"work_rate_supported\":"+String(d.work_rate_supported?"true":"false")+",\"charge_supported\":"+String(d.charge_supported?"true":"false");
     row+=",\"passive_intercept_rolloff\":"+String(d.passive_intercept_rolloff?"true":"false")+",\"early_state_transfer\":"+String(d.early_state_transfer?"true":"false");
     row+=",\"coast_residual_q_mas\":"+n(d.coast_residual_q_mas)+"}";

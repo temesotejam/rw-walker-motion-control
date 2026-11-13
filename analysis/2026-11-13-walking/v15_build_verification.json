@@ -1,0 +1,48 @@
+{
+  "build_id": "early-energy-main-v15",
+  "environment": "atoms3cam-early-energy-main",
+  "build_success": true,
+  "ram_used": 153500,
+  "ram_capacity": 327680,
+  "flash_used": 1871841,
+  "flash_capacity": 3342336,
+  "firmware_bytes": 1872208,
+  "firmware_sha256": "8149e472287df09a8e684198957803d7c84615e4d62a9827f5a690e7c7a15885",
+  "policy_sha256": "2972df621f57eef2e24433aeeac01911ea5c0c65d64852f387fd15bb11509d62",
+  "url": "http://127.0.0.1:8767/early-energy-main/",
+  "page_verified": true,
+  "parts": [
+    {
+      "path": "firmware/bootloader.bin",
+      "offset": 0,
+      "bytes": 15104,
+      "sha256": "1776e4dd896a69d0a5c2e79957b0e2a88aa4129b1381d6478683515a1f6af343",
+      "http_bytes_match": true
+    },
+    {
+      "path": "firmware/partitions.bin",
+      "offset": 32768,
+      "bytes": 3072,
+      "sha256": "1d9cca96de0fe07ad7fc0648b9878ddecd9ce565e38b589ad20fea698ed4c80c",
+      "http_bytes_match": true
+    },
+    {
+      "path": "firmware/boot_app0.bin",
+      "offset": 57344,
+      "bytes": 8192,
+      "sha256": "f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0",
+      "http_bytes_match": true
+    },
+    {
+      "path": "firmware/firmware.bin",
+      "offset": 65536,
+      "bytes": 1872208,
+      "sha256": "8149e472287df09a8e684198957803d7c84615e4d62a9827f5a690e7c7a15885",
+      "http_bytes_match": true
+    }
+  ],
+  "hardware_flashed": false,
+  "physical_energy_fulfillment_validated": false,
+  "walking_validated": false,
+  "moving_foot_energy_neutral_active": false
+}

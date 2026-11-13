@@ -2798,6 +2798,13 @@ bool ExperimentRunner::beginEnergyControlAutonomousPulse(uint32_t now_ms, uint32
   }
 
   const uint32_t state_t0_us = micros();
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+  // A v15 main-input duration begins after the successful transport write.
+  // Do not backdate its clock to a detector/decision timestamp and silently
+  // deliver less than the energy-selected width. Current within the write
+  // transaction remains unmeasured; this is the command-duration origin.
+  if(walking_target8){now_ms=millis();t_test_ms=now_ms-run_start_ms_;}
+#endif
   status_.current_mA_setting = requested_current_mA;
   status_.pulse_width_ms_setting = pulse_width_ms;
   status_.motor_cmd_mA = command_current_mA;
@@ -2960,7 +2967,11 @@ void ExperimentRunner::appendFootSupportMetadata(PsramString& json) const {
 #endif
   auto number=[](float v){return std::isfinite(v)?String(v,5):String("null");};
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+  json+=",\"foot_support_assist\":{\"revision\":\"energy_main_timing_transfer_v15\",\"output_enabled\":true,\"cad_mapping_used_for_output\":false,";
+#else
   json+=",\"foot_support_assist\":{\"revision\":\"energy_timing_transfer_v14\",\"output_enabled\":true,\"cad_mapping_used_for_output\":false,";
+#endif
   json+="\"policy\":\"v13_pose_timing_windows_with_energy_selected_width;no_ms_boost;no_forced_coast_override;one_attempt_per_peak\",";
   json+="\"prediction_source_names\":[\"unknown\",\"history\",\"local\",\"local_first_turn\"],\"mode_names\":[\"none\",\"ordinary_relocation\",\"coast_assist_disabled\",\"stall_ordinary_relocation\",\"stall_coast_assist_disabled\"],";
   json+="\"normal_width_semantics\":\"raw_energy_inverse_width_then_fresh_reducing_wheel_guard;recomputed_energy_before_output\",\"boost_semantics\":\"disabled\",\"first_turn_max_age_ms\":100,";
@@ -3001,7 +3012,11 @@ void ExperimentRunner::appendFootSupportMetadata(PsramString& json) const {
   for(unsigned i=0;i<sizeof(foot_support_reason_counts_)/sizeof(foot_support_reason_counts_[0]);++i){if(i)json+=",";json+=String(foot_support_reason_counts_[i]);}
   json+="],\"work_control_branch\":";
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
+#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
+  json+="20";
+#else
   json+="19";
+#endif
 #elif defined(FOOT_SUPPORT_TRANSFER) && FOOT_SUPPORT_TRANSFER
   json+="18";
 #elif defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
