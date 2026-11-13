@@ -19,7 +19,11 @@
 #else
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
 #if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+#if defined(FOOT_SUPPORT_TRANSFER) && FOOT_SUPPORT_TRANSFER
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "foot-support-transfer-v13"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "foot-support-local-v12"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "foot-support-assist-v11"
 #endif

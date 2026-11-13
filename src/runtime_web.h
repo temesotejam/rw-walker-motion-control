@@ -555,6 +555,7 @@ function controls() {
   $('work-start').disabled = !fresh || busy || transferRunning || !latest.ready || latest.running || latest.export_phase !== 'empty' || !!latest.upright_reference?.capturing;
   $('work-start-10').disabled = $('work-start').disabled;
   $('work-start-12').disabled = $('work-start').disabled;
+  if (latest.foot_control_required && !latest.foot_control_ready) $('work-start').disabled = true;
   $('probe-batch').disabled = $('start').disabled;
   $('probe-extended').disabled = $('start').disabled;
   $('probe-positive-current').disabled = $('start').disabled;
@@ -741,7 +742,7 @@ function render(s) {
   $('right').textContent = f.right_valid && (!stale || terminal) ? format(f.right_deg) + '°' : '—';
   $('left').textContent = f.left_valid && (!stale || terminal) ? format(f.left_deg) + '°' : '—';
   $('fps').textContent = terminal ? '停止中' : `${format(stale ? 0 : f.fps, 1)} / 15 fps`;
-  $('foot-status').textContent = `足角度（任意） · ${f.zero_ready ? 'ゼロ点確定' : 'ゼロ点未確定（' + (f.zero_samples ?? 0) + '枚）'} · 記録${f.frames ?? 0}枚 · 画像取得失敗${f.failures ?? 0}回` +
+  $('foot-status').textContent = `足角度（${s.foot_control_required ? '8°試験の制御に使用' : '任意'}） · ${f.zero_ready ? 'ゼロ点確定' : 'ゼロ点未確定（' + (f.zero_samples ?? 0) + '枚）'} · 記録${f.frames ?? 0}枚 · 画像取得失敗${f.failures ?? 0}回` +
     footIssues(f, stale, terminal);
   const reference = s.upright_reference;
   const cg = s.lateral_cg;
@@ -754,8 +755,11 @@ function render(s) {
     : reference.valid
       ? `比較用の姿勢を保存済み（更新${reference.revision}回） · 保存姿勢との差 ${format(reference.relative_pitch_deg)}° · 保存時のMEKF角 ${format(reference.abs_pitch_deg)}°。仕事制御の原点は絶対角0°です。`
       : '比較用の姿勢は未保存です。仕事に基づく制御の開始には保存不要です。';
-  if (!s.running && s.ready && !reference.capturing) $('guide').textContent = '仕事に基づく制御はMEKF絶対角0°が基準です。直立基準の保存は不要です。機体を静止させて開始してください。';
-  else if (s.running) $('guide').textContent = '測定中。画面は更新されます。足角度は制御入力に使用しません。';
+  if (s.foot_control_required && !s.running && s.ready && !reference.capturing) $('guide').textContent = s.foot_control_ready
+    ? '足のゼロ点と左右の検出を確認しました。機体を静止させて8°試験を開始できます。'
+    : '8°試験は足角度を制御に使います。機体と足を静止させ、ゼロ点確定と左右の有効な検出を待ってください。';
+  else if (!s.running && s.ready && !reference.capturing) $('guide').textContent = '仕事に基づく制御はMEKF絶対角0°が基準です。直立基準の保存は不要です。機体を静止させて開始してください。';
+  else if (s.running) $('guide').textContent = s.foot_control_required ? '測定中。足角度と機体の揺れを使って支持移動を補助します。' : '測定中。画面は更新されます。足角度は制御入力に使用しません。';
   else if (reference.capturing) $('guide').textContent = '基準を取得しています。機体を動かさずお待ちください。';
   else if (s.downloadable) $('guide').textContent = 'ログを保存してください。次の測定には「ログを消去・次の測定へ」を使います。';
   else if (s.ready) $('guide').textContent = f.zero_ready && f.right_valid && f.left_valid && !stale

@@ -15,6 +15,7 @@
 #include "foot_observer.h"
 #include "immutable_export.h"
 #include "runtime_diagnostics.h"
+#include "foot_support_start.h"
 #if FOOT_EARLY_TRIAL && !ANGLE_EARLY_TRIAL
 #include "foot_geometry_async.h"
 #include "early_geometry_diagnostics.h"
@@ -257,6 +258,10 @@ static bool controlStep(void*) {
     if (runner.status().state == ExperimentState::READY_TO_MEASURE) {
       if (!log_export.ready()) error = "export_worker_unavailable";
       else if (!imu.acquisitionHealthy() || imu.stale(millis())) error = "imu_not_healthy";
+#if defined(FOOT_SUPPORT_TRANSFER) && FOOT_SUPPORT_TRANSFER
+      else if (start_target_deg==8.f && !foot_support_start::ready(feet.snapshot(),esp_timer_get_time()))
+        error = "foot_zero_not_ready_or_observation_invalid";
+#endif
       else {
         ok = runner.setEnergyControlAutonomousInputPeakPercent(start_input_peak_percent) &&
             runner.setEnergyControlAutonomousInputCurrentMa(start_input_current_mA) &&

@@ -25,6 +25,13 @@ with tempfile.TemporaryDirectory(prefix='foot_support_metadata_') as td:
     assert c.write_foot_support_diagnostics(meta,out)==3
     with (out/'foot_local_prediction.csv').open() as f:r=next(csv.DictReader(f))
     assert r['run_id']=='2' and r['predicted_right_deg']=='3.8' and r['local_evidence']=='1.0'
+    trial=meta['foot_support_assist']['records'][0]
+    trial.update(prediction_source=3,raw_boost_ms=10,boosted_guarded_width_ms=66,
+                 local_turn_confirmed=True,backend_reason=9,backend_selector_reason=0)
+    assert c.write_foot_support_diagnostics(meta,out)==3
+    with (out/'foot_support_assist.csv').open() as f:r=next(csv.DictReader(f))
+    assert r['prediction_source']=='3' and r['raw_boost_ms']=='10' and r['boosted_guarded_width_ms']=='66'
+    assert r['local_turn_confirmed']=='True' and r['backend_reason']=='9' and r['backend_selector_reason']=='0'
     meta['foot_support_assist']['records'].append(dict(meta['foot_support_assist']['records'][0]))
     try:c.write_foot_support_diagnostics(meta,out)
     except ValueError:pass

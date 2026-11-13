@@ -916,6 +916,11 @@ private:
     uint16_t normal_guarded_width=0;
     float preview_speed_rpm=NAN;
     uint32_t preview_speed_age_us=0;
+#if defined(FOOT_SUPPORT_TRANSFER) && FOOT_SUPPORT_TRANSFER
+    uint16_t raw_boost_ms=0,boosted_guarded_width=0;
+    uint8_t backend_reason=0,backend_selector_reason=255;
+    bool local_turn=false;
+#endif
 #endif
   };
   FootSupportAudit foot_support_audit_[96];
@@ -926,6 +931,14 @@ private:
   uint32_t foot_support_reason_counts_[17]={};
 #endif
   int foot_support_active_audit_=-1;
+#if defined(FOOT_SUPPORT_TRANSFER) && FOOT_SUPPORT_TRANSFER
+  void noteFootSupportBackend(uint8_t reason,uint8_t selector=255){
+    if(foot_support_event_ && foot_support_active_audit_>=0){
+      auto& a=foot_support_audit_[foot_support_active_audit_];
+      a.backend_reason=reason;a.backend_selector_reason=selector;
+    }
+  }
+#endif
   void __attribute__((optimize("Os", "no-fast-math"),noinline)) tryFootSupportCandidate(uint32_t t_test_ms,uint32_t sample_us,float angle_deg,float rate_dps);
 #endif
 #if FOOT_EARLY_TRIAL

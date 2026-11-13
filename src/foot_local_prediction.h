@@ -25,6 +25,10 @@ struct Result {
 
 struct LocalSide {
   float observed=NAN,trend=0,latest_rate=0,rate_difference=0,span=0,net_change=0;
+  // Raw adjacent differences are retained for the separately gated v13
+  // first-reversal experiment; v12 interpretation remains unchanged.
+  float prior_change=0,last_change=0;
+  uint32_t last_interval_ms=0;
   Phase phase=Phase::Unknown;
   bool qualified=false;
 };
@@ -128,6 +132,7 @@ class Predictor {
     const float first=y-x,second=z-y;
     const float rate_a=first*1000.f/(b.ms-a.ms),rate_b=second*1000.f/(c.ms-b.ms);
     LocalSide out;out.observed=z;out.latest_rate=rate_b;
+    out.prior_change=first;out.last_change=second;out.last_interval_ms=c.ms-b.ms;
     out.rate_difference=std::fabs(rate_b-rate_a);out.net_change=z-x;
     const float low=std::fmin(x,std::fmin(y,z)),high=std::fmax(x,std::fmax(y,z));out.span=high-low;
     if(out.span<=.3f){out.phase=Phase::Stationary;out.qualified=true;return out;}

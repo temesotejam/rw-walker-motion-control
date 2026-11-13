@@ -1,5 +1,8 @@
 #pragma once
-#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+#if defined(FOOT_SUPPORT_TRANSFER) && FOOT_SUPPORT_TRANSFER
+#include "foot_support_assist_v13.h"
+namespace foot_support_policy=foot_support_assist_v13;
+#elif defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
 #include "foot_support_assist_v12.h"
 namespace foot_support_policy=foot_support_assist_v12;
 #else

@@ -6,6 +6,7 @@
 #include "runtime_diagnostics.h"
 #include "foot_range_diagnostics.h"
 #include "foot_calibration_diagnostics.h"
+#include "foot_support_start.h"
 #include <WiFi.h>
 #include <esp_timer.h>
 #include <esp_system.h>
@@ -304,6 +305,9 @@ void WebUi::status() {
   json += ",\"result\":\"" + String(c.result) + "\"}";
   json += ",\"export_worker_ready\":" + String(export_->ready() ? "true" : "false");
   json += ",\"export_phase\":\"" + String(phase(e.phase)) + "\"";
+#if defined(FOOT_SUPPORT_TRANSFER) && FOOT_SUPPORT_TRANSFER
+  json += ",\"foot_control_required\":true,\"foot_control_ready\":" + String(foot_support_start::ready(f,esp_timer_get_time())?"true":"false");
+#endif
   json += ",\"foot\":{\"available\":" + String(f.available ? "true" : "false");
   json += ",\"detector\":\"" + String(appcfg::kWhiteDetectorRevision) + "\"";
   json += ",\"range\":" + footRangeDiagnosticsJson();
