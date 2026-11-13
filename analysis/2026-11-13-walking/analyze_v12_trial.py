@@ -1,4 +1,4 @@
-"""Audit converted v12 trials; a log alone cannot establish walking/contact."""
+"""Audit converted v12-v14 trials; a log alone cannot establish walking/contact."""
 import argparse
 import csv
 import hashlib
@@ -69,6 +69,12 @@ def analyze(directory, original):
          'right_valid', 'left_in_range', 'right_in_range'])]
     support = metadata.get('foot_support_assist', {})
     support_branch = str(support.get('work_control_branch', 17))
+    # v14 shares branch19 among ordinary, generic early and foot inputs.
+    # A branch number alone no longer identifies a foot-triggered command.
+    support_times = [num(a['time_ms']) for a in assist if a.get('output_executed')]
+    support_events = [r for r in executed if r['work_control_branch'] == support_branch
+                      and any(abs(num(r['pulse_start_ms']) - ms) <= 10 for ms in support_times)]
+    support_event_indices = {r['event_index'] for r in support_events}
     zero_locked = bool(feet) and all(r['zero_ready'] == 'True' for r in feet)
     reject = dict(zip(support.get('reason_names', []), support.get('candidate_check_counts', [])))
     summary = {
@@ -88,8 +94,9 @@ def analyze(directory, original):
         'support_candidate_checks': reject,
         'branch17_executed': sum(r['work_control_branch'] == '17' for r in executed),
         'branch18_executed': sum(r['work_control_branch'] == '18' for r in executed),
+        'branch19_executed': sum(r['work_control_branch'] == '19' for r in executed),
         'support_branch': support_branch,
-        'support_executed': sum(r['work_control_branch'] == support_branch for r in executed),
+        'support_executed': len(support_events),
         'executed': dict(Counter(r['event_kind'] for r in executed)),
         'peaks': len(peaks),
         'last_peaks': [{k: r[k] for k in ['peak_time_ms', 'physical_peak_side',
@@ -131,7 +138,7 @@ def analyze(directory, original):
         for r in executed:
             tm = num(r['pulse_start_ms']) / 1000
             width = num(r['pulse_width_ms']) * num(r['physical_next_peak_side'])
-            color = 'red' if r['work_control_branch'] == support_branch else 'green'
+            color = 'red' if r['event_index'] in support_event_indices else 'green'
             axes[3].vlines(tm, 0, width, color=color)
         axes[3].set_ylabel('Command width x side [ms]')
         axes[3].set_xlabel('Measurement time [s]')
