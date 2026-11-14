@@ -328,6 +328,16 @@ void ExperimentRunner::update() {
       const char* stop_reason = tilt_guard_.reason(attitude.quaternion, attitude.valid,
           static_cast<uint32_t>(micros() - attitude.sample_us), upright);
       if (stop_reason) { requestEmergencyStop(stop_reason); logSampleNow(); }
+#if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
+      if(status_.state==ExperimentState::RUNNING_BATCH_SWEEP &&
+          energy_control_autonomous_mode_ && wheelWorkMode() && energy_control_autonomous_target_peak_deg_==8.f){
+        fore_aft_motion_guard::Input motion;
+        motion.now_us=micros();motion.sample_us=attitude.sample_us;motion.valid=attitude.valid;
+        motion.quaternion=attitude.quaternion;motion.gyro_rad_s=mekfGyroRadFromRaw(r);
+        motion.bias_rad_s=mekf_.gyroBiasRadS();
+        if(observeWalkingForeAft(motion))logSampleNow();
+      }
+#endif
     }
     if ((passive_capture_mode_ || q_ident_mode_ || energy_control_v0_mode_ || energy_control_autonomous_mode_) && status_.state == ExperimentState::RUNNING_BATCH_SWEEP) {
       control_work::Scope work(control_work::Stage::Motion, true, status_.pulse_active);
@@ -2640,6 +2650,9 @@ void ExperimentRunner::resetEnergyControlAutonomous() {
   walking_half_cycle_budget_.reset();walking_return_observer_.reset();
   walking_return_frame_={};walking_return_observation_={};
   walking_aid_zero_seen_=false;
+#if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
+  walking_fore_aft_guard_.reset();walking_fore_aft_last_={};walking_fore_aft_candidates_=0;
+#endif
 #endif
 #endif
   walking_energy_peak_ms_[0]=walking_energy_peak_ms_[1]=0;walking_energy_count_=walking_energy_total_=0;
@@ -2802,6 +2815,9 @@ bool ExperimentRunner::beginEnergyControlAutonomousPulse(uint32_t now_ms, uint32
           EnergyControlAutonomousHalfCycleState::WAIT_ZERO_CROSS) {
     return false;
   }
+#if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
+  if(walking_target8 && !walkingForeAftAllowsOutput())return false;
+#endif
   const uint32_t begin_t0_us = micros();
   energy_control_autonomous_pulse_authorized_ = true;
   const int16_t command_current_mA = static_cast<int16_t>(
@@ -8275,7 +8291,9 @@ void ExperimentRunner::logSampleNow() {
   const RollerTelemetry roller_telemetry = roller_->telemetrySnapshot();
   const uint32_t now_us = micros();
   if (logger_->full()) {
-    requestEmergencyStop("log_buffer_full");
+    // Preserve the cause of an already completed stop, including a motion
+    // guard stop whose final diagnostic sample cannot fit in the log.
+    if(!status_.emergency_stop)requestEmergencyStop("log_buffer_full");
     return;
   }
   LogSample row{};

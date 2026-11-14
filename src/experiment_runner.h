@@ -21,6 +21,10 @@
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
 #include "half_cycle_energy_budget.h"
 #include "return_observation_policy.h"
+#if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
+#include "energy_admission_v19.h"
+#include "fore_aft_motion_guard.h"
+#endif
 #endif
 #endif
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
@@ -700,6 +704,13 @@ private:
   return_observation_policy::Choice walking_return_observation_;
   bool walking_aid_zero_seen_=false;
   bool cutReturnAidAtZero(uint32_t now_ms,uint32_t sample_us,float before,float after,float rate);
+#if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
+  fore_aft_motion_guard::Guard walking_fore_aft_guard_;
+  fore_aft_motion_guard::Result walking_fore_aft_last_;
+  uint32_t walking_fore_aft_candidates_=0;
+  bool observeWalkingForeAft(const fore_aft_motion_guard::Input& in);
+  bool walkingForeAftAllowsOutput()const;
+#endif
 #endif
 #endif
   float walking_energy_peaks_[2]={NAN,NAN};
@@ -720,6 +731,13 @@ private:
     uint8_t return_evidence=0;
     uint16_t envelope_before_ms=0,envelope_after_ms=0;
     bool assisted_cycle=false;
+#if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
+    bool energy_admission_checked=false,energy_admission_applies=false,energy_admission_allowed=false;
+    uint8_t energy_unsupported_mask=0,energy_admission_reason=0;
+    bool fore_aft_allowed=false;
+    uint8_t fore_aft_reason=0;
+    float fore_aft_angle_deg=NAN,fore_aft_rate_dps=NAN;
+#endif
 #endif
 #endif
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX

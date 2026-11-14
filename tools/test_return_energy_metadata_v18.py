@@ -5,6 +5,7 @@ The fixture does not establish physical delivery or walking recovery.
 """
 from pathlib import Path
 import csv
+import re
 import subprocess
 import tempfile
 
@@ -20,10 +21,26 @@ fixture = '#include "half_cycle_energy_budget.h"\n' + context['fixture']
 # Exercise the real revision declaration too, rather than the older fixture's
 # deliberately frozen v14/v15/v17 declaration.
 revision_start = logger.index('#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18\n  const char* walking_energy_revision=')
-revision_end = logger.index('#endif', revision_start) + len('#endif')
+
+
+def revision_block(source, start):
+    """Read one balanced conditional, including nested version selections."""
+    depth = 0
+    offset = start
+    for line in source[start:].splitlines(keepends=True):
+        directive = re.match(r'\s*#\s*(if|ifdef|ifndef|endif)\b', line)
+        if directive:
+            depth += -1 if directive[1] == 'endif' else 1
+            assert depth >= 0, 'Unbalanced revision conditional'
+        offset += len(line)
+        if directive and depth == 0:
+            return source[start:offset]
+    raise AssertionError('Unterminated revision conditional')
+
+
 old_revision = '  const char* walking_energy_revision=return_energy_mode?"walking_return_energy_v17":early_energy_mode?walking_energy_policy_v15::kRevision:walking_energy_policy::kRevision;'
 assert fixture.count(old_revision) == 1
-fixture = fixture.replace(old_revision, logger[revision_start:revision_end])
+fixture = fixture.replace(old_revision, revision_block(logger, revision_start))
 fixture = fixture.replace('for(unsigned branch:{0u,15u,19u,20u,21u})',
                           'for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u})')
 

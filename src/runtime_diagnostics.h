@@ -24,7 +24,11 @@
 #if defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
 #if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+#if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-energy-admission-v19"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-energy-transfer-v18"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-return-energy-v17-rangefix1"
 #endif

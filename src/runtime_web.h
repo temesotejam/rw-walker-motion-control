@@ -442,10 +442,12 @@ if (typeof module !== 'undefined') module.exports = PoseComparison;
     total.coverage=measurementUs>0 ? Math.min(1,total.covered_us/measurementUs) : 0;
     for (const result of [total,active,coast])
       if (!result.covered_us) result.observed_net_j=result.added_j=result.removed_j=null;
+    const admissionV19=metadata.energy_model==='walking_energy_admission_v19' ||
+      metadata.walking_energy?.revision==='walking_energy_admission_v19' || metadata.walking_admission?.revision==='walking_energy_admission_v19';
     const transferV18=metadata.energy_model==='walking_energy_transfer_v18' ||
       metadata.walking_energy?.revision==='walking_energy_transfer_v18' || metadata.walking_transfer?.revision==='walking_energy_transfer_v18';
     return {revision:usePosition ? 'reaction_couple_position_work_v2_20261016' : 'reaction_couple_work_v1_20261016',inertia_kg_m2:inertia,
-      walking_control_revision:transferV18 ? 'walking_energy_transfer_v18' : null,
+      walking_control_revision:admissionV19 ? 'walking_energy_admission_v19' : transferV18 ? 'walking_energy_transfer_v18' : null,
       wheel_speed_to_body_sign:sign,provisional:true,readback_delay_compensated:false,
       velocity_source:usePosition ? 'position_local_quadratic' : 'legacy_filtered_rpm',
       legacy_filtered_rpm_warning:!usePosition,position_to_speed_sign:positionSign,
@@ -489,6 +491,10 @@ if (typeof module !== 'undefined') module.exports = PoseComparison;
     if(r.walking_control_revision==='walking_energy_transfer_v18') lines.splice(6,0,
       'v18の救済完了予測は、戻り通過の要求に対する充足です。次ピークの到達エネルギーを表す値ではありません。',
       '主入力は実ZEROクロスで改めて計算し、救済と合わせて半周期80ms以内に制限します。');
+    if(r.walking_control_revision==='walking_energy_admission_v19') lines.splice(6,0,
+      'v19の救済完了予測は、戻り通過の要求に対する充足です。次ピークの到達エネルギーを表す値ではありません。',
+      '主入力は実ZEROクロスで改めて計算し、救済と合わせて半周期80ms以内に制限します。',
+      '前倒し候補のモデル支持を確認し、範囲外はZEROで再評価します。前後の持続逸脱では入力を停止します。');
     for(const p of r.pulses) lines.push(`${p.index}. ${p.current_mA} mA / ${((p.end_us-p.start_us)/1000).toFixed(1)} ms：${mj(p.observed_net_j)} / 計算対象 ${(p.coverage*100).toFixed(1)}%${p.complete?'':'（区間の一部が未取得）'}`);
     return lines.join('\n');
   }
@@ -557,7 +563,19 @@ function walkingEnergyTrial(s = latest) {
   return walkingTransferTrial(s) || /^walking-return-energy-v17(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function walkingTransferTrial(s = latest) {
-  return /^walking-energy-transfer-v18(?:-|$)/.test(s?.diagnostic_build_id || '');
+  return walkingAdmissionTrial(s) || /^walking-energy-transfer-v18(?:-|$)/.test(s?.diagnostic_build_id || '');
+}
+function walkingAdmissionTrial(s = latest) {
+  return /^walking-energy-admission-v19(?:-|$)/.test(s?.diagnostic_build_id || '');
+}
+function foreAftStopText(reason) {
+  return ({
+    fore_aft_outward_divergence:'前後の傾きが外向きに持続して増えたため、入力を停止しました。',
+    fore_aft_invalid_sample:'前後の姿勢監視に必要なIMUデータが無効なため、入力を停止しました。',
+    fore_aft_stale_sample:'前後の姿勢監視に必要なIMUの更新が古くなったため、入力を停止しました。',
+    fore_aft_unobservable:'前後の姿勢を確認できないため、入力を見合わせています。',
+    fore_aft_outward_candidate:'前後の外向きの動きを確認しているため、入力を見合わせています。'
+  })[reason] || '';
 }
 function footStartBlockReason(s) {
   if (s.foot?.control_extension_deg && ['left_out_of_range','right_out_of_range'].includes(s.foot_control_reason)) {
@@ -676,7 +694,8 @@ function renderOffline() {
   $('run-model').textContent = requestedEnergyModel === 'bridge'
     ? '開始要求：旧到達角予測をエネルギーに換算（逆入力なし）'
     : requestedEnergyModel === 'work_control' && requestedTargetDeg === 8 && walkingTransferTrial()
-      ? '開始要求：救済は戻りの不足分、主入力は次ピークの不足分から選択'
+      ? walkingAdmissionTrial() ? '開始要求：前倒し候補のモデル支持を確認し、範囲外はZEROで再評価。前後の持続逸脱では入力停止'
+        : '開始要求：救済は戻りの不足分、主入力は次ピークの不足分から選択'
     : requestedEnergyModel === 'work_control' ? '開始要求：ホイールの仕事から次ピークの位置エネルギーを予測して入力を選択'
     : requestedEnergyModel === 'bridge_probe_positive_current' ? '開始要求：固定脚・正側電流3条件の一括実験'
     : requestedEnergyModel === 'bridge_probe_extended' ? '開始要求：固定脚・負側3条件の一括実験'
@@ -688,7 +707,8 @@ function renderOffline() {
     ? '学習補正の設定はWeb復帰後に確認します。'
     : `開始要求：予測誤差の学習補正 ${requestedAdaptation ? '使用する' : '使用しない'}`;
   for (const id of ['pitch', 'current', 'right', 'left', 'fps']) $(id).textContent = '—';
-  $('guide').textContent = `本体で制御・観測・記録を行います。開始5秒＋測定${['work_control','bridge_probe_batch','bridge_probe_extended','bridge_probe_positive_current'].includes(requestedEnergyModel) ? 30 : 15}秒＋終了5秒が予定時間です。前後90°以上の傾斜でSTOPします。横倒しは姿勢STOPの対象にしません。表示時間はPC側の目安で、実際の進行・終了を確認した値ではありません。`;
+  $('guide').textContent = `本体で制御・観測・記録を行います。開始5秒＋測定${['work_control','bridge_probe_batch','bridge_probe_extended','bridge_probe_positive_current'].includes(requestedEnergyModel) ? 30 : 15}秒＋終了5秒が予定時間です。前後90°以上の傾斜でSTOPします。横倒しは姿勢STOPの対象にしません。表示時間はPC側の目安で、実際の進行・終了を確認した値ではありません。` +
+    (walkingAdmissionTrial() ? ' 前後の持続逸脱でも入力を停止します。' : '');
   $('foot-status').textContent = '足角度の画面更新を停止。本体内の記録は継続します。';
   $('mekf-axes').textContent = '運転中の姿勢表示を停止しています。';
   controls();
@@ -732,7 +752,11 @@ function footIssues(f, stale, terminal) {
   return issues.length ? ' · ' + issues.join(' · ') : '';
 }
 function render(s) {
-  if (walkingTransferTrial(s)) {
+  if (walkingAdmissionTrial(s)) {
+    $('work-title').textContent = '歩行のエネルギー制御（v19・30秒）';
+    $('work-description').textContent = '今回のv19は±8°を使用します。戻りの救済後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。前倒し候補のモデル支持を確認し、範囲外はZEROで再評価します。前後の持続逸脱では入力を停止します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
+      (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '');
+  } else if (walkingTransferTrial(s)) {
     $('work-title').textContent = '歩行のエネルギー制御（v18・30秒）';
     $('work-description').textContent = '今回のv18は±8°を使用します。戻りの不足分を救済した後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。足の認識が一時的に欠けたときは、新しい画像と機体の減速条件を確認して救済します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
       (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '');
@@ -807,7 +831,8 @@ function render(s) {
       : s.energy_model === 'bridge' ? '今回の旧式換算：ブレーキなし' : `今回の負側ブレーキ上限：${s.brake_max_ms} ms`
     : '負側ブレーキ上限は測定開始時に確定します。';
   $('run-model').textContent = (s.running || terminal) && walkingTransferTrial(s) && s.target_deg === 8 && s.energy_model === 'work_control'
-    ? '今回の予測：救済は戻り通過の不足分、主入力は次ピークの不足分から選択'
+    ? walkingAdmissionTrial(s) ? '今回の候補：前倒し候補のモデル支持を確認し、範囲外はZEROで再評価'
+      : '今回の予測：救済は戻り通過の不足分、主入力は次ピークの不足分から選択'
     : s.running || terminal
     ? s.energy_model === 'bridge_probe_positive_current' ? '今回の方式：正側電流300・350・400 mAを順序変更、負側40 ms固定'
       : s.energy_model === 'bridge_probe_extended' ? '今回の方式：正側は従来制御、負側は30・35・40 msの一括実験'
@@ -832,12 +857,15 @@ function render(s) {
     : reference.valid
       ? `比較用の姿勢を保存済み（更新${reference.revision}回） · 保存姿勢との差 ${format(reference.relative_pitch_deg)}° · 保存時のMEKF角 ${format(reference.abs_pitch_deg)}°。仕事制御の原点は絶対角0°です。`
       : '比較用の姿勢は未保存です。仕事に基づく制御の開始には保存不要です。';
-  if (s.foot_control_required && !s.running && s.ready && !reference.capturing) $('guide').textContent = s.foot_control_ready
+  const motionStop = walkingAdmissionTrial(s) && s.state === 'ESTOP' ? foreAftStopText(s.last_error) : '';
+  if (motionStop) $('guide').textContent = motionStop + ' ログを保存して状態を確認してください。';
+  else if (s.foot_control_required && !s.running && s.ready && !reference.capturing) $('guide').textContent = s.foot_control_ready
     ? '足のゼロ点と左右の検出を確認しました。機体を静止させて8°試験を開始できます。'
     : '8°試験を開始できません：' + footStartBlockReason(s);
   else if (!s.running && s.ready && !reference.capturing) $('guide').textContent = '仕事に基づく制御はMEKF絶対角0°が基準です。直立基準の保存は不要です。機体を静止させて開始してください。';
   else if (s.running) $('guide').textContent = s.foot_control_required ? walkingTransferTrial(s)
-    ? '測定中。足の認識が欠けたときは、新しい画像と機体の減速条件を確認して戻りを補助します。'
+    ? walkingAdmissionTrial(s) ? '測定中。前倒し候補のモデル支持を確認し、範囲外はZEROで再評価します。前後の持続逸脱では入力を停止します。'
+      : '測定中。足の認識が欠けたときは、新しい画像と機体の減速条件を確認して戻りを補助します。'
     : '測定中。足角度と機体の揺れを使って支持移動を補助します。' : '測定中。画面は更新されます。足角度は制御入力に使用しません。';
   else if (reference.capturing) $('guide').textContent = '基準を取得しています。機体を動かさずお待ちください。';
   else if (s.downloadable) $('guide').textContent = 'ログを保存してください。次の測定には「ログを消去・次の測定へ」を使います。';
@@ -866,8 +894,11 @@ async function refresh(force = false) {
     if (s?.offline_run === true && Number.isFinite(s.wait_ms)) { setOffline(s.wait_ms); return; }
     const wasOffline = offlineMode;
     adoptStatus(s); clearOffline(); render(latest);
-    if (wasOffline) $('message').textContent = s.network?.last_error || s.last_error ||
-      (s.downloadable ? 'Web表示が復帰しました。ログを保存してください。' : s.command.result || 'Web表示が復帰しました。');
+    if (wasOffline) {
+      const message = s.network?.last_error || s.last_error ||
+        (s.downloadable ? 'Web表示が復帰しました。ログを保存してください。' : s.command.result || 'Web表示が復帰しました。');
+      $('message').textContent = foreAftStopText(message) || message;
+    }
   } catch (error) {
     lastSeen = 0;
     if (offlineMode) { renderOffline(); return; }

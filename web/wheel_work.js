@@ -240,10 +240,12 @@
     total.coverage=measurementUs>0 ? Math.min(1,total.covered_us/measurementUs) : 0;
     for (const result of [total,active,coast])
       if (!result.covered_us) result.observed_net_j=result.added_j=result.removed_j=null;
+    const admissionV19=metadata.energy_model==='walking_energy_admission_v19' ||
+      metadata.walking_energy?.revision==='walking_energy_admission_v19' || metadata.walking_admission?.revision==='walking_energy_admission_v19';
     const transferV18=metadata.energy_model==='walking_energy_transfer_v18' ||
       metadata.walking_energy?.revision==='walking_energy_transfer_v18' || metadata.walking_transfer?.revision==='walking_energy_transfer_v18';
     return {revision:usePosition ? 'reaction_couple_position_work_v2_20261016' : 'reaction_couple_work_v1_20261016',inertia_kg_m2:inertia,
-      walking_control_revision:transferV18 ? 'walking_energy_transfer_v18' : null,
+      walking_control_revision:admissionV19 ? 'walking_energy_admission_v19' : transferV18 ? 'walking_energy_transfer_v18' : null,
       wheel_speed_to_body_sign:sign,provisional:true,readback_delay_compensated:false,
       velocity_source:usePosition ? 'position_local_quadratic' : 'legacy_filtered_rpm',
       legacy_filtered_rpm_warning:!usePosition,position_to_speed_sign:positionSign,
@@ -287,6 +289,10 @@
     if(r.walking_control_revision==='walking_energy_transfer_v18') lines.splice(6,0,
       'v18の救済完了予測は、戻り通過の要求に対する充足です。次ピークの到達エネルギーを表す値ではありません。',
       '主入力は実ZEROクロスで改めて計算し、救済と合わせて半周期80ms以内に制限します。');
+    if(r.walking_control_revision==='walking_energy_admission_v19') lines.splice(6,0,
+      'v19の救済完了予測は、戻り通過の要求に対する充足です。次ピークの到達エネルギーを表す値ではありません。',
+      '主入力は実ZEROクロスで改めて計算し、救済と合わせて半周期80ms以内に制限します。',
+      '前倒し候補のモデル支持を確認し、範囲外はZEROで再評価します。前後の持続逸脱では入力を停止します。');
     for(const p of r.pulses) lines.push(`${p.index}. ${p.current_mA} mA / ${((p.end_us-p.start_us)/1000).toFixed(1)} ms：${mj(p.observed_net_j)} / 計算対象 ${(p.coverage*100).toFixed(1)}%${p.complete?'':'（区間の一部が未取得）'}`);
     return lines.join('\n');
   }
