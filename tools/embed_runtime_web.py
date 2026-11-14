@@ -3,7 +3,7 @@
 from pathlib import Path
 import sys
 root = Path(__file__).resolve().parents[1]
-html = (root / 'web/index.html').read_text(encoding='utf-8').replace('/*POSE_SCRIPT*/', (root / 'web/pose_comparison.js').read_text(encoding='utf-8')).replace('/*WHEEL_WORK_SCRIPT*/', (root / 'site/wheel-work.js').read_text(encoding='utf-8')).replace('/*RUNTIME_SCRIPT*/', (root / 'web/runtime.js').read_text(encoding='utf-8'))
+html = (root / 'web/index.html').read_text(encoding='utf-8').replace('/*POSE_SCRIPT*/', (root / 'web/pose_comparison.js').read_text(encoding='utf-8')).replace('/*WHEEL_WORK_SCRIPT*/', (root / 'web/wheel_work.js').read_text(encoding='utf-8')).replace('/*RUNTIME_SCRIPT*/', (root / 'web/runtime.js').read_text(encoding='utf-8'))
 output = '#pragma once\n#include <Arduino.h>\nstatic const char RUNTIME_HTML[] PROGMEM = R"FREEFOOT(' + html + ')FREEFOOT";\n'
 path = root / 'src/runtime_web.h'
 if '--check' in sys.argv:

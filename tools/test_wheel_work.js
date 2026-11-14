@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict'), fs=require('fs');
-const W=require('../site/wheel-work.js'), J=2.8e-5, D=Math.PI/180, R=2*Math.PI/60;
+const W=require('../web/wheel_work.js'), J=2.8e-5, D=Math.PI/180, R=2*Math.PI/60;
 const close=(a,b,tol=1e-12)=>assert(Math.abs(a-b)<tol,`${a} != ${b}`);
 function rows(rate=t=>60,rpm=t=>-100*t/100000) {
   return Array.from({length:11},(_,i)=>{

@@ -29,11 +29,12 @@ static const char RUNTIME_HTML[] PROGMEM = R"FREEFOOT(<!doctype html><html lang=
 <p class="muted">新しい手動初期値は絶対角基準で保存します。旧基準の手動値は引き継ぎません。未指定の場合は補正ゼロから自動更新します。</p>
 </details>
 <div id="work-energy-control">
-  <h2>固定脚・ホイールの仕事を使う制御（30秒）</h2>
-  <p class="muted">脚の前後移動を固定し、各ボタンで30秒測定します。正側は300・350・400 mA、最大100 msです。10°・12°の負側は、不足が実測でも続いた場合にエネルギーを加える補助入力を使います。補助入力は300 mA・上限25 msから段階的に最大100 ms、ブレーキは最大70 msです。補助入力の効き方は正側の仕事モデルから仮定した試験用で、負側での精度は未確認です。8°は従来の入力選択を使います。</p>
+  <h2 id="work-title">固定脚・ホイールの仕事を使う制御（30秒）</h2>
+  <p id="work-description" class="muted">脚の前後移動を固定し、各ボタンで30秒測定します。正側は300・350・400 mA、最大100 msです。10°・12°の負側は、不足が実測でも続いた場合にエネルギーを加える補助入力を使います。補助入力は300 mA・上限25 msから段階的に最大100 ms、ブレーキは最大70 msです。補助入力の効き方は正側の仕事モデルから仮定した試験用で、負側での精度は未確認です。8°は従来の入力選択を使います。</p>
   <button id="work-start" type="button" disabled>目標±8°で30秒測定</button>
   <button id="work-start-10" type="button" disabled>目標±10°で30秒測定</button>
   <button id="work-start-12" type="button" disabled>目標±12°で30秒測定</button>
+  <p id="work-start-status" class="muted" role="status" aria-live="polite">本体の開始条件を確認中…</p>
 </div>
 <div id="negative-energy-control">
   <h2>固定脚・新しいエネルギー制御（15秒）</h2>
@@ -546,6 +547,34 @@ async function request(path, {method = 'GET', kind = 'json', timeout = 3000} = {
     return await response.json();
   } finally { clearTimeout(timer); }
 }
+function walkingEnergyTrial(s = latest) {
+  return /^walking-return-energy-v17(?:-|$)/.test(s?.diagnostic_build_id || '');
+}
+function footStartBlockReason(s) {
+  const messages = {
+    camera_unavailable:'カメラの準備ができていません。',
+    zero_not_ready:'足は検出されていても、足角度のゼロ点が未確定です。機体と足を静止させてください。',
+    frame_zero_not_ready:'ゼロ点確定後の新しい画像を待っています。',
+    frame_invalid:'足の画像を正常に取得できていません。',
+    frame_timestamp_invalid:'画像時刻が無効です。角度の表示だけでは開始できません。',
+    left_not_detected:'左足の有効な検出を待っています。',
+    right_not_detected:'右足の有効な検出を待っています。',
+    left_out_of_range:'左足は検出されていますが、角度が校正範囲外です。',
+    right_out_of_range:'右足は検出されていますが、角度が校正範囲外です。',
+    frame_stale:'足の画像が古いため、200ms以内の新しい画像を待っています。',
+    angle_nonfinite:'足の角度を有効な数値として取得できていません。'
+  };
+  if (messages[s.foot_control_reason]) return messages[s.foot_control_reason];
+  const f = s.foot || {};
+  if (f.zero_ready === false) return messages.zero_not_ready;
+  if (f.frame_valid === false) return messages.frame_invalid;
+  if (f.frame_timestamp_valid === false) return messages.frame_timestamp_invalid;
+  if (f.left_valid === false) return messages.left_not_detected;
+  if (f.right_valid === false) return messages.right_not_detected;
+  if (f.left_in_range === false) return messages.left_out_of_range;
+  if (f.right_in_range === false) return messages.right_out_of_range;
+  return '足の検出以外に、ゼロ点・校正範囲・画像時刻・鮮度の開始条件を確認しています。';
+}
 function controls() {
   const fresh = !offlineMode && latest && Date.now() - lastSeen < 3500;
   const busy = commandInFlight || previewRunning || poseRunning || !!latest?.command?.pending;
@@ -555,7 +584,15 @@ function controls() {
   $('work-start').disabled = !fresh || busy || transferRunning || !latest.ready || latest.running || latest.export_phase !== 'empty' || !!latest.upright_reference?.capturing;
   $('work-start-10').disabled = $('work-start').disabled;
   $('work-start-12').disabled = $('work-start').disabled;
-  if (latest.foot_control_required && !latest.foot_control_ready) $('work-start').disabled = true;
+  if (latest?.foot_control_required && !latest.foot_control_ready) $('work-start').disabled = true;
+  $('work-start-status').textContent = !fresh ? '±8°を開始できません：本体との通信を確認してください。' :
+    latest.running ? '±8°を開始できません：測定中です。' :
+    busy || transferRunning ? '±8°を開始できません：処理の完了を待っています。' :
+    latest.export_phase !== 'empty' ? '±8°を開始できません：ログ保存後に「次の測定へ」進んでください。' :
+    latest.upright_reference?.capturing ? '±8°を開始できません：基準姿勢を取得中です。' :
+    !latest.ready ? '±8°を開始できません：IMUとモータの準備を待っています。' :
+    latest.foot_control_required && !latest.foot_control_ready ? '±8°を開始できません：' + footStartBlockReason(latest) :
+    '±8°を開始できます。機体と足を静止させてボタンを押してください。';
   $('probe-batch').disabled = $('start').disabled;
   $('probe-extended').disabled = $('start').disabled;
   $('probe-positive-current').disabled = $('start').disabled;
@@ -672,6 +709,10 @@ function footIssues(f, stale, terminal) {
   return issues.length ? ' · ' + issues.join(' · ') : '';
 }
 function render(s) {
+  if (walkingEnergyTrial(s)) {
+    $('work-title').textContent = '歩行のエネルギー制御（v17・30秒）';
+    $('work-description').textContent = '今回のv17は±8°を使用します。左右の到達エネルギーの予測誤差と、足が前に出た状態の戻り不足を考慮して入力時間を選びます。主入力・救済は最大80msの試験範囲です。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。';
+  }
   $('connection').textContent = s.controller_fresh ? '接続中' : '接続中 · 制御状態の更新が停止';
   $('firmware-revision').textContent = `本体プログラム：${s.revision || '不明'}`;
   if (s.diagnostic_build_id) $('firmware-revision').textContent += ` (${s.diagnostic_build_id})`;
@@ -713,7 +754,9 @@ function render(s) {
   $('run-adaptation').textContent = s.running || terminal
     ? `今回の予測誤差の学習補正：${s.peak_adaptation_enabled ? '使用する' : '使用しない'}`
     : '学習補正の設定は測定開始時に確定します。';
-  $('run-percent').textContent = s.running || terminal
+  $('run-percent').textContent = (s.running || terminal) && walkingEnergyTrial(s) && s.target_deg === 8 && s.energy_model === 'work_control'
+    ? '今回の入力：左右の不足エネルギーから入力時間を選択'
+    : s.running || terminal
     ? s.energy_model === 'work_control'
       ? '今回の入力：正側300・350・400 mAから選択、負側300 mA'
       : s.energy_model === 'bridge_probe_positive_current'
@@ -723,7 +766,9 @@ function render(s) {
   $('run-target').textContent = s.running || terminal
     ? `今回の目標角度：${format(s.target_deg, 0)}°`
     : '目標角度は測定開始時に確定します。';
-  $('run-brake').textContent = s.running || terminal
+  $('run-brake').textContent = (s.running || terminal) && walkingEnergyTrial(s) && s.target_deg === 8 && s.energy_model === 'work_control'
+    ? '今回の入力時間：主入力・救済とも最大80ms。保護後の残不足も記録します。'
+    : s.running || terminal
     ? s.energy_model === 'bridge_probe_positive_current' ? '今回の負側入力：300 mA・40 msに固定'
       : s.energy_model === 'bridge_probe_extended' ? '今回の負側入力：30・35・40 msを3条件ずつ順序を変更'
       : s.energy_model === 'bridge_probe_batch' ? '今回の負側入力：0・10・15・20・25 msを5条件ずつ順序を変更'
@@ -757,7 +802,7 @@ function render(s) {
       : '比較用の姿勢は未保存です。仕事に基づく制御の開始には保存不要です。';
   if (s.foot_control_required && !s.running && s.ready && !reference.capturing) $('guide').textContent = s.foot_control_ready
     ? '足のゼロ点と左右の検出を確認しました。機体を静止させて8°試験を開始できます。'
-    : '8°試験は足角度を制御に使います。機体と足を静止させ、ゼロ点確定と左右の有効な検出を待ってください。';
+    : '8°試験を開始できません：' + footStartBlockReason(s);
   else if (!s.running && s.ready && !reference.capturing) $('guide').textContent = '仕事に基づく制御はMEKF絶対角0°が基準です。直立基準の保存は不要です。機体を静止させて開始してください。';
   else if (s.running) $('guide').textContent = s.foot_control_required ? '測定中。足角度と機体の揺れを使って支持移動を補助します。' : '測定中。画面は更新されます。足角度は制御入力に使用しません。';
   else if (reference.capturing) $('guide').textContent = '基準を取得しています。機体を動かさずお待ちください。';

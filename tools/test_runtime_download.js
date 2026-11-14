@@ -23,7 +23,7 @@ const context=vm.createContext({document:{getElementById:element,createElement:(
     header.setUint32(12,vm.runInContext('crc32(payload)',context),true);packet.set(payload,16);
     return {ok:true,arrayBuffer:async()=>packet.buffer};
   }});
-vm.runInContext(fs.readFileSync('site/wheel-work.js','utf8')+'\n'+fs.readFileSync('web/pose_comparison.js','utf8')+'\n'+fs.readFileSync('web/runtime.js','utf8').replace(/poll\(\);\s*$/,''),context);
+vm.runInContext(fs.readFileSync('web/wheel_work.js','utf8')+'\n'+fs.readFileSync('web/pose_comparison.js','utf8')+'\n'+fs.readFileSync('web/runtime.js','utf8').replace(/poll\(\);\s*$/,''),context);
 element('work-inertia').value='0.000028';element('work-sign').value='-1';
 vm.runInContext("latest={state:'ESTOP',export_phase:'ready',running:false,ready:false,downloadable:true,controller_fresh:true,command:{pending:false},foot:{},upright:{}};lastSeen=Date.now();",context);
 (async()=>{

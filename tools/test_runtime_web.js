@@ -5,6 +5,10 @@ function canvasContext() {return new Proxy({}, {get:(_target,name)=>name==='crea
   ? (w,h)=>({data:new Uint8Array(w*h*4)}) : ()=>{}});}
 function element(id) {if(!elements.has(id)) elements.set(id, {textContent:'',style:{},width:640,height:480,getContext:canvasContext}); return elements.get(id);}
 const code=fs.readFileSync('web/pose_comparison.js','utf8')+'\n'+fs.readFileSync('web/runtime.js','utf8').replace(/poll\(\);\s*$/, '');
+const embedded=fs.readFileSync('src/runtime_web.h','utf8').split('R"FREEFOOT(')[1].split(')FREEFOOT";')[0];
+const expected=fs.readFileSync('web/index.html','utf8').replace('/*POSE_SCRIPT*/',fs.readFileSync('web/pose_comparison.js','utf8'))
+  .replace('/*WHEEL_WORK_SCRIPT*/',fs.readFileSync('web/wheel_work.js','utf8')).replace('/*RUNTIME_SCRIPT*/',fs.readFileSync('web/runtime.js','utf8'));
+assert.strictEqual(embedded.replace(/\r\n/g,'\n'),expected.replace(/\r\n/g,'\n'),'Embedded runtime UI must match the tested browser sources');
 const context=vm.createContext({document:{getElementById:element,createElement:()=>({getContext:canvasContext})},setTimeout,clearTimeout,AbortController,
   Date,DataView,Uint8Array,TextDecoder,Map,console,btoa:s=>Buffer.from(s,'binary').toString('base64'),
   atob:s=>Buffer.from(s,'base64').toString('binary'),fetch:()=>{throw Error('unset');}});
@@ -159,6 +163,31 @@ vm.runInContext(code,context);
   assert.match(element('preview-status').textContent,/409/);
   assert.strictEqual(vm.runInContext('previewRunning',context),false);
   assert.strictEqual(element('start').disabled,false);
+  const gate={...valid,state:'READY_TO_MEASURE',ready:true,running:false,export_phase:'empty',
+    diagnostic_build_id:'walking-return-energy-v17-startfix1',foot_control_required:true,foot_control_ready:false,
+    foot_control_reason:'left_out_of_range',foot:{...valid.foot,available:true,zero_ready:true,frame_valid:true,
+      frame_timestamp_valid:true,left_valid:true,right_valid:true,left_in_range:false,right_in_range:true,age_ms:70}};
+  context.gate=gate;
+  vm.runInContext('adoptStatus(gate);render(gate)',context);
+  assert.strictEqual(element('work-start').disabled,true);
+  assert.match(element('work-start-status').textContent,/左足は検出されています.*校正範囲外/);
+  assert.match(element('work-title').textContent,/v17/);
+  assert.doesNotMatch(element('work-description').textContent,/300・350・400/);
+  gate.foot_control_reason='zero_not_ready';gate.foot.zero_ready=false;
+  vm.runInContext('adoptStatus(gate);render(gate)',context);
+  assert.match(element('work-start-status').textContent,/検出されていても.*ゼロ点/);
+  gate.foot_control_reason='frame_stale';
+  vm.runInContext('adoptStatus(gate);render(gate)',context);
+  assert.match(element('work-start-status').textContent,/200ms/);
+  gate.foot_control_reason='ready';gate.foot_control_ready=true;
+  Object.assign(gate.foot,{zero_ready:true,left_in_range:true});
+  vm.runInContext('adoptStatus(gate);render(gate)',context);
+  assert.strictEqual(element('work-start').disabled,false);
+  assert.match(element('work-start-status').textContent,/開始できます/);
+  vm.runInContext('latest=null;lastSeen=0;controls()',context);
+  assert.strictEqual(element('work-start').disabled,true);
+  assert.match(element('work-start-status').textContent,/通信/);
+  console.log('v17 Start: detected but uncalibrated/zero pending/stale explanations, actual gate, null/offline and release text PASS');
   console.log('neutral-zero gate, frozen preview metadata/pixels, five bounded chunks, whole CRC and token failure recovery PASS');
   console.log('foot failure reasons, tilted/range/terminal display, body timeout, status recovery, stale authority and corrupt chunks PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;});

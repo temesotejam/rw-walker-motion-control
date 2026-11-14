@@ -306,7 +306,11 @@ void WebUi::status() {
   json += ",\"export_worker_ready\":" + String(export_->ready() ? "true" : "false");
   json += ",\"export_phase\":\"" + String(phase(e.phase)) + "\"";
 #if defined(FOOT_SUPPORT_TRANSFER) && FOOT_SUPPORT_TRANSFER
-  json += ",\"foot_control_required\":true,\"foot_control_ready\":" + String(foot_support_start::ready(f,esp_timer_get_time())?"true":"false");
+  const uint64_t foot_now=esp_timer_get_time();
+  const auto foot_reason=foot_support_start::reason(f,foot_now);
+  json += ",\"foot_control_required\":true,\"foot_control_ready\":" + String(foot_reason==foot_support_start::Reason::Ready?"true":"false");
+  json += ",\"foot_control_reason\":\"" + String(foot_support_start::name(foot_reason)) + "\"";
+  json += ",\"foot_control_frame_age_ms\":" + String(f.latest.frame_us && foot_now>=f.latest.frame_us ? (foot_now-f.latest.frame_us)/1000.0 : -1.0,1);
 #endif
   json += ",\"foot\":{\"available\":" + String(f.available ? "true" : "false");
   json += ",\"detector\":\"" + String(appcfg::kWhiteDetectorRevision) + "\"";

@@ -1,5 +1,5 @@
 'use strict';
-const assert=require('node:assert/strict'),fs=require('fs'),W=require('../site/wheel-work.js');
+const assert=require('node:assert/strict'),fs=require('fs'),W=require('../web/wheel_work.js');
 const J=2.8e-5,D=Math.PI/180,R=Math.PI/30;
 const close=(a,b,tol=1e-10)=>assert(Math.abs(a-b)<tol,`${a} != ${b}`);
 function rows(rate=()=>60,angle=t=>-6000*(t/1e6)**2,initial=0) {

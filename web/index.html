@@ -27,11 +27,12 @@
 <p class="muted">新しい手動初期値は絶対角基準で保存します。旧基準の手動値は引き継ぎません。未指定の場合は補正ゼロから自動更新します。</p>
 </details>
 <div id="work-energy-control">
-  <h2>固定脚・ホイールの仕事を使う制御（30秒）</h2>
-  <p class="muted">脚の前後移動を固定し、各ボタンで30秒測定します。正側は300・350・400 mA、最大100 msです。10°・12°の負側は、不足が実測でも続いた場合にエネルギーを加える補助入力を使います。補助入力は300 mA・上限25 msから段階的に最大100 ms、ブレーキは最大70 msです。補助入力の効き方は正側の仕事モデルから仮定した試験用で、負側での精度は未確認です。8°は従来の入力選択を使います。</p>
+  <h2 id="work-title">固定脚・ホイールの仕事を使う制御（30秒）</h2>
+  <p id="work-description" class="muted">脚の前後移動を固定し、各ボタンで30秒測定します。正側は300・350・400 mA、最大100 msです。10°・12°の負側は、不足が実測でも続いた場合にエネルギーを加える補助入力を使います。補助入力は300 mA・上限25 msから段階的に最大100 ms、ブレーキは最大70 msです。補助入力の効き方は正側の仕事モデルから仮定した試験用で、負側での精度は未確認です。8°は従来の入力選択を使います。</p>
   <button id="work-start" type="button" disabled>目標±8°で30秒測定</button>
   <button id="work-start-10" type="button" disabled>目標±10°で30秒測定</button>
   <button id="work-start-12" type="button" disabled>目標±12°で30秒測定</button>
+  <p id="work-start-status" class="muted" role="status" aria-live="polite">本体の開始条件を確認中…</p>
 </div>
 <div id="negative-energy-control">
   <h2>固定脚・新しいエネルギー制御（15秒）</h2>

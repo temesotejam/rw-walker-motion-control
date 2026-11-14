@@ -28,7 +28,7 @@ int send(int, const void* buffer, size_t length, int) {
     const int errors[] = {EINTR, ENOMEM, EAGAIN, EWOULDBLOCK};
     errno = errors[(calls - 1) % 4]; return -1;
   }
-  if (mode == 6) clock_ms += 80; // About 12 kB/s; 96 kB needs over 1.2 s.
+  if (mode == 6) clock_ms += 80; // About 12 kB/s; the runtime HTML needs over 1.2 s.
   const size_t maximum = mode == 6 ? 1024 : 37;
   const auto count = length < maximum ? length : maximum;
   const auto data = static_cast<const char*>(buffer);
@@ -72,10 +72,12 @@ int main() {
     assert(server.write(flash,page.data(),page.size()) == 0 && calls == 0 && stops == 0);
     reset(0); assert(server.write(flash,page.data(),0) == 0 && calls == 0 && stops == 0);
   }
-  std::cout << "PASS: production RAM/flash transport: 96kB slow/partial/retry, rollover, idle/total limits, fatal/closed/empty\n";
+  std::cout << "PASS: production RAM/flash transport: current HTML size, slow/partial/retry, rollover, idle/total limits, fatal/closed/empty\n";
 }
 '''
 
+html = (ROOT / 'src/runtime_web.h').read_text(encoding='utf8').split('R"FREEFOOT(', 1)[1].split(')FREEFOOT";', 1)[0]
+fixture = fixture.replace("page(95778,", "page(" + str(len(html.encode('utf8'))) + ",")
 with tempfile.TemporaryDirectory(prefix='bounded_web_transport_') as directory:
     tmp = Path(directory)
     (tmp / 'lwip').mkdir()
