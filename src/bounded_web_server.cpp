@@ -10,12 +10,17 @@ size_t BoundedWriteWebServer::pacedWrite(const uint8_t* buffer, size_t length, c
   if (fd < 0) return 0;
   size_t total = 0;
   const uint32_t begin = millis();
-  // The send loop's deadline includes partial progress. It does not bound
-  // _currentClient.stop() or all of handleClient(); diagnose those separately.
-  while (total < length && static_cast<uint32_t>(millis() - begin) < 1200) {
+  uint32_t last_progress = begin;
+  // A complete runtime page is about 96 kB. A fixed 1.2 s total limit cut off
+  // its trailing script even while the AP was still delivering bytes. Permit
+  // slow progress, but retain both an idle timeout and a finite total budget.
+  // These limits do not bound stop() or all of handleClient().
+  while (total < length &&
+         static_cast<uint32_t>(millis() - begin) < 15000 &&
+         static_cast<uint32_t>(millis() - last_progress) < 3000) {
     const size_t n = length - total < 1024 ? length - total : 1024;
     const int sent = ::send(fd, buffer + total, n, MSG_DONTWAIT);
-    if (sent > 0) total += sent;
+    if (sent > 0) { total += sent; last_progress = millis(); }
     else if (sent == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != ENOMEM && errno != EINTR)) break;
     vTaskDelay(1);
   }

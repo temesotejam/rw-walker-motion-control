@@ -20,7 +20,11 @@
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
 #if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+#if defined(WEB_PAGE_TRANSPORT_FIX) && WEB_PAGE_TRANSPORT_FIX
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "energy-pulse-lifecycle-v16-webfix1"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "energy-pulse-lifecycle-v16"
+#endif
 #elif defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "early-energy-main-v15"
 #elif defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
