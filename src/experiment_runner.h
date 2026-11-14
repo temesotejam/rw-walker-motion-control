@@ -12,6 +12,9 @@
 #include "lateral_energy_control.h"
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
 #include "walking_energy_policy.h"
+#if defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
+#include "psram_archive.h"
+#endif
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
 #include "walking_energy_policy_v15.h"
 #endif
@@ -692,7 +695,11 @@ private:
     energy_pulse_completion::Result completion;
 #endif
   };
+#if defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
+  PsramArchive<WalkingEnergyAudit,192> walking_energy_audit_;
+#else
   WalkingEnergyAudit walking_energy_audit_[192];
+#endif
   uint32_t walking_energy_count_=0,walking_energy_total_=0;
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
   int16_t walking_energy_active_audit_=-1;

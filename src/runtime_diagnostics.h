@@ -21,7 +21,11 @@
 #if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
 #if defined(WEB_PAGE_TRANSPORT_FIX) && WEB_PAGE_TRANSPORT_FIX
+#if defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "energy-pulse-lifecycle-v16-webfix2"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "energy-pulse-lifecycle-v16-webfix1"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "energy-pulse-lifecycle-v16"
 #endif

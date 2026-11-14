@@ -122,6 +122,11 @@ void ExperimentRunner::begin(PsramLogger& logger, ImuManager& imu, Roller485Mana
   logger_ = &logger;
   imu_ = &imu;
   roller_ = &roller;
+#if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY && defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
+  // Optional archive only. Allocation failure is exported, while the internal
+  // active-pulse copy still finalizes current, work and pending state.
+  walking_energy_audit_.begin(ps_malloc);
+#endif
   upright_reference::load(upright_reference_);
   lateral_cg::load(lateral_cg_);
   boot_start_ms_ = millis();

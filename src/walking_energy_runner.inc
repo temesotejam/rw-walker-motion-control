@@ -15,7 +15,11 @@ void ExperimentRunner::finishWalkingEnergyPulse(uint32_t now_ms,uint8_t reason){
   in.planned_ms=a.guarded_ms;
   in.actual_elapsed_ms=static_cast<uint32_t>(now_ms-(run_start_ms_+a.output_start_ms));
   a.completion=energy_pulse_completion::evaluate(in);
-  if(index>=0 && static_cast<uint32_t>(index)<walking_energy_count_)
+  if(index>=0 && static_cast<uint32_t>(index)<walking_energy_count_
+#if defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
+      && walking_energy_audit_.available()
+#endif
+      )
     walking_energy_audit_[index]=a;
   if(a.completion.valid){
     predicted_signed_current_end_mA_=a.side*a.completion.current_end_ma;
@@ -60,7 +64,11 @@ bool ExperimentRunner::tryWalkingEnergy(
   WalkingEnergyAudit a;a.time_ms=t;a.peak_ms=energy_control_autonomous_last_peak_ms_;
   a.side=side;a.optional=optional_early_event_;a.rescue=stall_rescue_event_;
   auto save=[&](){++walking_energy_total_;int16_t stored_index=-1;
-    if(walking_energy_count_<192){stored_index=static_cast<int16_t>(walking_energy_count_);
+    if(walking_energy_count_<192
+#if defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
+        && walking_energy_audit_.available()
+#endif
+        ){stored_index=static_cast<int16_t>(walking_energy_count_);
       walking_energy_audit_[walking_energy_count_++]=a;}
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
     if(a.executed){walking_energy_active_audit_=stored_index;walking_energy_active_pulse_=a;
@@ -314,6 +322,10 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
   json+=",\"walking_energy\":{\"revision\":\"walking_peak_rate_energy_v14\",\"output_enabled\":true,\"branch\":19,";
 #endif
   json+="\"origin\":\"nominal_zero_CG_rocker_U_same_for_current_peak_target\",\"physical_body_inertia_identified\":false,\"MPC_active\":false,";
+#if defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
+  json+="\"archive_storage\":\"psram\",\"archive_available\":"+String(walking_energy_audit_.available()?"true":"false")+",";
+  json+="\"archive_bytes\":"+String(walking_energy_audit_.bytes())+",";
+#endif
   json+="\"mechanical_reference_deg\":0,\"energy_neutral_model\":\"nominal_only;moving_foot_potential_minimum_not_yet_identified\",\"paired_feedback_is_energy_neutral_estimation\":false,";
   json+="\"paired_semantics\":\"successive_peak_mean_and_difference_not_two_simultaneous_energy_stores\",\"foot_role\":\"timing_only_no_ms_boost_no_forced_coast_override\",";
   json+="\"startup_exception\":\"fixed_start_kick_only_then_all_widths_energy_selected\",\"work_model\":\"inherited_empirical_pulse_Q_arrival_transfer_provisional\",\"coast_residual_modelled\":false,";
