@@ -56,7 +56,10 @@ async function request(path, {method = 'GET', kind = 'json', timeout = 3000} = {
   } finally { clearTimeout(timer); }
 }
 function walkingEnergyTrial(s = latest) {
-  return /^walking-return-energy-v17(?:-|$)/.test(s?.diagnostic_build_id || '');
+  return walkingTransferTrial(s) || /^walking-return-energy-v17(?:-|$)/.test(s?.diagnostic_build_id || '');
+}
+function walkingTransferTrial(s = latest) {
+  return /^walking-energy-transfer-v18(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function footStartBlockReason(s) {
   if (s.foot?.control_extension_deg && ['left_out_of_range','right_out_of_range'].includes(s.foot_control_reason)) {
@@ -157,11 +160,15 @@ function renderOffline() {
     : `目標角度：${requestedTargetDeg}°（ZEROクロスで入力時間を計算）`;
   $('run-percent').textContent = requestedInputPercent === null
     ? '通常入力はZEROクロスで行います。'
+    : requestedEnergyModel === 'work_control' && requestedTargetDeg === 8 && walkingEnergyTrial()
+      ? walkingTransferTrial() ? '開始要求：戻りを救済し、実ZEROクロスで主入力を再計算' : '開始要求：左右の不足エネルギーから入力時間を選択'
     : requestedEnergyModel === 'work_control'
       ? '開始要求：正側300・350・400 mAから選択、負側300 mA'
       : `開始要求：ZEROクロスで${requestedInputCurrentMa} mA、入力時間はエネルギーから計算`;
   $('run-brake').textContent = requestedBrakeMaxMs === null
     ? '負側ブレーキ上限はWeb復帰後に確認します。'
+    : requestedEnergyModel === 'work_control' && requestedTargetDeg === 8 && walkingEnergyTrial()
+      ? walkingTransferTrial() ? '開始要求：救済と主入力を合わせて半周期80ms以内の試験範囲' : '開始要求：主入力・救済とも最大80msの試験範囲'
     : requestedEnergyModel === 'work_control' ? '開始要求：負側はエネルギー差から選択。上限は25 msから段階的に調整'
     : requestedEnergyModel === 'bridge_probe_positive_current' ? '開始要求：負側40 ms固定、正側300・350・400 mAを順序を変えて測定'
     : requestedEnergyModel === 'bridge_probe_extended' ? '開始要求：負側30・35・40 msを順序を変えて測定'
@@ -170,6 +177,8 @@ function renderOffline() {
       : `開始要求：負側ブレーキ上限 ${requestedBrakeMaxMs} ms`;
   $('run-model').textContent = requestedEnergyModel === 'bridge'
     ? '開始要求：旧到達角予測をエネルギーに換算（逆入力なし）'
+    : requestedEnergyModel === 'work_control' && requestedTargetDeg === 8 && walkingTransferTrial()
+      ? '開始要求：救済は戻りの不足分、主入力は次ピークの不足分から選択'
     : requestedEnergyModel === 'work_control' ? '開始要求：ホイールの仕事から次ピークの位置エネルギーを予測して入力を選択'
     : requestedEnergyModel === 'bridge_probe_positive_current' ? '開始要求：固定脚・正側電流3条件の一括実験'
     : requestedEnergyModel === 'bridge_probe_extended' ? '開始要求：固定脚・負側3条件の一括実験'
@@ -225,7 +234,11 @@ function footIssues(f, stale, terminal) {
   return issues.length ? ' · ' + issues.join(' · ') : '';
 }
 function render(s) {
-  if (walkingEnergyTrial(s)) {
+  if (walkingTransferTrial(s)) {
+    $('work-title').textContent = '歩行のエネルギー制御（v18・30秒）';
+    $('work-description').textContent = '今回のv18は±8°を使用します。戻りの不足分を救済した後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。足の認識が一時的に欠けたときは、新しい画像と機体の減速条件を確認して救済します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
+      (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '');
+  } else if (walkingEnergyTrial(s)) {
     $('work-title').textContent = '歩行のエネルギー制御（v17・30秒）';
     $('work-description').textContent = '今回のv17は±8°を使用します。左右の到達エネルギーの予測誤差と、足が前に出た状態の戻り不足を考慮して入力時間を選びます。主入力・救済は最大80msの試験範囲です。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
       (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '');
@@ -268,11 +281,13 @@ function render(s) {
     $('peak-adaptation').value = s.peak_adaptation_enabled ? '1' : '0';
     adaptationInitialized = true; adaptationBootId = s.boot_id;
   }
-  $('run-adaptation').textContent = s.running || terminal
+  $('run-adaptation').textContent = (s.running || terminal) && walkingTransferTrial(s) && s.target_deg === 8 && s.energy_model === 'work_control'
+    ? '到達予測の補正：救済のない周期だけで更新'
+    : s.running || terminal
     ? `今回の予測誤差の学習補正：${s.peak_adaptation_enabled ? '使用する' : '使用しない'}`
     : '学習補正の設定は測定開始時に確定します。';
   $('run-percent').textContent = (s.running || terminal) && walkingEnergyTrial(s) && s.target_deg === 8 && s.energy_model === 'work_control'
-    ? '今回の入力：左右の不足エネルギーから入力時間を選択'
+    ? walkingTransferTrial(s) ? '今回の入力：戻りを救済し、実ZEROクロスで主入力を再計算' : '今回の入力：左右の不足エネルギーから入力時間を選択'
     : s.running || terminal
     ? s.energy_model === 'work_control'
       ? '今回の入力：正側300・350・400 mAから選択、負側300 mA'
@@ -284,7 +299,7 @@ function render(s) {
     ? `今回の目標角度：${format(s.target_deg, 0)}°`
     : '目標角度は測定開始時に確定します。';
   $('run-brake').textContent = (s.running || terminal) && walkingEnergyTrial(s) && s.target_deg === 8 && s.energy_model === 'work_control'
-    ? '今回の入力時間：主入力・救済とも最大80ms。保護後の残不足も記録します。'
+    ? walkingTransferTrial(s) ? '今回の入力時間：救済と主入力を合わせて半周期80ms以内。保護後の残不足も記録します。' : '今回の入力時間：主入力・救済とも最大80ms。保護後の残不足も記録します。'
     : s.running || terminal
     ? s.energy_model === 'bridge_probe_positive_current' ? '今回の負側入力：300 mA・40 msに固定'
       : s.energy_model === 'bridge_probe_extended' ? '今回の負側入力：30・35・40 msを3条件ずつ順序を変更'
@@ -293,7 +308,9 @@ function render(s) {
       : s.energy_model === 'bridge_inverse' ? '今回の負側入力：実測0〜25 ms、ピークを確認して最大30 ms'
       : s.energy_model === 'bridge' ? '今回の旧式換算：ブレーキなし' : `今回の負側ブレーキ上限：${s.brake_max_ms} ms`
     : '負側ブレーキ上限は測定開始時に確定します。';
-  $('run-model').textContent = s.running || terminal
+  $('run-model').textContent = (s.running || terminal) && walkingTransferTrial(s) && s.target_deg === 8 && s.energy_model === 'work_control'
+    ? '今回の予測：救済は戻り通過の不足分、主入力は次ピークの不足分から選択'
+    : s.running || terminal
     ? s.energy_model === 'bridge_probe_positive_current' ? '今回の方式：正側電流300・350・400 mAを順序変更、負側40 ms固定'
       : s.energy_model === 'bridge_probe_extended' ? '今回の方式：正側は従来制御、負側は30・35・40 msの一括実験'
       : s.energy_model === 'bridge_probe_batch' ? '今回の方式：正側は従来制御、負側は5条件の一括実験'
@@ -321,7 +338,9 @@ function render(s) {
     ? '足のゼロ点と左右の検出を確認しました。機体を静止させて8°試験を開始できます。'
     : '8°試験を開始できません：' + footStartBlockReason(s);
   else if (!s.running && s.ready && !reference.capturing) $('guide').textContent = '仕事に基づく制御はMEKF絶対角0°が基準です。直立基準の保存は不要です。機体を静止させて開始してください。';
-  else if (s.running) $('guide').textContent = s.foot_control_required ? '測定中。足角度と機体の揺れを使って支持移動を補助します。' : '測定中。画面は更新されます。足角度は制御入力に使用しません。';
+  else if (s.running) $('guide').textContent = s.foot_control_required ? walkingTransferTrial(s)
+    ? '測定中。足の認識が欠けたときは、新しい画像と機体の減速条件を確認して戻りを補助します。'
+    : '測定中。足角度と機体の揺れを使って支持移動を補助します。' : '測定中。画面は更新されます。足角度は制御入力に使用しません。';
   else if (reference.capturing) $('guide').textContent = '基準を取得しています。機体を動かさずお待ちください。';
   else if (s.downloadable) $('guide').textContent = 'ログを保存してください。次の測定には「ログを消去・次の測定へ」を使います。';
   else if (s.ready) $('guide').textContent = f.zero_ready && f.right_valid && f.left_valid && !stale

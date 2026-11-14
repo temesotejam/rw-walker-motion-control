@@ -18,6 +18,10 @@
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
 #include "walking_energy_policy_v15.h"
 #include "walking_return_energy.h"
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+#include "half_cycle_energy_budget.h"
+#include "return_observation_policy.h"
+#endif
 #endif
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
 #include "energy_pulse_completion.h"
@@ -86,6 +90,9 @@ public:
   void serviceFast();
   void RW_HOT_CODE update();
   void updateImuDynamicBetaContext();
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+  void observeReturnFootFrame(const return_observation_policy::FootFrame& frame){walking_return_frame_=frame;}
+#endif
   void observeFootFrame(uint16_t run_id,uint32_t frame_ms,bool left_valid,bool right_valid,float left_deg,float right_deg,float left_px,float right_px,
                         bool phase_left_detected,bool phase_right_detected,float phase_left_x,float phase_right_x);
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
@@ -686,6 +693,14 @@ private:
   walking_return_energy::ReturnChoice walking_return_choice_;
   bool walking_return_event_=false,walking_return_pending_=false;
   float walking_arrival_pending_bias_j_=0;
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+  half_cycle_energy_budget::Ledger walking_half_cycle_budget_;
+  return_observation_policy::Observer walking_return_observer_;
+  return_observation_policy::FootFrame walking_return_frame_;
+  return_observation_policy::Choice walking_return_observation_;
+  bool walking_aid_zero_seen_=false;
+  bool cutReturnAidAtZero(uint32_t now_ms,uint32_t sample_us,float before,float after,float rate);
+#endif
 #endif
   float walking_energy_peaks_[2]={NAN,NAN};
   uint32_t walking_energy_peak_ms_[2]={0,0};
@@ -701,6 +716,11 @@ private:
     float return_deceleration_dps2=0,return_stopping_distance_deg=0;
     uint32_t return_foot_age_ms=0;
     bool return_event=false;
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+    uint8_t return_evidence=0;
+    uint16_t envelope_before_ms=0,envelope_after_ms=0;
+    bool assisted_cycle=false;
+#endif
 #endif
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
     uint32_t trigger_ms=0,output_end_ms=0;

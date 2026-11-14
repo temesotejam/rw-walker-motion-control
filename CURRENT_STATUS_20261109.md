@@ -4,6 +4,12 @@
 
 ## 現在の状態
 
+- v18最終配信確認: firmware1894160bytes / SHA256 `03c75464a246ec0947b26fecd300a10a2fa93d20fa9018bbf223ad201464e18e`。専用page・manifest・4parts・補助JS2件の計8件がHTTP200かつローカル全バイト一致。元v17/startfix/rangefix3版は元SHAのまま保持。機体へ書込みは行っていない。次は専用ページから書込み→再接続後にIDを確認→±8度の30秒試行と動画/RWLOGで実支持交替と前進・停止を評価する。
+
+- 2026-11-14 最新依頼「改善を回してください。複数のエージェントでやっていい」に対応し、v18 `walking-energy-transfer-v18` / env `atoms3cam-energy-transfer` / branch23を実装。専用ページは `http://127.0.0.1:8767/energy-transfer/`。救済の局所不足Jと、後の実ZEROでの主入力不足Jを分けて逆算する。救済中のfreshZEROは打切り→実経過決算→同サンプル主入力。救済は通常ZEROを消費せず、両者は同一元ピークの共有80ms実験枠を使う。枠不足は不足Jとして残す。足5度許容と通信修正を維持。詳細 `docs/ENERGY_TRANSFER_V18.md`。
+- 新しい39825069ログは実機v17-rangefix1 / format56 / CRC正常。10270samples、足400、判断75/75、実行48（前倒し17/救済8）、ピーク51、FINISHED/エラー空。原本SHA256 `9fd9e6a711536f3457618d9632d32d2bb50541f510f59b107dc1a329d8e39275`。ユーザーは最後「自立したまま停止した」と確認。最終peak24.214秒/+10.21488度、戻り底24.427秒/+7.51度。8救済すべて後続実ZEROがあるがv17では主入力機会を消費済み。8件すべて次ピークJが予測未満。最終戻り中は左認識欠落で、許容範囲拒否ではない。分析 `analysis/2026-11-14-walking/v17実機試行_39825069.md`、再現器 `tools/analyze_v17_trial_energy.py`。
+- v18の認識欠落時救済は足角度を補完せず、新鮮なrawframe/time/zeroと強いIMU減速2窓等を条件に、目標J25%以下を逆算する。記録状態では24.357秒に候補（0.152680mJ）を検出。これは変更後の機体運動や歩行改善の証明ではない。救済に名目Uを使えるJとして加算せず、救済周期の到達bias学習を除外。実runner結合・portable・JSON/CSV・UI・通信回帰PASS。最終build SUCCESS44.19秒、RAM127076/327680、Flash1893789/3342336。新v18の実機書込み・測定は未実施。実エネルギー中立点・動く足のU・慣性同定も未実施。MPCなし。以下のv17準備の記録は比較用履歴。
+
 - 2026-11-14ユーザーが「設定範囲外」と原因を確認し、数度を許容するよう明示依頼。最新版 `walking-return-energy-v17-rangefix1` を準備、ページ `http://127.0.0.1:8767/return-energy-rangefix/`。校正端から5°以内を開始/足姿勢予測/主制御の観測で共通許容し、5°超や無効・古い画像は拒否。元の角度換算と校正表は変更せず、許容部分は端区間の線形外挿として表示/記録する。生のin_rangeは実測範囲の意味を維持し、control_range_ok/extrapolation_degをAPI/フレームmetadata/新CSV列へ追加。FootFrame構造とサンプル形式は変更なし。
 - rangefix検証完了: 両足・両端の0/0.1/1/3/5°を許容、5.02/8/20°は拒否し、角度/ゼロ/検出/鮮度の条件を実コードで確認。実JSで3°時は「範囲外」とせず開始可能、8°時は拒否。実範囲診断JSONとCSV保持/旧列構成、v17 runner/metadata、送信・埋込み一致もPASS。build SUCCESS122.36秒、RAM126940/327680、Flash1883713/3342336、firmware1884080bytes/SHA256 `9753d9c313abe5a5798c0ab02df8bf6e86b381ef2801cc45d77526a35847f262`。専用page/manifest/4parts HTTP200・全バイト一致。旧v17/startfix1配信物は元SHA保持。今回は新しい機体書込み/測定は未実施、最後に確認した実機は元v17。具体的な超過量は未取得で、5°は「数度」を反映した初期設定。詳細 `docs/RETURN_ENERGY_V17.md` rangefix節。
 - 2026-11-14「±8°が押せない」を調査: 初回実機GETで `walking-return-energy-v17`/READY_TO_MEASURE/readytrue/runningfalse/controller_freshtrue/last_error空、foot_control_readyfalseを確認。ユーザーは足検出済みと回答し、後に設定範囲外と確認。開始条件は検出以外にゼロ点・校正範囲・画像/時刻・frame年齢200ms以内を要求していた。その後GETはtimeout、PC機体用Wi-Fi2切断・AP不可視で再接続不可。左右どちらの何度の超過かは未取得。範囲許容は上記rangefixで対応。測定開始/機体再起動/書込みは行っていない。

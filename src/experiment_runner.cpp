@@ -2636,6 +2636,11 @@ void ExperimentRunner::resetEnergyControlAutonomous() {
   walking_arrival_feedback_.reset();walking_return_detector_.reset();
   walking_return_choice_={};walking_return_event_=walking_return_pending_=false;
   walking_arrival_pending_bias_j_=0;
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+  walking_half_cycle_budget_.reset();walking_return_observer_.reset();
+  walking_return_frame_={};walking_return_observation_={};
+  walking_aid_zero_seen_=false;
+#endif
 #endif
   walking_energy_peak_ms_[0]=walking_energy_peak_ms_[1]=0;walking_energy_count_=walking_energy_total_=0;
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
@@ -2808,6 +2813,9 @@ bool ExperimentRunner::beginEnergyControlAutonomousPulse(uint32_t now_ms, uint32
   if (!set_current_ok) {
     // A failed transport write does not prove that the actuator saw nothing.
     if(optional_early_event_)optional_early_write_uncertain_=true;
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+    if(walking_return_event_)optional_early_write_uncertain_=true;
+#endif
     energy_control_autonomous_pulse_authorized_ = false;
     stopMotor();
     return false;
@@ -2970,6 +2978,9 @@ void ExperimentRunner::updateEnergyControlAutonomousPulse(uint32_t now_ms) {
       energy_control_autonomous_phase_ == EnergyControlAutonomousPhase::STRONG_START_KICK;
   const bool completed_normal_pulse =
       energy_control_autonomous_half_cycle_state_ == EnergyControlAutonomousHalfCycleState::PULSE_ACTIVE;
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+  const bool completed_return_aid=walking_energy_completion_pending_ && walking_energy_active_pulse_.return_event;
+#endif
   stopActivePulse(now_ms);
   status_.current_mA_setting = 0;
   status_.pulse_width_ms_setting = 0;
@@ -2979,6 +2990,14 @@ void ExperimentRunner::updateEnergyControlAutonomousPulse(uint32_t now_ms) {
     energy_control_autonomous_half_cycle_state_ = EnergyControlAutonomousHalfCycleState::WAIT_PEAK;
     resetEnergyControlAutonomousPeakTracker(true);
   } else if (completed_normal_pulse) {
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+    if(completed_return_aid && !walking_aid_zero_seen_ && !status_.emergency_stop){
+      energy_control_autonomous_zero_cross_consumed_for_peak_=false;
+      energy_control_autonomous_half_cycle_state_=EnergyControlAutonomousHalfCycleState::WAIT_ZERO_CROSS;
+      resetEnergyControlAutonomousPeakTracker(false);
+      return;
+    }
+#endif
     // Do not carry a detector extremum formed by the pulse transient
     // into the next physical half-cycle.
     energy_control_autonomous_half_cycle_state_ = EnergyControlAutonomousHalfCycleState::WAIT_PEAK;
@@ -3395,6 +3414,9 @@ bool ExperimentRunner::recordEnergyControlAutonomousPeak(uint32_t peak_ms, int8_
   energy_control_autonomous_last_peak_amplitude_deg_ = amplitude_deg;
   energy_control_autonomous_last_peak_side_ = physical_side;
   energy_control_autonomous_last_peak_ms_ = peak_ms;
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+  walking_half_cycle_budget_.sourcePeak(peak_ms);
+#endif
   energy_control_autonomous_zero_cross_consumed_for_peak_ = false;
   energy_control_autonomous_half_cycle_state_ = EnergyControlAutonomousHalfCycleState::WAIT_ZERO_CROSS;
   resetEnergyControlAutonomousPeakTracker(false);
@@ -3424,7 +3446,27 @@ __attribute__((noinline)) bool ExperimentRunner::observeInwardStallRescue(
       energy_control_autonomous_half_cycle_state_==EnergyControlAutonomousHalfCycleState::WAIT_ZERO_CROSS &&
       !energy_control_autonomous_zero_cross_consumed_for_peak_ && !peak_just_confirmed &&
       stall_rescue_attempted_peak_ms_!=energy_control_autonomous_last_peak_ms_;
-#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+  walking_return_event_=false;
+  return_observation_policy::Input ri;
+  ri.run_id=status_.run_id;ri.now=t_test_ms;ri.peak_ms=energy_control_autonomous_last_peak_ms_;
+  ri.sample_us=energy_control_autonomous_last_motion_sample_us_;
+  ri.sample_age_us=static_cast<uint32_t>(micros()-ri.sample_us);
+  ri.active=scope && walking_half_cycle_budget_.allowAid(ri.peak_ms);ri.side=peak_side;
+  ri.peak_deg=energy_control_autonomous_last_peak_amplitude_deg_;ri.angle_deg=angle_deg;ri.rate_dps=rate_dps;
+  ri.target_j=lateral_energy::potential(lateral_energy_geometry_,tilt_priority_.target());
+  ri.foot=walking_return_frame_;
+  walking_return_observation_=walking_return_observer_.observe(ri);
+  walking_return_choice_={};
+  if(walking_return_observation_.selected){
+    walking_return_choice_.request_j=walking_return_observation_.request_j;
+    walking_return_choice_.deceleration_dps2=walking_return_observation_.deceleration_dps2;
+    walking_return_choice_.stopping_distance_deg=walking_return_observation_.stopping_distance_deg;
+    walking_return_event_=true;
+  }
+  // v18 has no legacy low-rate bypass of the fresh-frame/deceleration gates.
+  return walking_return_event_;
+#elif defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
   walking_return_event_=false;
   walking_return_energy::ReturnInput ri;
   ri.active=scope;ri.now=t_test_ms;ri.peak_ms=energy_control_autonomous_last_peak_ms_;ri.side=peak_side;
@@ -3478,6 +3520,9 @@ __attribute__((noinline)) void ExperimentRunner::acceptMotionCrossing(bool rescu
   foot_support_deceleration_.reset();
 #endif
   stall_rescue_event_=rescue;
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+  if(rescue)optional_early_write_uncertain_=false;
+#endif
   if(rescue)stall_rescue_attempted_peak_ms_=energy_control_autonomous_last_peak_ms_;
   updateEnergyControlAutonomousAtZeroCross(t_test_ms,rate,before,after,alpha,interpolated_time_ms);
   stall_rescue_event_=false;
@@ -3736,6 +3781,9 @@ void ExperimentRunner::decideAngleEarlyCandidate(uint32_t t_test_ms,uint32_t sam
 
 __attribute__((noinline)) void ExperimentRunner::acceptOptionalEarlyMotion(
     uint32_t t_test_ms,float rate_dps,float angle_deg) {
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+  if(walking_half_cycle_budget_.aidUsed())return; // Keep the real ZERO main.
+#endif
   // The caller must establish fresh input; this wrapper does not prove contact.
   const int8_t side=energy_control_autonomous_last_peak_side_;
   if(!wheelWorkMode() || energy_control_autonomous_target_peak_deg_!=8.f ||
@@ -3801,6 +3849,9 @@ void ExperimentRunner::updateEnergyControlAutonomousMotion(uint32_t now_ms) {
     return;
   }
   const float before_deg = energy_control_autonomous_previous_detector_relative_angle_deg_;
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+  const bool cut_return_at_zero=cutReturnAidAtZero(now_ms,sample_us,before_deg,detector_relative_angle_deg,rate_dps);
+#endif
   const bool was_waiting_for_peak = energy_control_autonomous_half_cycle_state_ ==
       EnergyControlAutonomousHalfCycleState::WAIT_PEAK;
   const bool physical_event_suppressed = status_.pulse_active ||
@@ -3840,8 +3891,11 @@ void ExperimentRunner::updateEnergyControlAutonomousMotion(uint32_t now_ms) {
     const float alpha = crossing && denominator > 0.0f ? before_distance / denominator : 1.0f;
     const float interpolated_time_ms = static_cast<float>(energy_control_autonomous_previous_detector_test_ms_) +
         alpha * static_cast<float>(t_test_ms - energy_control_autonomous_previous_detector_test_ms_);
-    const float interpolated_rate_dps = energy_control_autonomous_previous_detector_rate_dps_ +
+    float interpolated_rate_dps = energy_control_autonomous_previous_detector_rate_dps_ +
         alpha * (rate_dps - energy_control_autonomous_previous_detector_rate_dps_);
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+    if(cut_return_at_zero)interpolated_rate_dps=rate_dps;
+#endif
     acceptMotionCrossing(rescue,t_test_ms,interpolated_rate_dps,before_deg,
         detector_relative_angle_deg,alpha,interpolated_time_ms);
   }
@@ -5024,7 +5078,11 @@ __attribute__((noinline)) bool ExperimentRunner::dispatchTiltPriority(
     PsramLogger::EnergyControlAutonomousZeroCrossEvent& event,uint32_t t_test_ms,
     bool previous_accepted_valid,uint32_t previous_accepted_ms) {
   if(event.target_peak_deg==8.f && wheelWorkMode() && tryTiltPriority(event,t_test_ms)) {
-    if(optional_early_event_ && optional_early_write_uncertain_) {
+    if((optional_early_event_
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+        || walking_return_event_
+#endif
+        ) && optional_early_write_uncertain_) {
       // The write may have reached the roller: do not reopen this half-cycle.
       logger_->addEnergyControlAutonomousZeroCrossEvent(event);
       requestEmergencyStop("optional_early_write_unresolved");
@@ -5035,6 +5093,14 @@ __attribute__((noinline)) bool ExperimentRunner::dispatchTiltPriority(
       return true;
     }
     finishFootEnergyDecision(event,t_test_ms);
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+    if(walking_return_event_ && event.output_executed){
+      // An aid has its own completion but does not own the actual ZERO.
+      energy_control_autonomous_last_accepted_zero_cross_valid_=previous_accepted_valid;
+      energy_control_autonomous_last_accepted_zero_cross_ms_=previous_accepted_ms;
+      energy_control_autonomous_zero_cross_consumed_for_peak_=false;
+    }
+#endif
     if(!event.output_executed) {
       energy_control_autonomous_half_cycle_state_=EnergyControlAutonomousHalfCycleState::WAIT_PEAK;
       resetEnergyControlAutonomousPeakTracker(true);
@@ -5204,7 +5270,13 @@ void ExperimentRunner::updateEnergyControlAutonomousAtZeroCross(uint32_t t_test_
       (energy_bridge_enabled_ ? bridge_coeff.rate_max_dps : energy_coeff.rate_max_dps);
   event.rate_baseline_reason = energy_bridge_enabled_ ? 0 : 255;
   audit.free_model_us = static_cast<uint32_t>(micros() - v46l_free_model_t0_us);
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+  // A ZERO-triggered aid stop may be newer than the loop's timestamp. Use
+  // the current clock so unsigned decay cannot erase its residual current.
+  const uint32_t now_ms = millis();
+#else
   const uint32_t now_ms = run_start_ms_ + t_test_ms;
+#endif
   event.i0_estimated_mA = predicted_current_end_ms_ == 0 ? 0.0f :
       predicted_signed_current_end_mA_ * expf(-static_cast<float>(now_ms - predicted_current_end_ms_) / 70.0f);
 

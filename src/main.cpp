@@ -326,6 +326,25 @@ static bool controlStep(void*) {
   if(measurement && measurement_epoch_us && millis()-foot_observation_poll_ms>=foot_poll_interval_ms) {
     foot_observation_poll_ms=millis();
     const auto fs=feet.snapshot();const uint64_t foot_observed_us=esp_timer_get_time();const auto& f=fs.latest;
+#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+    // Raw identity/receipt survive an invalid local projection. A repeated
+    // snapshot retains its first receipt; invalid timestamps cancel evidence.
+    static uint32_t return_sequence=0;
+    static uint16_t return_run=0;
+    if(f.sequence!=return_sequence || f.run_id!=return_run || !f.timestamp_valid){
+      return_sequence=f.sequence;return_run=f.run_id;
+      return_observation_policy::FootFrame raw;
+      raw.run_id=f.run_id;raw.timestamp_valid=f.timestamp_valid && f.frame_us>=measurement_epoch_us;
+      raw.frame_ms=raw.timestamp_valid?static_cast<uint32_t>((f.frame_us-measurement_epoch_us)/1000):0;
+      raw.ready_ms=static_cast<uint32_t>((foot_observed_us-measurement_epoch_us)/1000);
+      raw.frame_valid=f.frame_valid;raw.zero_ready=f.zero_ready;
+      raw.left_detected=f.left_valid;raw.right_detected=f.right_valid;
+      raw.left_range_ok=foot_control_range::allows(f.left_in_range,f.left_x,false);
+      raw.right_range_ok=foot_control_range::allows(f.right_in_range,f.right_x,true);
+      raw.left_deg=f.left_deg;raw.right_deg=f.right_deg;
+      runner.observeReturnFootFrame(raw);
+    }
+#endif
 #if FOOT_EARLY_TRIAL && !ANGLE_EARLY_TRIAL
     earlySubmitFrame(fs,foot_observed_us,measurement_epoch_us);
 #endif

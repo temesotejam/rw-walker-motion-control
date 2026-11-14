@@ -240,7 +240,10 @@
     total.coverage=measurementUs>0 ? Math.min(1,total.covered_us/measurementUs) : 0;
     for (const result of [total,active,coast])
       if (!result.covered_us) result.observed_net_j=result.added_j=result.removed_j=null;
+    const transferV18=metadata.energy_model==='walking_energy_transfer_v18' ||
+      metadata.walking_energy?.revision==='walking_energy_transfer_v18' || metadata.walking_transfer?.revision==='walking_energy_transfer_v18';
     return {revision:usePosition ? 'reaction_couple_position_work_v2_20261016' : 'reaction_couple_work_v1_20261016',inertia_kg_m2:inertia,
+      walking_control_revision:transferV18 ? 'walking_energy_transfer_v18' : null,
       wheel_speed_to_body_sign:sign,provisional:true,readback_delay_compensated:false,
       velocity_source:usePosition ? 'position_local_quadratic' : 'legacy_filtered_rpm',
       legacy_filtered_rpm_warning:!usePosition,position_to_speed_sign:positionSign,
@@ -281,6 +284,9 @@
         : '旧ログの速度読み値による参考値です。読み値の遅れは未補正です。入力中と入力後の配分は結論に使えません。',
       '指令の境界は線形補間しています。取得時刻は内部センサ時刻ではなく、慣性・軸の符号・平面近似にも依存します。',
       '', '各入力（指令を書き込めた時刻から、次の指令を書き込めた時刻まで）：'];
+    if(r.walking_control_revision==='walking_energy_transfer_v18') lines.splice(6,0,
+      'v18の救済完了予測は、戻り通過の要求に対する充足です。次ピークの到達エネルギーを表す値ではありません。',
+      '主入力は実ZEROクロスで改めて計算し、救済と合わせて半周期80ms以内に制限します。');
     for(const p of r.pulses) lines.push(`${p.index}. ${p.current_mA} mA / ${((p.end_us-p.start_us)/1000).toFixed(1)} ms：${mj(p.observed_net_j)} / 計算対象 ${(p.coverage*100).toFixed(1)}%${p.complete?'':'（区間の一部が未取得）'}`);
     return lines.join('\n');
   }
