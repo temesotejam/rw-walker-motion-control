@@ -17,6 +17,7 @@
 #endif
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
 #include "walking_energy_policy_v15.h"
+#include "walking_return_energy.h"
 #endif
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
 #include "energy_pulse_completion.h"
@@ -679,6 +680,13 @@ private:
   lateral_energy::CurrentTable lateral_current_table_;
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
   lateral_energy::CurrentTable walking_energy_current_;
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+  walking_return_energy::ArrivalFeedback walking_arrival_feedback_;
+  walking_return_energy::ReturnDetector walking_return_detector_;
+  walking_return_energy::ReturnChoice walking_return_choice_;
+  bool walking_return_event_=false,walking_return_pending_=false;
+  float walking_arrival_pending_bias_j_=0;
+#endif
   float walking_energy_peaks_[2]={NAN,NAN};
   uint32_t walking_energy_peak_ms_[2]={0,0};
   struct WalkingEnergyAudit {
@@ -688,6 +696,12 @@ private:
     bool executed=false,optional=false,rescue=false;
     bool early_budget_checked=false,early_budget_admitted=false;
     walking_energy_policy::Decision decision;
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+    float arrival_bias_j=0,return_work_j=0;
+    float return_deceleration_dps2=0,return_stopping_distance_deg=0;
+    uint32_t return_foot_age_ms=0;
+    bool return_event=false;
+#endif
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
     uint32_t trigger_ms=0,output_end_ms=0;
     uint8_t completion_reason=0;

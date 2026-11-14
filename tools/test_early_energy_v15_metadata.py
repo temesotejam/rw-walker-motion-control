@@ -36,7 +36,7 @@ generic=r'''
   const bool work_mode=true,inverse_mode=false,energy_bridge_enabled_=true;
   const bool positive_current_batch_mode=false,negative_probe_extended_mode=false;
   const bool negative_probe_batch_mode=false,negative_probe_mode_=false;
-  const char* walking_energy_revision=early_energy_mode?walking_energy_policy_v15::kRevision:walking_energy_policy::kRevision;
+  const char* walking_energy_revision=return_energy_mode?"walking_return_energy_v17":early_energy_mode?walking_energy_policy_v15::kRevision:walking_energy_policy::kRevision;
 '''+''.join(statement(key) for key in fields)
 generic+=r'''  json+="\"event_revision_checks\":[";
 '''

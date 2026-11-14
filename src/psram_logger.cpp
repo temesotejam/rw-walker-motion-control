@@ -533,14 +533,19 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
 #else
   const bool early_energy_mode=false;
 #endif
-  const char* walking_energy_revision=early_energy_mode ? walking_energy_policy_v15::kRevision : walking_energy_policy::kRevision;
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+  const bool return_energy_mode=walking_energy_mode;
+#else
+  const bool return_energy_mode=false;
+#endif
+  const char* walking_energy_revision=return_energy_mode ? "walking_return_energy_v17" : early_energy_mode ? walking_energy_policy_v15::kRevision : walking_energy_policy::kRevision;
   json += "\"energy_model\":\"" + String(walking_energy_mode ? walking_energy_revision : work_mode ? "wheel_work_one_peak_control" : inverse_mode ? "one_peak_energy_inverse_negative" :
       energy_bridge_enabled_ ? "angle_energy_bridge" : "quadratic_energy_inverse") + "\",";
   if (work_mode) {
     if(walking_energy_mode){
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
       const bool early_budget_mode=true;
-      const char* active_walking_revision=walking_energy_policy_v15::kRevision;
+      const char* active_walking_revision=return_energy_mode ? "walking_return_energy_v17" : walking_energy_policy_v15::kRevision;
 #else
       const bool early_budget_mode=false;
       const char* active_walking_revision=walking_energy_policy::kRevision;
@@ -558,9 +563,9 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
         json += "\"" + String(name) + "\":{\"active\":false,\"scope\":\"inactive_legacy_v13_or_earlier\",\"width_sizing_active\":false},";
       }
       json += "\"peak_mpc\":{\"active\":false,\"scope\":\"inactive_legacy\"},";
-      json += "\"foot_timing\":{\"active\":true,\"policy\":\"" + String(early_budget_mode ? "foot_pose_and_generic_early_timing;no_additive_width;generic_early_and_foot_use_same_existing_experimental80ms_ceiling;postguard_full_predicted_budget_required;infeasible_early_defers_without_consuming_normal_opportunity;stall_rescue15ms_is_separate_legacy_trial;no_reversal_cutoff" : "foot_pose_timing_only;no_additive_width_or_forced_input;normal_and_foot_energy_cap80ms;nonfoot_early_and_stall_rescue_cap15ms;guards_can_shorten") + "\"},";
-      json += "\"work_control_branch_codes\":" + String(pulse_lifecycle_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\",\"21\":\"energy_pulse_lifecycle_v16\"}" : early_budget_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\"}" : "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\"}") + ",";
-      json += "\"pulse_lifecycle\":{\"active\":" + String(pulse_lifecycle_mode ? "true" : "false") + ",\"revision\":\"energy_pulse_lifecycle_v16\",\"selector_revision\":\"" + String(active_walking_revision) + "\",\"energy_model_changed\":false,\"clock\":\"fresh_millis_at_update;queue_acceptance_start_to_stop_request\",\"setCurrentMa_success\":\"desired_current_queued_or_already_requested_not_bus_ACK_or_physical_current_edge\",\"completion\":\"analytic_signed_Q_and_provisional_work_from_actual_software_elapsed_no_duration_clamp\",\"physical_delivery_measured\":false},";
+      json += "\"foot_timing\":{\"active\":true,\"policy\":\"" + String(return_energy_mode ? "fresh_foot_amount_gates_local_return_work_budget;centre_not_required;all_rescue_energy_inverse_with_main80ms_envelope;no_ms_addition" : early_budget_mode ? "foot_pose_and_generic_early_timing;no_additive_width;generic_early_and_foot_use_same_existing_experimental80ms_ceiling;postguard_full_predicted_budget_required;infeasible_early_defers_without_consuming_normal_opportunity;stall_rescue15ms_is_separate_legacy_trial;no_reversal_cutoff" : "foot_pose_timing_only;no_additive_width_or_forced_input;normal_and_foot_energy_cap80ms;nonfoot_early_and_stall_rescue_cap15ms;guards_can_shorten") + "\"},";
+      json += "\"work_control_branch_codes\":" + String(pulse_lifecycle_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\",\"21\":\"energy_pulse_lifecycle_v16\",\"22\":\"walking_return_energy_v17\"}" : early_budget_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\"}" : "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\"}") + ",";
+      json += "\"pulse_lifecycle\":{\"active\":" + String(pulse_lifecycle_mode ? "true" : "false") + ",\"revision\":\"energy_pulse_lifecycle_v16\",\"selector_revision\":\"" + String(active_walking_revision) + "\",\"energy_model_changed\":" + String(return_energy_mode ? "true" : "false") + ",\"clock\":\"fresh_millis_at_update;queue_acceptance_start_to_stop_request\",\"setCurrentMa_success\":\"desired_current_queued_or_already_requested_not_bus_ACK_or_physical_current_edge\",\"completion\":\"analytic_signed_Q_and_provisional_work_from_actual_software_elapsed_no_duration_clamp\",\"physical_delivery_measured\":false},";
       json += "\"early_energy_main\":{\"active\":" + String(early_budget_mode ? "true" : "false") + ",\"revision\":\"" + String(active_walking_revision) + "\",\"selection\":\"" + String(early_budget_mode ? "least_integer_width_with_predicted_work_at_least_request;cap_limited_retains_unmet;surplus_only_coasts" : "v14_nearest_energy_error") + "\",\"postguard_budget_required\":" + String(early_budget_mode ? "true" : "false") + ",\"experimental_ceiling_ms\":80,\"ceiling_physics_derived\":false,\"reversal_cutoff_active\":false,\"physical_zero_deficit_guaranteed\":false},";
       json += "\"wheel_work_model_interpretation\":\"passive_rate_and_pulse_Q_effective_arrival_surrogates;no_measured_body_inertia;no_measured_actuator_efficiency;no_new_pulse_coast_can_retain_current_and_stored_energy;no_closed_loop_validation_claim\",";
       json += "\"walking_passive_fit\":{\"plus_offset_J\":0.0001630156686,\"plus_omega2_J\":0.0003345881499,\"plus_rate_support_dps\":[22.2512,37.5379],\"minus_offset_J\":0.0002624748594,\"minus_omega2_J\":0.0002164565952,\"minus_rate_support_dps\":[20.313,35.5657],\"train_runs\":[137267573,267557373,141282685,611622951],\"heldout_runs\":[97855607,241508524],\"low_rate_rolloff_validated\":false,\"powered_response_transfer_validated\":false},";
@@ -616,7 +621,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
     json += "\"negative_one_peak_model_scope\":\"fixed_leg;target_8deg;command_300mA;fit_reference_abs_1.932539deg;runtime_uses_saved_reference_relative_angles;fit_0_10_15_20_25ms;voltage_7.22_to_8.00V\",";
     json += "\"negative_one_peak_input_policy\":\"choose_width_by_target_minus_predicted_peak_energy;within_run_three_peak_raw_fit_residual_mean;25_to_30ms_one_ms_completed_peak_feedback;stop_extension_when_previous_positive_peak_below_7deg;skip_outside_support_or_stale_speed\",";
   }
-  json += "\"energy_control_autonomous_policy\":\"" + String(early_energy_mode
+  json += "\"energy_control_autonomous_policy\":\"" + String(return_energy_mode ? "MEKF_events;v17_causal_per_side_arrival_residual_feedback;foot_gated_local_return_energy_budget;least_integer_energy_width;all_rescue_cap80_experimental;physical_zero_deficit_not_guaranteed" : early_energy_mode
       ? "MEKF_events;v14_frozen_energy_terms;positive_request_uses_least_integer_width_with_W_at_least_request;generic_and_foot_early_use_same_experimental80ms_ceiling;postguard_early_full_budget_required_or_defer_without_consuming_normal;rescue15ms_separate_legacy_trial;no_reversal_cutoff;cap_limited_unmet_is_explicit;no_physical_zero_deficit_guarantee"
       : walking_energy_mode
       ? "MEKF_events;Eavailable=U(theta)+effective_rate_energy+fitted_offset;paired_peak_common_and_redistribution_correction;energy_deficit_selects_integer_width_by_predicted_pulse_work;surplus_coasts;invalid_fails_closed_no_legacy_fallback;foot_timing_only;fixed_bootstrap_exception"
@@ -633,7 +638,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
       : energy_bridge_enabled_
       ? "rate_deg_per_s;arrival_energy_J;Q_fit_mA_s;time_ms"
       : "omega_rad_per_s;effective_energy_J;Q_log_mA_s;Q_fit_A_s;time_ms") + "\",";
-  json += "\"lateral_energy_formula\":\"" + String(early_energy_mode
+  json += "\"lateral_energy_formula\":\"" + String(return_energy_mode ? "Eavailable=max(0,U_nominal+effective_rate_energy+offset+clamped_side_bias);request=max(0,Utarget+C+R-Eavailable,clamped_return_work);return_work=b_side*rad_per_deg^2*max(0,2*local_deceleration*distance-rate_dps^2);width=min_integer_W_ge_request_else_cap;no_physical_U_or_inertia_identification" : early_energy_mode
       ? "Eavailable=U(theta)+b_side*omega_rad^2+a_side*min(1,rate_dps/20)^2;paired_common_and_redistribution_as_v14;request=max(0,Utarget+C+R-Eavailable);W=alpha_side*omega_rad*Q_As+beta_side*Q_As^2;width=min_integer_with_W_at_least_request_else_cap;request0_coasts;early_admission=valid_and_noncoast_and_positive_width_and_nonsaturated_and_actual_guarded_W_plus_1e-9J_at_least_request;unmet=max(0,request-W);Earrival=Eavailable+W"
       : walking_energy_mode
       ? "Eavailable=U(theta)+b_side*omega_rad^2+a_side*min(1,rate_dps/20)^2;Emean=(U_same+U_opposite)/2;D=(U_opposite-U_same)/2;C=clamp(.25*(Utarget-Emean),+-.125*Utarget);R=clamp(.125*D,+-.125*Utarget);request=max(0,Utarget+C+R-Eavailable);W=alpha_side*omega_rad*Q_As+beta_side*Q_As^2;width=argmin_integer_0_to_cap_abs(W-request);Earrival=Eavailable+W"
@@ -695,7 +700,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
       autonomous_brake_limit::positiveCurrentBatch(autonomous_brake_max_ms_);
   json += "\"autonomous_duration_ms\":" + String((negative_probe_batch_mode || positive_current_batch_mode) ?
       negative_probe_batch::kDurationMs : work_mode ? Config::WHEEL_WORK_CONTROL_DURATION_MS : Config::ENERGY_CONTROL_AUTONOMOUS_DURATION_MS) + ",";
-  json += "\"energy_control_autonomous_free_model\":\"" + String(early_energy_mode
+  json += "\"energy_control_autonomous_free_model\":\"" + String(return_energy_mode ? "walking_return_energy_v17:nominal_U+effective_rate_energy+offset+causal_side_bias;local_return_loss_budget_is_not_identified_potential" : early_energy_mode
       ? "walking_early_energy_main_v15:unchanged_v14_U(theta)+b_side*omega_rad^2+a_side*min(1,rate_dps/20)^2;effective_passive_arrival_not_physical_kinetic_energy;nominal_zero_CG"
       : walking_energy_mode
       ? "walking_peak_rate_energy_v14:U(theta)+b_side*omega_rad^2+a_side*min(1,rate_dps/20)^2;effective_passive_arrival_not_physical_kinetic_energy;nominal_zero_CG"
@@ -789,7 +794,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
     json += "],";
   }
   json += "\"autonomous_uses_q_ident_limits\":false,";
-  json += "\"energy_control_autonomous_q_policy\":\"" + String(early_energy_mode
+  json += "\"energy_control_autonomous_q_policy\":\"" + String(return_energy_mode ? "signed_initial_current;1200mA_model;Q_pulse_only;least_integer_energy_width;main_and_rescue_cap80_experimental;postguard_early_budget_required;remaining_deficit_logged;no_physical_zero_deficit_guarantee" : early_energy_mode
       ? "signed_initial_current_aligned;1200mA_current_rise_model;Q_pulse_only;least_integer_energy_ceiling_width;negative_netQ_invalid;generic_and_foot_early_same_experimental80ms_ceiling;rescue15ms_separate;postguard_early_budget_admission;cap_unmet_explicit;no_physical_zero_deficit_claim"
       : walking_energy_mode
       ? "signed_initial_current_aligned_with_intended_side;1200mA_command_current_rise_model;Q_pulse_only;integer_width_min_energy_error;cap80ms_or15ms_early_rescue_then_guards;no_abs_negative_residual_Q;zero_width_has_zero_new_work_and_unmodelled_residual_tail"
@@ -1788,11 +1793,11 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
     const bool work_event = e.work_control_branch != 0;
     const bool inverse_event = energy_bridge_enabled_ && !negative_probe_mode_ &&
         autonomous_brake_max_ms_ == 25 && e.physical_next_peak_side < 0;
-    detail += ",\"free_model_revision\":\"" + String((e.work_control_branch==20 || e.work_control_branch==21) ? walking_energy_policy_v15::kRevision : e.work_control_branch==19 ? walking_energy_policy::kRevision : e.work_control_branch==18 ? "foot_support_amount_unmodeled_v13" : e.work_control_branch==17 ? "foot_support_local_unmodeled_v12" : e.work_control_branch==16 ? "foot_support_transfer_unmodeled_v11" : e.work_control_branch==15 ? "gradual_sway_unmodeled_trial_or_coast" : e.work_control_branch==14 ? "positive_asymmetry_unmodeled_trial" : e.work_control_branch==13 ? "weak_side_assist_v1_unmodeled" : (e.work_control_branch==10 || e.work_control_branch==11) ? walking_energy_loss::kRevision : (e.work_control_branch>=4) ? wheel_work_energy_control::kRevision :
+    detail += ",\"free_model_revision\":\"" + String(e.work_control_branch==22 ? "walking_return_energy_v17" : (e.work_control_branch==20 || e.work_control_branch==21) ? walking_energy_policy_v15::kRevision : e.work_control_branch==19 ? walking_energy_policy::kRevision : e.work_control_branch==18 ? "foot_support_amount_unmodeled_v13" : e.work_control_branch==17 ? "foot_support_local_unmodeled_v12" : e.work_control_branch==16 ? "foot_support_transfer_unmodeled_v11" : e.work_control_branch==15 ? "gradual_sway_unmodeled_trial_or_coast" : e.work_control_branch==14 ? "positive_asymmetry_unmodeled_trial" : e.work_control_branch==13 ? "weak_side_assist_v1_unmodeled" : (e.work_control_branch==10 || e.work_control_branch==11) ? walking_energy_loss::kRevision : (e.work_control_branch>=4) ? wheel_work_energy_control::kRevision :
         inverse_event ? one_peak_energy_inverse::kRevision :
         energy_bridge_enabled_ ? lateral_energy::kRevision : lateral_energy::kQuadraticRevision) + "\"";
     if (work_event && e.work_control_branch!=13 && e.work_control_branch!=14 && e.work_control_branch!=15 && e.work_control_branch!=16 && e.work_control_branch!=17 && e.work_control_branch!=18)
-      detail += ",\"arrival_energy_model_revision\":\"" + String((e.work_control_branch==20 || e.work_control_branch==21) ? walking_energy_policy_v15::kRevision : e.work_control_branch==19 ? walking_energy_policy::kRevision : (e.work_control_branch==10 || e.work_control_branch==11) ? walking_energy_loss::kRevision : control_target_cdeg_==1200 ? "target12_state_work_20261027" : wheel_work_energy_control::kRevision) + "\"";
+      detail += ",\"arrival_energy_model_revision\":\"" + String(e.work_control_branch==22 ? "walking_return_energy_v17" : (e.work_control_branch==20 || e.work_control_branch==21) ? walking_energy_policy_v15::kRevision : e.work_control_branch==19 ? walking_energy_policy::kRevision : (e.work_control_branch==10 || e.work_control_branch==11) ? walking_energy_loss::kRevision : control_target_cdeg_==1200 ? "target12_state_work_20261027" : wheel_work_energy_control::kRevision) + "\"";
     else
       // The compact table stores one shared field list for every row. Startup
       // and fallback events must keep the work-model column, with a null value.
@@ -1861,7 +1866,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
     appendAutonomousNullable("integral_energy_j", e.integral_energy_j, 8);
     appendAutonomousNullable("commanded_energy_deficit_j", e.commanded_energy_deficit_j, 8);
     appendAutonomousNullable("unclamped_energy_request_j", e.unclamped_energy_request_j, 8);
-    appendAutonomousNullable("maximum_input_work_j", e.work_control_branch==19 || e.work_control_branch==20 || e.work_control_branch==21 || !energy_bridge_enabled_ ? e.maximum_input_work_j : NAN, 8);
+    appendAutonomousNullable("maximum_input_work_j", e.work_control_branch==19 || e.work_control_branch==20 || e.work_control_branch==21 || e.work_control_branch==22 || !energy_bridge_enabled_ ? e.maximum_input_work_j : NAN, 8);
     appendAutonomousNullable("maximum_effective_arrival_energy_increment_j", energy_bridge_enabled_ ? e.maximum_input_work_j : NAN, 8);
     appendAutonomousNullable("unapplied_energy_request_j", e.unapplied_energy_request_j, 8);
     appendAutonomousNullable("predicted_current_goal_mA", e.predicted_current_goal_mA, 4);

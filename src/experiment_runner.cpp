@@ -2632,6 +2632,11 @@ void ExperimentRunner::resetEnergyControlAutonomous() {
 
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
   walking_energy_peaks_[0]=walking_energy_peaks_[1]=NAN;
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+  walking_arrival_feedback_.reset();walking_return_detector_.reset();
+  walking_return_choice_={};walking_return_event_=walking_return_pending_=false;
+  walking_arrival_pending_bias_j_=0;
+#endif
   walking_energy_peak_ms_[0]=walking_energy_peak_ms_[1]=0;walking_energy_count_=walking_energy_total_=0;
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
   walking_energy_active_audit_=-1;
@@ -3321,6 +3326,20 @@ bool ExperimentRunner::recordEnergyControlAutonomousPeak(uint32_t peak_ms, int8_
   if(wheelWorkMode() && energy_control_autonomous_target_peak_deg_==8.f && physical_side<0)
     low_peak_feedback_.negative(peak_ms,amplitude_deg,event.peak_speed_valid && event.peak_speed_age_us<=30000);
   event.energy_error_j = event.target_energy_j - event.measured_energy_j;
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+  const auto& completed=walking_energy_active_pulse_;
+  const bool complete_match=completed.executed && completed.completion_reason==1 &&
+      completed.completion.valid && completed.completion.work_valid &&
+      completed.trigger_ms==energy_control_autonomous_pending_zero_ms_;
+  const bool learn=event.pending_command_matched && !walking_return_pending_ && complete_match &&
+      peak_ms>energy_control_autonomous_pending_zero_ms_ &&
+      peak_ms-energy_control_autonomous_pending_zero_ms_<=1500 &&
+      imu_ && imu_->acquisitionHealthy() && !imu_->stale(millis());
+  walking_arrival_feedback_.observe(physical_side,peak_ms,event.measured_energy_j,
+      energy_control_autonomous_pending_model_energy_j_,walking_arrival_pending_bias_j_,event.target_energy_j,learn);
+  if(learn){event.model_residual_j=event.measured_energy_j-energy_control_autonomous_pending_model_energy_j_;
+    event.model_residual_observed=true;}
+#endif
   if (wheelWorkMode() && physical_side<0 &&
       (!event.pending_command_matched || !std::isfinite(event.measured_energy_j) ||
        !std::isfinite(energy_control_autonomous_pending_model_energy_j_)))
@@ -3405,6 +3424,20 @@ __attribute__((noinline)) bool ExperimentRunner::observeInwardStallRescue(
       energy_control_autonomous_half_cycle_state_==EnergyControlAutonomousHalfCycleState::WAIT_ZERO_CROSS &&
       !energy_control_autonomous_zero_cross_consumed_for_peak_ && !peak_just_confirmed &&
       stall_rescue_attempted_peak_ms_!=energy_control_autonomous_last_peak_ms_;
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+  walking_return_event_=false;
+  walking_return_energy::ReturnInput ri;
+  ri.active=scope;ri.now=t_test_ms;ri.peak_ms=energy_control_autonomous_last_peak_ms_;ri.side=peak_side;
+  ri.peak_deg=energy_control_autonomous_last_peak_amplitude_deg_;ri.angle_deg=angle_deg;ri.rate_dps=rate_dps;
+  ri.target_j=lateral_energy::potential(lateral_energy_geometry_,tilt_priority_.target());
+  ri.foot_frame_ms=foot_local_pose_.frame_ms;ri.foot_ready_ms=foot_local_pose_.received_ms;
+  ri.foot_valid=foot_frame_run_id_==status_.run_id && foot_local_pose_.run_id==status_.run_id &&
+      foot_frame_ms_==foot_local_pose_.frame_ms &&
+      foot_frame_left_valid_ && foot_frame_right_valid_;
+  ri.left_deg=foot_frame_left_;ri.right_deg=foot_frame_right_;
+  walking_return_choice_=walking_return_detector_.observe(ri);
+  if(walking_return_choice_.selected){walking_return_event_=true;return true;}
+#endif
   if(!scope) {
     stall_rescue_detector_.reset();
 #if defined(APPROACH_RESCUE_TRIAL) && APPROACH_RESCUE_TRIAL
@@ -3449,6 +3482,9 @@ __attribute__((noinline)) void ExperimentRunner::acceptMotionCrossing(bool rescu
   updateEnergyControlAutonomousAtZeroCross(t_test_ms,rate,before,after,alpha,interpolated_time_ms);
   stall_rescue_event_=false;
   stall_rescue_detector_.reset();
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+  walking_return_event_=false;walking_return_detector_.reset();
+#endif
 #if defined(APPROACH_RESCUE_TRIAL) && APPROACH_RESCUE_TRIAL
   approach_stall_rescue_detector_.reset();approach_stall_rescue_event_=false;
 #endif

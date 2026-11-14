@@ -22,7 +22,11 @@
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
 #if defined(WEB_PAGE_TRANSPORT_FIX) && WEB_PAGE_TRANSPORT_FIX
 #if defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-return-energy-v17"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "energy-pulse-lifecycle-v16-webfix2"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "energy-pulse-lifecycle-v16-webfix1"
 #endif

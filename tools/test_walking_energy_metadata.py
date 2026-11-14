@@ -32,6 +32,13 @@ logger = (ROOT / 'src/psram_logger.cpp').read_text(encoding='utf8')
 start = logger.index('    if(walking_energy_mode){')
 end = logger.index('    }else{', start)
 work_metadata = logger[start + len('    if(walking_energy_mode){'):end]
+work_metadata = '''
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+  const bool return_energy_mode=true;
+#else
+  const bool return_energy_mode=false;
+#endif
+''' + work_metadata
 source = (ROOT / 'src/walking_energy_runner.inc').read_text(encoding='utf8')
 start = source.index('void ExperimentRunner::appendWalkingEnergyMetadata(')
 end = source.index('\n}\n', start) + 3

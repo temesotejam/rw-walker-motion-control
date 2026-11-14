@@ -331,7 +331,12 @@ static bool controlStep(void*) {
       feet.recordControlObservation(f.run_id,f.sequence,foot_observed_us);
       foot_observation_sequence=f.sequence;
       runner.observeFootFrame(f.run_id,static_cast<uint32_t>((f.frame_us-measurement_epoch_us)/1000),
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+          f.left_valid && f.left_in_range && f.zero_ready && f.frame_valid,
+          f.right_valid && f.right_in_range && f.zero_ready && f.frame_valid,f.left_deg,f.right_deg,
+#else
           f.left_valid,f.right_valid,f.left_deg,f.right_deg,
+#endif
           (f.zero_ready && f.frame_valid && f.left_valid) ? fs.left_zero-f.left_x : NAN,
           (f.zero_ready && f.frame_valid && f.right_valid) ? fs.right_zero-f.right_x : NAN,
           f.frame_valid && f.state_id==3 && f.left_reason==MarkerDetectionReason::Detected,
