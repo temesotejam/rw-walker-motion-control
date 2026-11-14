@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include "foot_tracking_config.h"
+#include "foot_control_range.h"
 
 // One source for API, image diagnostics and RWLOG range metadata.
 inline String footRangeDiagnosticsJson() {
@@ -16,6 +17,11 @@ inline String footRangeDiagnosticsJson() {
   json += ",\"observed_left_x\":" + pair(appcfg::kFootObservedBMinXPx, appcfg::kFootObservedBMaxXPx);
   json += ",\"margin_px\":" + String(appcfg::kFootObservedMarginPx, 1);
   json += ",\"source_manifest\":\"foot_calibration_20261101.json\"";
-  json += ",\"extension_angle_accuracy_validated\":false}";
+  json += ",\"extension_angle_accuracy_validated\":false";
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+  json += ",\"control_extension_deg\":" + String(foot_control_range::kExtensionDeg,1);
+  json += ",\"control_extension_policy\":\"nearest_measured_end_segment_max5deg;in_range_flags_remain_measured_support\"";
+#endif
+  json += "}";
   return json;
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath>
 #include <cstdint>
+#include "foot_control_range.h"
 // Shared by the UI and the actual Start command. An angle-looking nominal
 // value before zero lock must not authorize this foot-dependent experiment.
 namespace foot_support_start {
@@ -31,8 +32,13 @@ template<class Snapshot> Reason reason(const Snapshot& s,uint64_t now){
   if(!f.timestamp_valid || !f.frame_us || f.frame_us>now)return Reason::Timestamp;
   if(!f.left_valid)return Reason::Left;
   if(!f.right_valid)return Reason::Right;
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+  if(!foot_control_range::allows(f.left_in_range,f.left_x,false))return Reason::LeftRange;
+  if(!foot_control_range::allows(f.right_in_range,f.right_x,true))return Reason::RightRange;
+#else
   if(!f.left_in_range)return Reason::LeftRange;
   if(!f.right_in_range)return Reason::RightRange;
+#endif
   if(now-f.frame_us>200000)return Reason::Stale;
   if(!std::isfinite(f.left_deg) || !std::isfinite(f.right_deg))return Reason::Nonfinite;
   return Reason::Ready;

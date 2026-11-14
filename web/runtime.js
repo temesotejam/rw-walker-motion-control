@@ -59,6 +59,10 @@ function walkingEnergyTrial(s = latest) {
   return /^walking-return-energy-v17(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function footStartBlockReason(s) {
+  if (s.foot?.control_extension_deg && ['left_out_of_range','right_out_of_range'].includes(s.foot_control_reason)) {
+    const side=s.foot_control_reason.startsWith('left')?'左足':'右足';
+    return side + 'の位置が、校正端からの許容' + s.foot.control_extension_deg + '°を超えています。';
+  }
   const messages = {
     camera_unavailable:'カメラの準備ができていません。',
     zero_not_ready:'足は検出されていても、足角度のゼロ点が未確定です。機体と足を静止させてください。',
@@ -79,8 +83,8 @@ function footStartBlockReason(s) {
   if (f.frame_timestamp_valid === false) return messages.frame_timestamp_invalid;
   if (f.left_valid === false) return messages.left_not_detected;
   if (f.right_valid === false) return messages.right_not_detected;
-  if (f.left_in_range === false) return messages.left_out_of_range;
-  if (f.right_in_range === false) return messages.right_out_of_range;
+  if (f.left_in_range === false && f.left_control_range_ok !== true) return messages.left_out_of_range;
+  if (f.right_in_range === false && f.right_control_range_ok !== true) return messages.right_out_of_range;
   return '足の検出以外に、ゼロ点・校正範囲・画像時刻・鮮度の開始条件を確認しています。';
 }
 function controls() {
@@ -205,7 +209,11 @@ function footIssues(f, stale, terminal) {
     track_jump: '検出位置が急変', reacquiring: '再捕捉中'};
   for (const [side, label] of [['right', '右'], ['left', '左']]) {
     if (f[side + '_valid']) {
-      if (f[side + '_in_range'] === false) issues.push(label + '：設定範囲外');
+      if (f[side + '_in_range'] === false) {
+        if (f[side + '_control_range_ok'] === true)
+          issues.push(label + '：許容範囲内（校正端から' + format(f[side + '_extrapolation_deg'],1) + '°の外挿）');
+        else issues.push(label + (f.control_extension_deg ? '：許容' + f.control_extension_deg + '°を超える範囲外' : '：設定範囲外'));
+      }
     } else {
       const reason = f[side + '_reason'];
       if (reasons[reason]) issues.push(label + '：' + reasons[reason]);
@@ -219,7 +227,8 @@ function footIssues(f, stale, terminal) {
 function render(s) {
   if (walkingEnergyTrial(s)) {
     $('work-title').textContent = '歩行のエネルギー制御（v17・30秒）';
-    $('work-description').textContent = '今回のv17は±8°を使用します。左右の到達エネルギーの予測誤差と、足が前に出た状態の戻り不足を考慮して入力時間を選びます。主入力・救済は最大80msの試験範囲です。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。';
+    $('work-description').textContent = '今回のv17は±8°を使用します。左右の到達エネルギーの予測誤差と、足が前に出た状態の戻り不足を考慮して入力時間を選びます。主入力・救済は最大80msの試験範囲です。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
+      (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '');
   }
   $('connection').textContent = s.controller_fresh ? '接続中' : '接続中 · 制御状態の更新が停止';
   $('firmware-revision').textContent = `本体プログラム：${s.revision || '不明'}`;

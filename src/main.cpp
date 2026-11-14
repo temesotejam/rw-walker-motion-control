@@ -83,7 +83,12 @@ static void __attribute__((noinline)) earlySubmitFrame(
   early_sequence=f.sequence;++g_early_diag.frames;if(++early_generation==0)++early_generation;
   early_worker.generation(early_run,early_peak,early_generation);
   if(!early_peak || f.run_id!=early_run || !f.timestamp_valid || !f.frame_valid ||
-     !f.zero_ready || !f.left_valid || !f.right_valid || !f.left_in_range || !f.right_in_range ||
+     !f.zero_ready || !f.left_valid || !f.right_valid ||
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+     !foot_control_range::allows(f.left_in_range,f.left_x,false) || !foot_control_range::allows(f.right_in_range,f.right_x,true) ||
+#else
+     !f.left_in_range || !f.right_in_range ||
+#endif
      f.frame_us<epoch || observed_us<f.frame_us || !isfinite(early_pitch_origin)) {++g_early_diag.invalid_frames;return;}
   uint32_t frame,observed;
   if(!early_clock::epochSupported(epoch) || !early_clock::relativeMs(f.frame_us,epoch,frame) ||
@@ -93,8 +98,12 @@ static void __attribute__((noinline)) earlySubmitFrame(
   // Subtractions are ordered to avoid unsigned under/overflow.
   if(frame<20 || frame-20<=early_peak || frame-20-early_peak<=5 ||
      observed<frame+20 || observed-frame>=120) {++g_early_diag.invalid_frames;return;}
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+  if(!foot_control_range::assess(fs.left_zero,false).accepted || !foot_control_range::assess(fs.right_zero,true).accepted) {++g_early_diag.invalid_frames;return;}
+#else
   if(fs.left_zero<appcfg::kFootAngleBMinCalXPx || fs.left_zero>appcfg::kFootAngleBMaxCalXPx ||
      fs.right_zero<appcfg::kFootAngleAMinCalXPx || fs.right_zero>appcfg::kFootAngleAMaxCalXPx) {++g_early_diag.invalid_frames;return;}
+#endif
   foot_geometry_worker::Request q;q.run_epoch_ms=static_cast<uint32_t>(epoch/1000);
   q.max_pose_gap_ms=25;auto& in=q.input;
   in.run_id=early_run;in.peak_id=early_peak;in.sequence=f.sequence;in.generation=early_generation;
@@ -332,8 +341,8 @@ static bool controlStep(void*) {
       foot_observation_sequence=f.sequence;
       runner.observeFootFrame(f.run_id,static_cast<uint32_t>((f.frame_us-measurement_epoch_us)/1000),
 #if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
-          f.left_valid && f.left_in_range && f.zero_ready && f.frame_valid,
-          f.right_valid && f.right_in_range && f.zero_ready && f.frame_valid,f.left_deg,f.right_deg,
+          f.left_valid && foot_control_range::allows(f.left_in_range,f.left_x,false) && f.zero_ready && f.frame_valid,
+          f.right_valid && foot_control_range::allows(f.right_in_range,f.right_x,true) && f.zero_ready && f.frame_valid,f.left_deg,f.right_deg,
 #else
           f.left_valid,f.right_valid,f.left_deg,f.right_deg,
 #endif

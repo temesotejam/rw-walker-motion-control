@@ -1,6 +1,7 @@
 #include "compact_json_table.h"
 #include "foot_observer.h"
 #include "foot_range_diagnostics.h"
+#include "foot_control_range.h"
 #include "foot_calibration_diagnostics.h"
 #include "runtime_diagnostics.h"
 #include "foot_angle_estimator.h"
@@ -162,7 +163,12 @@ void FootObserver::loop() {
     const uint64_t pose_now=esp_timer_get_time();
     const bool pose_time=run.measurement_epoch_us && f.frame_us>=run.measurement_epoch_us && pose_now>=f.frame_us;
     const bool pose_valid=pose_time && f.timestamp_valid && f.frame_valid && f.zero_ready &&
-        f.left_valid && f.right_valid && f.left_in_range && f.right_in_range &&
+        f.left_valid && f.right_valid &&
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+        foot_control_range::allows(f.left_in_range,f.left_x,false) && foot_control_range::allows(f.right_in_range,f.right_x,true) &&
+#else
+        f.left_in_range && f.right_in_range &&
+#endif
         run_before.run_id==run.run_id && run_before.state_id==3 && run.state_id==3 && run.imu_ok;
     pose_predictor.observe(f.run_id,
         pose_time ? static_cast<uint32_t>((f.frame_us-run.measurement_epoch_us)/1000) : 0,
@@ -303,6 +309,12 @@ void FootObserver::appendMetadata(PsramString& json) const {
     row += buf;
     row += ",\"right_x\":" + number(f.right_x) + ",\"left_x\":" + number(f.left_x);
     row += ",\"right_deg\":" + number(f.right_deg) + ",\"left_deg\":" + number(f.left_deg);
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+    const auto right_range=foot_control_range::assess(f.right_x,true),left_range=foot_control_range::assess(f.left_x,false);
+    row += ",\"right_control_range_ok\":" + String(f.right_valid && foot_control_range::allows(f.right_in_range,f.right_x,true)?"true":"false");
+    row += ",\"left_control_range_ok\":" + String(f.left_valid && foot_control_range::allows(f.left_in_range,f.left_x,false)?"true":"false");
+    row += ",\"right_extrapolation_deg\":" + number(right_range.extension_deg) + ",\"left_extrapolation_deg\":" + number(left_range.extension_deg);
+#endif
     row += ",\"right_contrast\":" + number(f.right_contrast) + ",\"left_contrast\":" + number(f.left_contrast);
     row += ",\"right_scan_y\":" + number(f.right_scan_y) + ",\"left_scan_y\":" + number(f.left_scan_y);
     row += ",\"right_weight\":" + number(f.right_weight) + ",\"left_weight\":" + number(f.left_weight);

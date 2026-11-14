@@ -11,14 +11,17 @@ blob = firmware.read_bytes() if firmware.is_file() else b''
 def contains_identity(value):
     # C++ may concatenate the ID with JSON punctuation before its NUL.
     return re.search(re.escape(value.encode()) + rb'(?![A-Za-z0-9_-])', blob) is not None
-identity = 'walking-return-energy-v17-startfix1' if contains_identity('walking-return-energy-v17-startfix1') else 'walking-return-energy-v17'
-if not contains_identity(identity):
+variants = [('walking-return-energy-v17-rangefix1','return-energy-rangefix'),
+            ('walking-return-energy-v17-startfix1','return-energy-startfix'),
+            ('walking-return-energy-v17','return-energy')]
+selected = next(((name, folder) for name, folder in variants if contains_identity(name)), None)
+if selected is None:
     raise SystemExit('Build atoms3cam-return-energy successfully first.')
+identity, suffix = selected
 parts = {name: build / name for name in ['bootloader.bin', 'partitions.bin', 'firmware.bin']}
 parts['boot_app0.bin'] = Path.home() / '.platformio/packages/framework-arduinoespressif32@3.20016.0/tools/partitions/boot_app0.bin'
 if any(not p.is_file() for p in parts.values()):
     raise SystemExit('Missing binary part')
-suffix = 'return-energy-startfix' if identity.endswith('-startfix1') else 'return-energy'
 dest = root / ('flasher/' + suffix)
 (dest / 'firmware').mkdir(parents=True, exist_ok=True)
 for name, path in parts.items():

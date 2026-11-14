@@ -1227,11 +1227,14 @@ def write_foot_frames(metadata: dict, out_dir: Path) -> int:
     rows = metadata.get("foot_frames")
     if not isinstance(rows, list):
         return 0
+    extra_columns = [key for key in ("right_control_range_ok", "left_control_range_ok", "right_extrapolation_deg", "left_extrapolation_deg")
+                     if any(key in row for row in rows)]
+    columns = FOOT_COLUMNS + extra_columns
     with (out_dir / "foot_angles.csv").open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=FOOT_COLUMNS)
+        writer = csv.DictWriter(f, fieldnames=columns)
         writer.writeheader()
         for row in rows:
-            writer.writerow({key: row.get(key) for key in FOOT_COLUMNS})
+            writer.writerow({key: row.get(key) for key in columns})
     (out_dir / "foot_calibration.json").write_text(
         json.dumps(metadata.get("foot_observation", {}), indent=2), encoding="utf-8")
     return len(rows)

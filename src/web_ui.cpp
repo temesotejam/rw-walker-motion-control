@@ -334,6 +334,14 @@ void WebUi::status() {
   json += ",\"left_valid\":" + String(f.latest.left_valid ? "true" : "false");
   json += ",\"right_in_range\":" + String(f.latest.right_in_range ? "true" : "false");
   json += ",\"left_in_range\":" + String(f.latest.left_in_range ? "true" : "false");
+#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
+  const auto right_range=foot_control_range::assess(f.latest.right_x,true);
+  const auto left_range=foot_control_range::assess(f.latest.left_x,false);
+  json += ",\"control_extension_deg\":" + num(foot_control_range::kExtensionDeg);
+  json += ",\"right_control_range_ok\":" + String(f.latest.right_valid && foot_control_range::allows(f.latest.right_in_range,f.latest.right_x,true)?"true":"false");
+  json += ",\"left_control_range_ok\":" + String(f.latest.left_valid && foot_control_range::allows(f.latest.left_in_range,f.latest.left_x,false)?"true":"false");
+  json += ",\"right_extrapolation_deg\":" + num(right_range.extension_deg) + ",\"left_extrapolation_deg\":" + num(left_range.extension_deg);
+#endif
   json += ",\"age_ms\":" + String(f.latest.delivered_us ? (esp_timer_get_time() - f.latest.delivered_us) / 1000.0 : -1.0, 1);
   json += ",\"processing_us\":" + String(f.latest.processing_us);
   json += ",\"processing_max_us\":" + String(f.processing_max_us);
