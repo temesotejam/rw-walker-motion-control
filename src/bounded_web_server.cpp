@@ -11,8 +11,8 @@ size_t BoundedWriteWebServer::pacedWrite(const uint8_t* buffer, size_t length, c
   size_t total = 0;
   const uint32_t begin = millis();
   uint32_t last_progress = begin;
-  // A complete runtime page is about 96 kB. A fixed 1.2 s total limit cut off
-  // its trailing script even while the AP was still delivering bytes. Permit
+  // A complete runtime page is about 96 kB. A fixed 1.2 s total limit can cut
+  // off its trailing script on a slow AP even while bytes arrive. Permit
   // slow progress, but retain both an idle timeout and a finite total budget.
   // These limits do not bound stop() or all of handleClient().
   while (total < length &&
