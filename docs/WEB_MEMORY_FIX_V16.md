@@ -13,3 +13,17 @@ PSRAM確保に失敗した場合は履歴の保存件数を0に保ち、完了�
 専用環境は `atoms3cam-energy-pulse-lifecycle-webfix2`、識別は `energy-pulse-lifecycle-v16-webfix2`。PlatformIO build SUCCESSで静的RAMは166780→126844バイト（39936バイト減）、Flashは1872921/3342336バイト。firmwareは1873280バイト、SHA256 `9e6d35d4ea9f7170f75b978b0bbbcc44427afc731952e844c1ee121a0ba485c9`。
 
 `python tools/prepare_energy_pulse_lifecycle_webfix_flasher.py --psram` で `http://127.0.0.1:8767/energy-pulse-lifecycle-webfix2/` を準備する。page/manifest/4partsはHTTP200・ローカル全バイト一致を確認した。元v16/webfix1の配信物は保持する。実機では書込み後の識別・空き内部RAM・繰返しHTML/状態取得・接続維持を別途確認する。
+
+## 実機の書込みと継続通信確認
+
+同日、ユーザーがこちらでの書込みと通信確認を承認した。COM24（ESP32-S3 rev0.2、MAC末尾6a:d4）のREADYをUSBで確認してから、既存の `ENTER DOWNLOAD` を使用した。ビルドで使った `.platformio/packages/tool-esptoolpy@1.40501.0/esptool.py`（4.5.1）で `--no-stub write_flash -z`、DIO/80MHz/8MB、app0の0x10000だけを書いた。NVS・パーティション・ブートローダーは書き換えていない。1873280バイトの書込みとハッシュ検証が成功した。
+
+書込み後、ソフトdownload用のRTC `FORCE_DOWNLOAD_BOOT` が残っていた。SDKの `RTC_CNTL_OPTION1_REG=0x6000812c`、bit0を確認し、ROMの `read_mem` で値1を確認した後、`write_mem 0x6000812c 0x0 0x1` でその一時ビットだけを消して再起動した。flash/NVS/eFuseの消去ではない。この経路で再び書き込む場合も、ROMに残っていないかを起動識別で確認する必要がある。最初のツール選択は別版4.9系の依存不足で接続前に失敗しており、実際の書込みは上記4.5.1だけで行った。
+
+USB/HTTPの新識別を確認し、起動直後の内部RAM空き61728バイト・最小水位61340バイトを観測した。書込み用リセット後の理由はTASK_WDTと記録されたが、下記試験中に起動IDの変化はなかった。
+
+181.5秒、ブラウザに近いHTTPヘッダーで229要求（HTML36回・状態193回）を実行し、全て成功した。HTMLは毎回95778バイト、SHA256 `bdf5416b9df799dd05c413cbcdade8a8a0ebf362fe49f8b70e9a756ac496ae01` と一致した。最後の3接続同時取得も成功、最大応答時間は1.093秒、HTTPのboot_idは4216065150で一定、状態はREADY・制御状態fresh・samples0を維持した。
+
+USB診断180サンプルでは、観測した内部RAM空きの最小42824バイト、起動以来の最小水位38632バイト、最大連続領域の最小30708バイト。試験終了時は空き57492バイトだった。診断は試験後OFFへ戻した。ユーザーもCtrl+F5後に「状態・数値が表示された」と確認した。今回の範囲では通信と表示が復帰したが、歩行や長時間の制御期限を検証した試験ではない。
+
+ローカル検証記録は `analysis/2026-11-14-web/flash_webfix2/summary_180s.json`、`http_180s.jsonl`、`usb_180s.txt`、`status_after.json`、書込みログ一式。生ログはGitHubへ送っていない。
