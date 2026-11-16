@@ -4,6 +4,10 @@
 #include "psram_string.h"
 #include "foot_zero.h"
 #include "white_marker_tracker.h"
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+#include "foot_image_rows.h"
+#include "foot_fast_policy.h"
+#endif
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
 #include "foot_phase_prediction.h"
 #if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
@@ -19,6 +23,11 @@ struct FootFrame {
   uint64_t control_observed_us = 0; // zero: unavailable
   int64_t log_time_us = -1, measurement_time_us = -1;
   uint32_t sequence = 0, imu_sample_us = 0, processing_us = 0;
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  uint64_t ready_us=0,released_us=0;
+  uint32_t capture_wait_us=0,row_copy_us=0,recognition_us=0;
+  bool row_cache_used=false;
+#endif
   uint16_t run_id = 0;
   uint8_t state_id = 0, led_state = 0, sync_event_id = 0;
   bool timestamp_valid = false, frame_valid = false, zero_ready = false;
@@ -54,6 +63,10 @@ struct FootSnapshot {
   uint32_t count = 0, frame_failures = 0, zero_samples = 0;
   uint32_t captured_frames = 0, right_marker_failures = 0, left_marker_failures = 0;
   uint32_t processing_max_us = 0;
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  uint32_t recognition_max_us=0,row_copy_max_us=0;
+  bool row_cache_ready=false;
+#endif
   float right_zero = appcfg::kFootAngleAZeroXPx, left_zero = appcfg::kFootAngleBZeroXPx;
   float fps = 0;
   FootZeroReason zero_reason = FootZeroReason::Waiting;
@@ -69,7 +82,11 @@ struct FootPreviewInfo {
 };
 class FootObserver {
  public:
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  static constexpr uint32_t kCapacity = foot_fast_policy::kArchiveCapacity;
+#else
   static constexpr uint32_t kCapacity = 768; // 40 s * 15 Hz, with margin
+#endif
   static constexpr uint32_t kPreviewWidth = 160, kPreviewHeight = 120;
   static constexpr uint32_t kPreviewBytes = kPreviewWidth * kPreviewHeight;
   bool begin(OneShotCamera& camera, RunControlWorker& control);
@@ -84,7 +101,7 @@ class FootObserver {
  private:
   static void entry(void* ptr) { static_cast<FootObserver*>(ptr)->loop(); }
   void loop();
-  void publishPreview(const uint8_t* gray, const FootPreviewInfo& info, bool run_active);
+  void publishPreview(const uint8_t* gray, const FootPreviewInfo& info, bool run_active,bool thumbnail=false);
   OneShotCamera* camera_ = nullptr;
   RunControlWorker* control_ = nullptr;
   TaskHandle_t task_ = nullptr;
@@ -97,6 +114,11 @@ class FootObserver {
   uint16_t recording_run_id_ = 0;
   uint64_t log_epoch_us_ = 0;
   uint8_t* preview_ = nullptr;
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  uint8_t* row_storage_=nullptr;
+  uint8_t* preview_staging_=nullptr;
+  foot_image_rows::RowCache row_cache_{nullptr,0};
+#endif
   SemaphoreHandle_t preview_mutex_ = nullptr;
   FootPreviewInfo preview_info_;
 };

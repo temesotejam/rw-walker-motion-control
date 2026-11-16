@@ -450,7 +450,11 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
 
   // Stopped-only compact export. Maximum-capacity serializer regression must
   // fit the hard budget; fixed PSRAM reservation never grows into internal RAM.
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  static constexpr size_t kMetadataJsonHardBudgetBytes = foot_fast_policy::kMetadataHardBudgetBytes;
+#else
   static constexpr size_t kMetadataJsonHardBudgetBytes = 640U * 1024U;
+#endif
   json.clear();
   if (!json.ok()) return false;
   json += "{";

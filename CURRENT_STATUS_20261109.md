@@ -4,6 +4,13 @@
 
 ## 現在の状態
 
+- v20の表示遅延も分離して改善：従来browser pollは応答後800ms間隔。v20 READY待機中・接続正常・転送/preview/commandなし時は100msへ短縮し、測定/転送/不通/旧版は800msを維持。認識・control poll2msとbrowser pollは別で、画面の実周期にはHTTP応答時間も加わる。新UI条件と旧例外再試行/埋込み一致を実JSで確認済み。
+
+- **2026-11-16 足角度認識の低遅延版v20を準備。実機速度/精度は未確認。** `walking-foot-fast-v20` / env `atoms3cam-foot-fast` / page `http://127.0.0.1:8767/foot-fast/`。エネルギー制御はv19 revision/branch24を継承。2fb＋LATEST、必要66行/21120bytesを内部RAMへ退避して認識前にfb返却、整数行方向加算、worker最短40ms/poll2ms。全17高さ・閾値・曖昧/再捕捉/校正/5度許容は維持。初回は測定開始を押さず、手で足を動かして角度/画像/fps/認識msを確認する。今回実機書込み/モータ動作は未実施。詳細 `docs/FOOT_LOW_LATENCY_V20.md`。
+- 基準3試行62788986/39825069/28820005は更新100ms、driver timestamp→受取約50.4ms、従来処理約12.6〜12.8ms、保存された制御受取約68.6〜69.3ms。driver timestampは露光未校正、64receiptは均等間引きで欠測は未受信扱いしない。新 `tools/analyze_foot_latency.py` はv20 raw ready優先で返却・行コピー・tracker・ready・controlを分離。SDK f0bb429単一fbは次VSYNC待ちで、早期返却だけの倍速保証はない。gray2fbは公式READMEのJPEG推奨条件との差と負荷を認識した実験構成。実fpsは画面で確認し、25は目標値。
+- 同一画像/時刻列の13256観測で旧認識器とbit一致。native実loopは返却時の元画素破壊後も角度/予測/preview同一、null/短len/古いcache失効、ゼロ校正、period/時刻/境界、driver/manual所有権をPASS。画像列変更後の実精度は別検証。foot archive1280、metadata hard1MiB/reserve1152KiB、極限985944bytesでraw1280/energy192/support96全保存、optional予測は明示truncated。内部RAMcache確保失敗は足観測を有効にしない。全frame ready/released/control receiptとdurationsをexport/CSVに保持。旧版の予算・列を維持。
+- 最終build SUCCESS39.374秒、RAM127604/327680、Flash1917225/3342336、firmware1917584bytes/SHA256 `eebe1e4ceaf079c6309f9b83c2368ec55e8ff7fdca2b56b6dfdf94c55c50da2d`。page/manifest/4parts/補助JS2件の計8件がHTTP200・全バイト一致、旧v19/v18配信SHA保持。current pipeline/最大metadata/recognition差分/UI/埋込み/transport/v19 runner/5度Start回帰をPASS。Phase1N固定版の旧test_camera_coexistence.pyは変更前v19でもwholefileSHA不一致で現構成対象外、歴史試験は改変せず現契約を新source試験で検証。以下は今回以前の履歴。
+
 - **2026-11-14 改善版v19を準備。実機の改善効果は未確認。** `walking-energy-admission-v19` / env `atoms3cam-energy-admission` / branch24、専用ページ `http://127.0.0.1:8767/energy-admission/`。J・係数・逆算幅はv18を維持し、前倒し採用条件と前後の持続逸脱監視を追加。新しい機体書込み/測定は行っていない。詳細 `docs/ENERGY_ADMISSION_V19.md`。
 - 前後監視: 初回fresh重力YZ投影を基準に3軸投影導関数で角速度を計算。数度の角度単独では拒否せず、6度以上/外向20度s以上/20度境界へ350ms以内の候補中は新出力見送り、40ms以上持続+1度増加でESTOP。静止姿勢全般・実接地・物理安定限界や前後Jを同定した条件ではない。既存90度保護も維持。5試行35465標本の記録状態再生で62788986候補16.530秒/停止16.573秒、比較4件の候補/停止0。変更後の運動や転倒防止を証明しない。
 - 前倒し主入力はpostguardのJ充足に加えpassive/work速度とQの支持を全要求。62788986既実行12前倒しの記録状態では4許可/8見送り、最後の正64msは支持外のため実ZEROへ延期。負側の二つの既存速度支持域に交差がなく、負optionalは全て実ZEROへ移る。通常ZEROと明示J救済はこの新しい前倒し専用gateの適用外で、元のhealth・J有効性・共通80msと新前後監視は維持。unsupported mask/理由/前後状態をログへ追加。全体のエネルギー中立点や実慣性の同定は未実施、MPCなし。

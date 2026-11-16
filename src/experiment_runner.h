@@ -6,6 +6,9 @@
 #include "beta_phase_controller.h"
 #include "beta_turn_fast_controller.h"
 #include "config.h"
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+#include "foot_fast_policy.h"
+#endif
 #include "autonomous_input_percent.h"
 #include "autonomous_input_current.h"
 #include "autonomous_brake_limit.h"

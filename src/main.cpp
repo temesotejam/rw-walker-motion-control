@@ -318,7 +318,9 @@ static bool controlStep(void*) {
 #endif
   // v12's local evidence can be short-lived. Poll its already-computed
   // snapshot more promptly; image processing stays on Core0.
-#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  constexpr uint32_t foot_poll_interval_ms=foot_fast_policy::kControlPollMs;
+#elif defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
   constexpr uint32_t foot_poll_interval_ms=10;
 #else
   constexpr uint32_t foot_poll_interval_ms=25;

@@ -2,6 +2,7 @@
 #include "camera_task_priority_patch.h"
 #include "camera_lifecycle.h"
 #include "runtime_diagnostics.h"
+#include "foot_fast_policy.h"
 
 #include <Arduino.h>
 #include "driver/gpio.h"
@@ -367,9 +368,20 @@ bool OneShotCamera::initCameraOnTemporaryI2c0() {
   c.pixel_format = PIXFORMAT_GRAYSCALE;
   c.frame_size = FRAMESIZE_QVGA;
   c.jpeg_quality = 12;
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  // Two owned buffers let the pinned SDK continue at the next VSYNC while
+  // the consumer copies sparse rows. Grayscale continuous capture needs
+  // board-level CPU/PSRAM and control-latency validation; do not claim FPS.
+  c.fb_count = foot_fast_policy::kCameraFrameBuffers;
+#else
   c.fb_count = 1;
+#endif
   c.fb_location = CAMERA_FB_IN_PSRAM;
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  c.grab_mode = CAMERA_GRAB_LATEST;
+#else
   c.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+#endif
   c.sccb_i2c_port = I2C_NUM_0;
 
   err = esp_camera_init(&c);
@@ -430,6 +442,8 @@ camera_fb_t* OneShotCamera::acquireContinuous(uint32_t timeout_ms) {
   if (!snapshot().receiver_active) return nullptr;
   const uint32_t start = micros();
   camera_fb_t* fb = cam_take(pdMS_TO_TICKS(timeout_ms));
+  // LATEST bounds its driver queue. Do not probe cam_take(0) on a live
+  // stream: the pinned S3 driver can reset DMA when that queue is empty.
   cameraTaskPriorityPatchSampleStack();
   // The low-level cam_take API does not populate the wrapper's format fields.
   // Length is checked by FootObserver before any image access.

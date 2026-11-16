@@ -5,6 +5,8 @@
 #include "foot_calibration_diagnostics.h"
 #include "runtime_diagnostics.h"
 #include "foot_angle_estimator.h"
+#include "foot_fast_policy.h"
+#include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include <new>
 #if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
@@ -17,7 +19,17 @@ bool FootObserver::begin(OneShotCamera& camera, RunControlWorker& control) {
   if (!frames_ || !camera.snapshot().camera_ok || !control.ready()) return false;
   preview_ = static_cast<uint8_t*>(ps_malloc(kPreviewBytes));
   preview_mutex_ = xSemaphoreCreateMutex();
-  portENTER_CRITICAL(&mux_); status_.available = true; portEXIT_CRITICAL(&mux_);
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  row_storage_=static_cast<uint8_t*>(heap_caps_malloc(foot_image_rows::kRequiredBytes,MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+  preview_staging_=static_cast<uint8_t*>(ps_malloc(kPreviewBytes));
+  if(!row_storage_ || !preview_staging_ || !preview_ || !preview_mutex_)return false;
+  row_cache_=foot_image_rows::RowCache(row_storage_,foot_image_rows::kRequiredBytes);
+#endif
+  portENTER_CRITICAL(&mux_); status_.available = true;
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  status_.row_cache_ready=true;
+#endif
+  portEXIT_CRITICAL(&mux_);
   if (xTaskCreatePinnedToCore(entry, "foot_observer", 10240, this, 1, &task_, 0) != pdPASS) {
     portENTER_CRITICAL(&mux_); status_.available = false; portEXIT_CRITICAL(&mux_); return false;
   }
@@ -30,7 +42,7 @@ bool FootObserver::copyPreview(uint8_t* out, FootPreviewInfo& info) const {
   xSemaphoreGive(preview_mutex_);
   return valid;
 }
-void FootObserver::publishPreview(const uint8_t* gray, const FootPreviewInfo& info, bool run_active) {
+void FootObserver::publishPreview(const uint8_t* gray, const FootPreviewInfo& info, bool run_active,bool thumbnail) {
   // HTTP already excludes previews during a run. Keep tracking/recording every
   // frame, but avoid the unused 19,200-byte thumbnail copy through both syncs
   // and measurement. The last idle preview keeps its original time/metadata.
@@ -39,7 +51,8 @@ void FootObserver::publishPreview(const uint8_t* gray, const FootPreviewInfo& in
   // and its detection metadata share a mutex; a busy reader simply skips this
   // optional preview update. Network transmission never holds this mutex.
   if (!preview_ || !preview_mutex_ || xSemaphoreTake(preview_mutex_, 0) != pdTRUE) return;
-  if (gray) for (uint32_t y = 0; y < kPreviewHeight; ++y)
+  if(gray && thumbnail)memcpy(preview_,gray,kPreviewBytes);
+  else if (gray) for (uint32_t y = 0; y < kPreviewHeight; ++y)
     for (uint32_t x = 0; x < kPreviewWidth; ++x) preview_[y * kPreviewWidth + x] = gray[(y * 2) * 320 + x * 2];
   preview_info_ = info;
   xSemaphoreGive(preview_mutex_);
@@ -58,7 +71,12 @@ void FootObserver::recordControlObservation(uint16_t run_id, uint32_t sequence, 
     if (status_.count && frames_) {
       auto& f = frames_[status_.count - 1];
       if (f.run_id == run_id && f.sequence == sequence && !f.control_observed_us &&
-          observed_us >= f.delivered_us) { f.control_observed_us = observed_us; matched = true; }
+          observed_us >= f.delivered_us) { f.control_observed_us = observed_us; matched = true;
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+        if(status_.latest.run_id==run_id && status_.latest.sequence==sequence)
+          status_.latest.control_observed_us=observed_us;
+#endif
+      }
     }
     if (!matched) ++control_observation_unmatched_;
   }
@@ -111,6 +129,9 @@ void FootObserver::loop() {
     const auto run = control_->snapshot();
     FootFrame f{};
     f.sequence = ++seq; f.delivered_us = esp_timer_get_time();
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+    f.capture_wait_us=static_cast<uint32_t>(f.delivered_us-begin);
+#endif
     f.imu_sample_us = run.imu_sample_us; f.state_id = run.state_id;
     f.led_state = run.led_state; f.sync_event_id = run.sync_event_id;
     f.run_id = run.run_id;
@@ -123,8 +144,28 @@ void FootObserver::loop() {
     }
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::CameraProcess);
     const uint32_t processing_start = micros();
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+    const bool preview_active=!(run_before.running || run.running);
+    const uint32_t copy_start=micros();
+    f.row_cache_used=f.frame_valid && row_cache_.capture(fb->buf,fb->len);
+    if(!f.row_cache_used){row_cache_.invalidate();f.frame_valid=false;}
+    f.row_copy_us=micros()-copy_start;
+    if(f.frame_valid && preview_active){
+      for(uint32_t y=0;y<kPreviewHeight;++y)for(uint32_t x=0;x<kPreviewWidth;++x)
+        preview_staging_[y*kPreviewWidth+x]=fb->buf[(y*2)*320+x*2];
+    }
+    // No camera pixels may be accessed after this point. Tracker and preview
+    // own independent copies, including on idle/zero-calibration frames.
+    const bool had_frame=fb!=nullptr;
+    camera_->releaseContinuous(fb);fb=nullptr;f.released_us=had_frame?esp_timer_get_time():0;
+    const uint32_t recognition_start=micros();
+    const auto a=right_.process(row_cache_.view());
+    const auto b=left_.process(row_cache_.view());
+    f.recognition_us=micros()-recognition_start;
+#else
     const auto a = right_.process(f.frame_valid ? fb->buf : nullptr);
     const auto b = left_.process(f.frame_valid ? fb->buf : nullptr);
+#endif
     // Check the IMU at BOTH sides of capture; any instability in between changes
     // the epoch. A stale queued image must not contribute to upright zeroing.
     zero_.observe(millis(), run.upright_epoch,
@@ -153,11 +194,16 @@ void FootObserver::loop() {
     preview.frame = f; preview.right = a; preview.left = b;
     preview.mekf_attitude = run.mekf_attitude; preview.imu_ok = run.imu_ok;
     preview.right_zero = zero_.a_zero; preview.left_zero = zero_.b_zero; preview.zero_samples = zero_.count;
-    publishPreview(f.frame_valid ? fb->buf : nullptr, preview,
-        run_before.running || run.running);
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+    publishPreview(f.frame_valid ? preview_staging_ : nullptr,preview,run_before.running || run.running,true);
+#else
+    publishPreview(f.frame_valid ? fb->buf : nullptr, preview,run_before.running || run.running);
+#endif
     f.processing_us = micros() - processing_start;
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::CameraRelease);
+#if !defined(FOOT_LOW_LATENCY_V20) || !FOOT_LOW_LATENCY_V20
     camera_->releaseContinuous(fb);
+#endif
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
     const uint32_t pose_start=micros();
     const uint64_t pose_now=esp_timer_get_time();
@@ -221,6 +267,9 @@ void FootObserver::loop() {
       last_valid_us = f.delivered_us;
     }
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::Publish);
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+    f.ready_us=esp_timer_get_time(); // Recognition+projection done, before publish lock.
+#endif
     portENTER_CRITICAL(&mux_);
     if (!f.frame_valid) ++status_.frame_failures;
     else {
@@ -229,6 +278,10 @@ void FootObserver::loop() {
       if (!b.valid) ++status_.left_marker_failures;
     }
     if (f.processing_us > status_.processing_max_us) status_.processing_max_us = f.processing_us;
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+    if(f.recognition_us>status_.recognition_max_us)status_.recognition_max_us=f.recognition_us;
+    if(f.row_copy_us>status_.row_copy_max_us)status_.row_copy_max_us=f.row_copy_us;
+#endif
     if (status_.recording && f.run_id == recording_run_id_) {
       // Signed offsets retain frame-boundary cases; never label them as zero.
       f.log_time_us = f.timestamp_valid ? static_cast<int64_t>(f.frame_us) - log_epoch_us_ : -1;
@@ -246,7 +299,13 @@ void FootObserver::loop() {
     portEXIT_CRITICAL(&mux_);
     RuntimeDiag::beat(RuntimeDiag::Lane::Camera, seq);
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::Wait);
-    const int64_t remaining = 66667 - (esp_timer_get_time() - begin);
+    const int64_t remaining =
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+        foot_fast_policy::kWorkerPeriodUs-
+#else
+        66667-
+#endif
+        (esp_timer_get_time() - begin);
     if (remaining > 0) vTaskDelay(pdMS_TO_TICKS((remaining + 999) / 1000));
     else vTaskDelay(1);
   }
@@ -273,7 +332,17 @@ void FootObserver::appendMetadata(PsramString& json) const {
   json += "\"frame_timestamp_semantics\":\"camera_driver_frame_timestamp_not_verified_exposure_time\",";
   json += "\"control_context_semantics\":\"latest_control_snapshot_at_frame_delivery_not_exposure\",";
   json += "\"preview_generation\":\"idle_only_last_idle_frame_retained\",";
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  json+="\"target_fps\":25,\"capacity\":"+String(kCapacity);
+  json+=",\"pipeline_revision\":\"sparse_cached_rows_double_buffer_v20\",\"camera_buffers\":2,\"grab_latest\":true,\"active_cam_take_zero_drain\":false";
+  json+=",\"worker_min_period_us\":"+String(foot_fast_policy::kWorkerPeriodUs)+",\"control_poll_ms\":"+String(foot_fast_policy::kControlPollMs);
+  json+=",\"row_cache_ready\":"+String(s.row_cache_ready?"true":"false")+",\"row_cache_internal_bytes\":"+String(foot_image_rows::kRequiredBytes);
+  json+=",\"pixel_processing\":\"same_integer_contrast_and_full_search_row_major\",\"recognition_semantics_changed\":false";
+  json+=",\"ready_us_semantics\":\"recognition_and_projection_done_before_publication_lock\",\"released_us_semantics\":\"driver_buffer_return_not_sensor_exposure_end\"";
+  json+=",\"performance_validated_on_board\":false,\"all_frame_control_receipts_exported\":true";
+#else
   json += "\"target_fps\":15,\"capacity\":" + String(kCapacity);
+#endif
   json += ",\"count\":" + String(s.count) + ",\"overflow\":" + String(s.overflow ? "true" : "false");
   json += ",\"available\":" + String(s.available ? "true" : "false");
   json += ",\"zero_ready\":" + String(s.zero_ready ? "true" : "false");
@@ -307,6 +376,14 @@ void FootObserver::appendMetadata(PsramString& json) const {
         f.right_valid ? "true" : "false", f.left_valid ? "true" : "false",
         f.right_in_range ? "true" : "false", f.left_in_range ? "true" : "false");
     row += buf;
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+    char timing[384];
+    snprintf(timing,sizeof(timing),",\"ready_us\":%llu,\"released_us\":%llu,\"control_observed_us\":%llu,\"capture_wait_us\":%lu,\"row_copy_us\":%lu,\"recognition_us\":%lu,\"row_cache_used\":%s",
+        static_cast<unsigned long long>(f.ready_us),static_cast<unsigned long long>(f.released_us),
+        static_cast<unsigned long long>(f.control_observed_us),static_cast<unsigned long>(f.capture_wait_us),
+        static_cast<unsigned long>(f.row_copy_us),static_cast<unsigned long>(f.recognition_us),f.row_cache_used?"true":"false");
+    row+=timing;
+#endif
     row += ",\"right_x\":" + number(f.right_x) + ",\"left_x\":" + number(f.left_x);
     row += ",\"right_deg\":" + number(f.right_deg) + ",\"left_deg\":" + number(f.left_deg);
 #if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
@@ -328,10 +405,15 @@ void FootObserver::appendMetadata(PsramString& json) const {
   }
   if (!table.finish()) { json.fail(); return; }
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  constexpr size_t prediction_soft_end=foot_fast_policy::kOptionalPredictionEndBytes;
+#else
+  constexpr size_t prediction_soft_end=640U*1024U*8U/10U;
+#endif
   json+=",\"foot_pose_prediction\":{\"revision\":\"causal_three_frame_history_v1\",\"timing\":\"driver_frame_timestamp;ready_after_camera_processing_and_prediction;exposure_unverified\",\"confidence_semantics\":\"history_match_score_not_probability\",\"uncertainty_semantics\":\"candidate_disagreement_margin_not_error_bound\",\"records\":";
   CompactJsonTable<PsramString> pose_table(json);uint32_t pose_stored=0;
   for(uint32_t i=0;i<s.count;++i){
-    if(json.length()+16384U>=640U*1024U*8U/10U)break;
+    if(json.length()+16384U>=prediction_soft_end)break;
     const auto& f=frames_[i];const auto& p=f.pose_projection;
     const auto q=p.predict(p.received_ms,30);
     String row="{\"sequence\":"+String(f.sequence)+",\"ready_ms\":"+String(p.received_ms);
@@ -349,7 +431,7 @@ void FootObserver::appendMetadata(PsramString& json) const {
   json+=",\"foot_local_prediction\":{\"revision\":\"three_frame_local_returning_v12\",\"lead_ms\":0,\"uncertainty_semantics\":\"heuristic_local_margin_not_error_bound\",\"evidence_semantics\":\"fraction_of_feet_with_local_evidence_not_history_score_or_probability\",\"records\":";
   CompactJsonTable<PsramString> local_table(json);uint32_t local_stored=0;
   for(uint32_t i=0;i<s.count;++i){
-    if(json.length()+16384U>=640U*1024U*8U/10U)break;
+    if(json.length()+16384U>=prediction_soft_end)break;
     const auto& f=frames_[i];const auto& p=f.local_projection;const auto q=p.predict(p.received_ms,0);
     String row="{\"sequence\":"+String(f.sequence)+",\"ready_ms\":"+String(p.received_ms);
     row+=",\"reason\":"+String(static_cast<unsigned>(q.reason))+",\"local_evidence\":"+number(q.confidence);
@@ -374,7 +456,13 @@ void FootObserver::appendMetadata(PsramString& json) const {
   uint32_t cad_stored=0;
   for(uint32_t i=0;i<s.count;++i) {
     // Preserve room for the existing metadata tail even in a full log.
-    if(json.length()+4096U>=640U*1024U*8U/10U)break;
+    if(json.length()+4096U>=
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+        foot_fast_policy::kOptionalPredictionEndBytes
+#else
+        640U*1024U*8U/10U
+#endif
+        )break;
     const auto& f=frames_[i];const auto& p=f.cad_prediction;
     String row="{\"sequence\":"+String(f.sequence)+",\"reason\":"+String(static_cast<unsigned>(p.reason));
     row+=",\"age_ms\":"+String(p.age_ms)+",\"horizon_ms\":"+String(p.horizon_ms);
@@ -400,7 +488,11 @@ void FootObserver::appendMetadata(PsramString& json) const {
   String observed_rows;
   uint32_t total_observed = 0, valid_observed = 0, stored_observed = 0;
   constexpr uint32_t kMaxStoredObservations = 64;
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  constexpr size_t kSoftEnd=foot_fast_policy::kOptionalPredictionEndBytes;
+#else
   constexpr size_t kSoftEnd = 640U * 1024U * 8U / 10U;
+#endif
   constexpr size_t kTailReserve = 256U;
   constexpr size_t kMaxEntryBytes = 32U;
   for (uint32_t i = 0; i < s.count; ++i) {

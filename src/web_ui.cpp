@@ -345,6 +345,18 @@ void WebUi::status() {
   json += ",\"age_ms\":" + String(f.latest.delivered_us ? (esp_timer_get_time() - f.latest.delivered_us) / 1000.0 : -1.0, 1);
   json += ",\"processing_us\":" + String(f.latest.processing_us);
   json += ",\"processing_max_us\":" + String(f.processing_max_us);
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  const uint64_t foot_clock=esp_timer_get_time();
+  json+=",\"pipeline_revision\":\"sparse_cached_rows_double_buffer_v20\",\"target_fps\":25";
+  json+=",\"frame_age_ms\":"+String(f.latest.frame_us && foot_clock>=f.latest.frame_us?(foot_clock-f.latest.frame_us)/1000.0:-1.0,1);
+  json+=",\"ready_age_ms\":"+String(f.latest.ready_us && foot_clock>=f.latest.ready_us?(foot_clock-f.latest.ready_us)/1000.0:-1.0,1);
+  json+=",\"driver_delivery_ms\":"+String(f.latest.timestamp_valid && f.latest.delivered_us>=f.latest.frame_us?(f.latest.delivered_us-f.latest.frame_us)/1000.0:-1.0,2);
+  json+=",\"frame_to_ready_ms\":"+String(f.latest.timestamp_valid && f.latest.ready_us>=f.latest.frame_us?(f.latest.ready_us-f.latest.frame_us)/1000.0:-1.0,2);
+  json+=",\"buffer_hold_us\":"+String(f.latest.released_us>=f.latest.delivered_us?static_cast<uint32_t>(f.latest.released_us-f.latest.delivered_us):0);
+  json+=",\"recognition_us\":"+String(f.latest.recognition_us)+",\"recognition_max_us\":"+String(f.recognition_max_us);
+  json+=",\"row_copy_us\":"+String(f.latest.row_copy_us)+",\"row_cache_used\":"+String(f.latest.row_cache_used?"true":"false");
+  json+=",\"row_cache_ready\":"+String(f.row_cache_ready?"true":"false")+",\"control_poll_ms\":"+String(foot_fast_policy::kControlPollMs);
+#endif
   json += ",\"sequence\":" + String(f.latest.sequence);
   json += ",\"frame_valid\":" + String(f.latest.frame_valid ? "true" : "false");
   json += ",\"frame_timestamp_valid\":" + String(f.latest.timestamp_valid ? "true" : "false");

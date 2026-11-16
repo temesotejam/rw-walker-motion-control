@@ -3091,7 +3091,13 @@ void ExperimentRunner::appendFootSupportMetadata(PsramString& json) const {
   json+=",\"event_kind\":\"angle_rate_early_trial\",\"records\":";
   CompactJsonTable<PsramString> table(json);uint32_t stored=0;
   for(uint32_t i=0;i<foot_support_audit_count_;++i){
-    if(json.length()+4096U>=640U*1024U*8U/10U)break;
+    if(json.length()+4096U>=
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+        foot_fast_policy::kSupportAuditEndBytes
+#else
+        640U*1024U*8U/10U
+#endif
+        )break;
     const auto& a=foot_support_audit_[i];
     String row="{\"time_ms\":"+String(a.time_ms)+",\"peak_ms\":"+String(a.peak_ms)+",\"sequence\":"+String(a.sequence)+",\"frame_ms\":"+String(a.frame_ms);
     row+=",\"predicted_left_deg\":"+number(a.left)+",\"predicted_right_deg\":"+number(a.right)+",\"confidence\":"+number(a.confidence);

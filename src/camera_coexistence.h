@@ -21,6 +21,10 @@ struct CameraOneShotSnapshot {
   uint16_t last_height = 0;
   uint32_t last_capture_us = 0;
   uint32_t max_capture_us = 0;
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  uint8_t frame_buffers = 2;
+  bool grab_latest = true;
+#endif
 
   uint32_t xclk_hz = 16000000UL;
   uint16_t xclk_warmup_ms = 20;

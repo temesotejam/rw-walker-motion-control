@@ -62,7 +62,10 @@ function walkingTransferTrial(s = latest) {
   return walkingAdmissionTrial(s) || /^walking-energy-transfer-v18(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function walkingAdmissionTrial(s = latest) {
-  return /^walking-energy-admission-v19(?:-|$)/.test(s?.diagnostic_build_id || '');
+  return walkingFootFastTrial(s) || /^walking-energy-admission-v19(?:-|$)/.test(s?.diagnostic_build_id || '');
+}
+function walkingFootFastTrial(s = latest) {
+  return /^walking-foot-fast-v20(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function foreAftStopText(reason) {
   return ({
@@ -119,6 +122,7 @@ function controls() {
     latest.upright_reference?.capturing ? '±8°を開始できません：基準姿勢を取得中です。' :
     !latest.ready ? '±8°を開始できません：IMUとモータの準備を待っています。' :
     latest.foot_control_required && !latest.foot_control_ready ? '±8°を開始できません：' + footStartBlockReason(latest) :
+    walkingFootFastTrial(latest) ? '±8°の開始条件を満たしました。最初はモータを開始せず、足角度と画像の更新を確認してください。' :
     '±8°を開始できます。機体と足を静止させてボタンを押してください。';
   $('probe-batch').disabled = $('start').disabled;
   $('probe-extended').disabled = $('start').disabled;
@@ -247,11 +251,20 @@ function footIssues(f, stale, terminal) {
   if (f.overflow) issues.push('記録容量超過');
   return issues.length ? ' · ' + issues.join(' · ') : '';
 }
+function footFastTiming(f, stale, terminal) {
+  const ms = (value, divisor=1) => Number.isFinite(value) && value >= 0 ? format(value/divisor,1) : '—';
+  return ` · ${terminal ? '最終更新' : '更新'} ${format(stale && !terminal ? 0 : f.fps,1)} fps（目標 ${format(f.target_fps ?? 15,0)}）` +
+    ` · 認識 ${ms(f.recognition_us,1000)} ms（最大 ${ms(f.recognition_max_us,1000)}）` +
+    ` · driverフレーム→ready ${ms(f.frame_to_ready_ms)} ms`;
+}
 function render(s) {
   if (walkingAdmissionTrial(s)) {
-    $('work-title').textContent = '歩行のエネルギー制御（v19・30秒）';
-    $('work-description').textContent = '今回のv19は±8°を使用します。戻りの救済後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。前倒し候補のモデル支持を確認し、範囲外はZEROで再評価します。前後の持続逸脱では入力を停止します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
-      (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '');
+    const fast = walkingFootFastTrial(s);
+    $('work-title').textContent = fast ? '歩行のエネルギー制御（v20・足角度低遅延版・30秒）' : '歩行のエネルギー制御（v19・30秒）';
+    $('work-description').textContent = (fast ? '今回のv20は足角度低遅延版です。±8°の制御方式はv19を継承します。' : '今回のv19は±8°を使用します。') +
+      '戻りの救済後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。前倒し候補のモデル支持を確認し、範囲外はZEROで再評価します。前後の持続逸脱では入力を停止します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
+      (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '') +
+      (fast ? ' 最初はモータを開始せず、足角度と画像の更新を確認してください。画像更新は目標' + format(s.foot?.target_fps ?? 15,0) + 'fpsで、実際の更新速度と遅延は下に表示します。時刻差はdriver基準で、露光時刻との対応は未校正です。' : '');
   } else if (walkingTransferTrial(s)) {
     $('work-title').textContent = '歩行のエネルギー制御（v18・30秒）';
     $('work-description').textContent = '今回のv18は±8°を使用します。戻りの不足分を救済した後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。足の認識が一時的に欠けたときは、新しい画像と機体の減速条件を確認して救済します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
@@ -339,9 +352,9 @@ function render(s) {
     : '予測式は測定開始時に確定します。';
   $('right').textContent = f.right_valid && (!stale || terminal) ? format(f.right_deg) + '°' : '—';
   $('left').textContent = f.left_valid && (!stale || terminal) ? format(f.left_deg) + '°' : '—';
-  $('fps').textContent = terminal ? '停止中' : `${format(stale ? 0 : f.fps, 1)} / 15 fps`;
+  $('fps').textContent = terminal ? '停止中' : `${format(stale ? 0 : f.fps, 1)} / ${format(f.target_fps ?? 15,0)} fps`;
   $('foot-status').textContent = `足角度（${s.foot_control_required ? '8°試験の制御に使用' : '任意'}） · ${f.zero_ready ? 'ゼロ点確定' : 'ゼロ点未確定（' + (f.zero_samples ?? 0) + '枚）'} · 記録${f.frames ?? 0}枚 · 画像取得失敗${f.failures ?? 0}回` +
-    footIssues(f, stale, terminal);
+    footIssues(f, stale, terminal) + (walkingFootFastTrial(s) ? footFastTiming(f, stale, terminal) : '');
   const reference = s.upright_reference;
   const cg = s.lateral_cg;
   $('cg-status').textContent = cg?.capturing ? '自然な静止姿勢を測定中です。機体を支えず、動かさないでください。' :
@@ -355,6 +368,9 @@ function render(s) {
       : '比較用の姿勢は未保存です。仕事に基づく制御の開始には保存不要です。';
   const motionStop = walkingAdmissionTrial(s) && s.state === 'ESTOP' ? foreAftStopText(s.last_error) : '';
   if (motionStop) $('guide').textContent = motionStop + ' ログを保存して状態を確認してください。';
+  else if (walkingFootFastTrial(s) && !s.running && !terminal && s.ready && !reference.capturing)
+    $('guide').textContent = '最初はモータを開始せず、足角度と画像の更新を確認してください。' +
+      (s.foot_control_required && !s.foot_control_ready ? ' ±8°を開始できません：' + footStartBlockReason(s) : '');
   else if (s.foot_control_required && !s.running && s.ready && !reference.capturing) $('guide').textContent = s.foot_control_ready
     ? '足のゼロ点と左右の検出を確認しました。機体を静止させて8°試験を開始できます。'
     : '8°試験を開始できません：' + footStartBlockReason(s);
@@ -427,10 +443,16 @@ function adoptStatus(s) {
     if (poseSession.trace.length > PoseComparison.limits.max_trace) { poseSession.trace.shift(); ++poseSession.trace_dropped; }
   }
 }
+function statusPollDelayMs() {
+  const idleFast = walkingFootFastTrial(latest) && latest?.state === 'READY_TO_MEASURE' &&
+    latest?.ready && !latest.running && lastSeen && Date.now() - lastSeen < 2000 &&
+    !offlineMode && !transferRunning && !previewRunning && !poseRunning && !commandInFlight;
+  return idleFast ? 100 : 800;
+}
 async function poll() {
   try { await refresh(); }
   catch (error) { $('connection').textContent = '画面更新のエラー（自動再試行）'; }
-  finally { setTimeout(poll, 800); }
+  finally { setTimeout(poll, statusPollDelayMs()); }
 }
 async function startOfflineRun(isBatchPackage = false, forcedModel = null, workTarget = 8) {
   if (commandInFlight || offlineMode) return;

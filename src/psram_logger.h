@@ -9,6 +9,9 @@
 #include "upright_reference.h"
 #include "lateral_cg_energy.h"
 #include "adaptive_lateral_cg.h"
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+#include "foot_fast_policy.h"
+#endif
 
 class PsramLogger {
  public:
@@ -693,7 +696,11 @@ class PsramLogger {
   void seal() { sealed_ = true; last_measurement_done_ = true; }
   bool sealed() const { return sealed_; }
   const uint8_t* sampleBytes() const { return reinterpret_cast<const uint8_t*>(samples_); }
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  static constexpr size_t kMetadataJsonReserveBytes = foot_fast_policy::kMetadataReserveBytes;
+#else
   static constexpr size_t kMetadataJsonReserveBytes = 768U * 1024U;
+#endif
   void recordAdaptiveCg(const lateral_cg::AdaptiveSnapshot& s) { run_adaptive_cg_=s; }
   void recordLateralCg(const lateral_cg::Record& r) { run_lateral_cg_ = r; }
   bool buildMetadataJson(PsramString& json) const;

@@ -39,10 +39,13 @@ int WhiteMarker1DTracker::nominalCenterY() const {
 }
 
 WhiteMarkerObservation WhiteMarker1DTracker::process(const uint8_t* gray) {
+    return process(foot_image_rows::GrayRowView::full(gray));
+}
+WhiteMarkerObservation WhiteMarker1DTracker::process(const foot_image_rows::GrayRowView& gray) {
     const uint32_t now = micros();
     WhiteMarkerObservation out;
     out.id = _id; out.center_y_px = nominalCenterY();
-    if (gray) {
+    if (gray.valid()) {
         Candidate candidates[appcfg::kWhiteMaxCandidates];
         int count = 0; bool overflow = false;
         out.reason = MarkerDetectionReason::LowContrast;
@@ -107,16 +110,36 @@ WhiteMarkerObservation WhiteMarker1DTracker::process(const uint8_t* gray) {
     return out;
 }
 
-void WhiteMarker1DTracker::evaluate(const uint8_t* gray, int dy, Candidate* candidates,
+void WhiteMarker1DTracker::evaluate(const foot_image_rows::GrayRowView& gray, int dy, Candidate* candidates,
                                    int& count, bool& overflow, WhiteMarkerObservation& weak) const {
     int contrast[kWidth], smooth[kWidth] = {};
     const int* rows = markerRows(); const int* refs = referenceRows();
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+    // Stream complete rows instead of alternating eight distant image rows
+    // at every column. All sums are integer and keep the original scale.
+    const uint8_t* first = gray.row(rows[0] + dy);
+    for (int x = 0; x < kWidth; ++x) contrast[x] = first[x];
+    for (int i = 1; i < appcfg::kWhiteMarkerRowCount; ++i) {
+        const uint8_t* row = gray.row(rows[i] + dy);
+        for (int x = 0; x < kWidth; ++x) contrast[x] += row[x];
+    }
+    for (int x = 0; x < kWidth; ++x) contrast[x] *= 3;
+    for (int i = 0; i < appcfg::kWhiteReferenceRowCount; ++i) {
+        const uint8_t* row = gray.row(refs[i] + dy);
+        for (int x = 0; x < kWidth; ++x) contrast[x] -= 5 * row[x];
+    }
+#else
+    const uint8_t* marker_rows[appcfg::kWhiteMarkerRowCount];
+    const uint8_t* reference_rows[appcfg::kWhiteReferenceRowCount];
+    for (int i = 0; i < appcfg::kWhiteMarkerRowCount; ++i) marker_rows[i] = gray.row(rows[i] + dy);
+    for (int i = 0; i < appcfg::kWhiteReferenceRowCount; ++i) reference_rows[i] = gray.row(refs[i] + dy);
     for (int x = 0; x < kWidth; ++x) {
         int a = 0, b = 0;
-        for (int i = 0; i < appcfg::kWhiteMarkerRowCount; ++i) a += gray[(rows[i] + dy) * kWidth + x];
-        for (int i = 0; i < appcfg::kWhiteReferenceRowCount; ++i) b += gray[(refs[i] + dy) * kWidth + x];
+        for (int i = 0; i < appcfg::kWhiteMarkerRowCount; ++i) a += marker_rows[i][x];
+        for (int i = 0; i < appcfg::kWhiteReferenceRowCount; ++i) b += reference_rows[i][x];
         contrast[x] = 3 * a - 5 * b;
     }
+#endif
     int rolling = 0;
     for (int x = 0; x < kWindow; ++x) rolling += contrast[x];
     for (int x = kRadius; x < kWidth - kRadius; ++x) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include "foot_image_rows.h"
 
 enum class MarkerDetectionReason : uint8_t {
     Detected, NoFrame, LowContrast, LowWeight, BadShape, Ambiguous, TrackJump, Reacquiring
@@ -32,6 +33,7 @@ public:
     explicit WhiteMarker1DTracker(int marker_id);
 
     WhiteMarkerObservation process(const uint8_t* gray);
+    WhiteMarkerObservation process(const foot_image_rows::GrayRowView& gray);
 
 private:
     struct Candidate {
@@ -41,7 +43,7 @@ private:
     const int* markerRows() const;
     const int* referenceRows() const;
     int nominalCenterY() const;
-    void evaluate(const uint8_t* gray, int y_offset, Candidate* candidates,
+    void evaluate(const foot_image_rows::GrayRowView& gray, int y_offset, Candidate* candidates,
                   int& count, bool& overflow, WhiteMarkerObservation& weak) const;
 
     int _id;

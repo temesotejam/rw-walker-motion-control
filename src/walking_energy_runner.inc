@@ -574,8 +574,13 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     json+="{\"side\":"+String(side)+",\"offset_j\":"+n(c.offset_j)+",\"omega2_j\":"+n(c.omega2_j)+",\"rate_min_dps\":"+n(c.rate_min_dps)+",\"rate_max_dps\":"+n(c.rate_max_dps)+"}";}
   json+="],\"records\":";
   CompactJsonTable<PsramString> table(json);uint32_t stored=0;
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  constexpr size_t energy_audit_soft_end=foot_fast_policy::kEnergyAuditEndBytes;
+#else
+  constexpr size_t energy_audit_soft_end=640U*1024U*8U/10U;
+#endif
   for(uint32_t i=0;i<walking_energy_count_;++i){
-    if(json.length()+4096U>=640U*1024U*8U/10U)break;
+    if(json.length()+4096U>=energy_audit_soft_end)break;
     const auto& a=walking_energy_audit_[i];const auto& d=a.decision;
     String row="{\"time_ms\":"+String(a.time_ms)+",\"peak_ms\":"+String(a.peak_ms)+",\"side\":"+String(a.side);
     row+=",\"output_start_ms\":"+String(a.output_start_ms);
