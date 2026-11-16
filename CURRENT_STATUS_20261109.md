@@ -4,6 +4,8 @@
 
 ## 現在の状態
 
+- **2026-11-16 v21初回実測36545387：遅延の実質的改善なし。** CRC正常/build `walking-foot-frame-ready-v21`/30s FINISHED/errorなし、9945samples・足794（active596）・energy42。driver→受取中央値50.080ms、認識ブロック9.624ms、driver→制御61.101ms（p95 64.115）、画像周期50.005msでv20と同等。boot累計early1292/VSYNC0/drop0、最終全画素age49.599msなので早期経路は実行されたが取り込み時間が残る。active欠落12/596=2.01%は停止時間が長く、最初10秒は9/198=4.55%（前2回3.14/5.10%）で認識改善も未確認。最後ZERO10.320s、正peak10.544s+7.344度、戻り補助10.680s/18ms/予測不足0だがモデル速度支持外。以後0越えず最後1s+3.82度。ユーザーは約11秒以降、自立したまま足停止と確認。詳細 `docs/FRAME_READY_TRIAL_36545387.md`。次は撮影/読出し側の時間短縮と入力後エネルギー再評価を検討。今回firmware変更/再書込みなし。
+
 - **2026-11-16 画像受渡し待ち短縮v21を準備（未書込み）。** `walking-foot-frame-ready-v21` / `atoms3cam-foot-frame-ready` / `http://127.0.0.1:8767/foot-frame-ready/`。GC0308 QVGA Y8/XCLK20MHzの完全DMAコピー時点で画像を渡し、次VSYNCまでIDLEを保持。約50msにはreadoutも含むため、短縮時間は実機未確認。撮影設定/画像サイズ/校正/40ms worker/認識/エネルギー制御は継承し、boot累計early/VSYNC/queue破棄/最終全画素ageをmetadataへ追加。SDK private ABIをarchive SHAで固定、実HAL event-loop・既存pipeline・v19/v20/v21 metadata・installer試験PASS、ELFでtask priority wrapperとmapでHAL置換確認。build RAM127644/Flash1924989、bin1925360bytes/SHA256 `cd975679b7fb1fece7d7bf1922da3a5d19a68c6fbc96af0b460a0e29bc095b02`。配信8files HTTP200/全一致、旧200files不変。次は書込み後のidle画像/両足追従確認と同条件ログ比較。詳細 `docs/CAMERA_FRAME_READY_V21.md`。今回flash/start/reset/clearなし。
 
 - **2026-11-16 足角度の追加評価。** 2試行の更新は約20Hzだが反映遅延は約61ms、そのうちdriver→画像受取が約50.1ms、認識処理約9.7ms。左未検出25/583・14/592、右9/583・8/592、片足以上欠落5.32%/3.55%。未検出開始画像→復帰画像の最大は左両方約150ms、右50/100ms。左には約50msで5〜8度の急変と復帰があり、実動作/誤検出は未確定。速度改善のみで制御用角度の信頼性十分とは評価しない。画像供給遅延、左追跡欠落/飛び、信頼度を伴う現在時刻予測を次の優先課題とする。資料 `docs/DOWNLOADFIX2_TRIALS_20261116.md` に追記、今回コード変更なし。
