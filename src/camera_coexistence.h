@@ -3,8 +3,12 @@
 #include <Arduino.h>
 #include "esp_camera.h"
 #include "freertos/semphr.h"
+#include "camera_speed_profile.h"
 
 struct CameraOneShotSnapshot {
+  char error[64] = "not_initialized";
+  camera_speed_profile::Report speed_profile;
+  uint16_t sensor_pid = 0;
   bool camera_ok = false;
   bool first_frame_seen = false;
   bool camera_driver_active = false;

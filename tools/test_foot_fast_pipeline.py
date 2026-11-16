@@ -61,6 +61,7 @@ def fixture():
 #include <sys/time.h>
 #include "foot_image_rows.h"
 #include "foot_fast_policy.h"
+#include "camera_speed_profile.h"
 #include "foot_zero.h"
 #include "white_marker_tracker.h"
 #include "foot_angle_estimator.h"

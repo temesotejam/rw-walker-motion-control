@@ -30,7 +30,11 @@
 #if defined(EXPORT_COOPERATIVE_FIX) && EXPORT_COOPERATIVE_FIX
 #if defined(CAMERA_FRAME_READY_V21) && CAMERA_FRAME_READY_V21
 #if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+#if defined(FOOT_SPEED_FIX1) && FOOT_SPEED_FIX1
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-speed-v22-fix1"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-speed-v22"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-frame-ready-v21"
 #endif

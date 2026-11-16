@@ -338,9 +338,20 @@ void FootObserver::appendMetadata(PsramString& json) const {
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
 #if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
   json+="\"target_fps\":30,\"capacity\":"+String(kCapacity);
+#if defined(FOOT_SPEED_FIX1) && FOOT_SPEED_FIX1
+  json+=",\"sensor_speed_profile\":\"gc0308_hb128_sdk_aec_v22_fix1\",\"sensor_profile_startup_readback_required\":true";
+  json+=",\"sensor_hblank\":128,\"sensor_vblank\":12,\"sensor_max_exposure_level_rows\":480,\"sensor_flicker_step_rows\":120";
+  json+=",\"sensor_period_estimate_ms\":41.1";
+  json+=",\"sensor_aec_modified\":false,\"sensor_readback_timeout_ms\":100";
+  const auto speed=cameraSnapshot().speed_profile;
+  json+=",\"sensor_profile_applied\":"+String(speed.applied?"true":"false");
+  json+=",\"sensor_profile_stage\":\""+String(speed.stage)+"\",\"sensor_profile_settle_wait_ms\":"+String(speed.settle_wait_ms);
+#else
   json+=",\"sensor_speed_profile\":\"gc0308_hb64_aec396_v22\",\"sensor_profile_startup_readback_required\":true";
   json+=",\"sensor_hblank\":64,\"sensor_vblank\":12,\"sensor_max_exposure_level_rows\":396,\"sensor_flicker_step_rows\":132";
-  json+=",\"sensor_period_estimate_ms\":37.9,\"sensor_period_estimate_validated\":false,\"predictor_min_interval_ms\":25";
+  json+=",\"sensor_period_estimate_ms\":37.9";
+#endif
+  json+=",\"sensor_period_estimate_validated\":false,\"predictor_min_interval_ms\":25";
   json+=",\"contrast_reuse\":\"exact_integer_vertical_rolling_v22\"";
 #else
   json+="\"target_fps\":25,\"capacity\":"+String(kCapacity);

@@ -46,7 +46,10 @@ static_assert(SIG_GPIO_OUT_IDX == 256, "Unexpected ESP32-S3 GPIO output matrix s
 
 void OneShotCamera::setError(const char* error) {
   if (!error) error = "unknown";
+  portENTER_CRITICAL(&mux_);
   snprintf(last_error_, sizeof(last_error_), "%s", error);
+  snprintf(snapshot_.error, sizeof(snapshot_.error), "%s", error);
+  portEXIT_CRITICAL(&mux_);
 }
 
 void OneShotCamera::captureMemoryBefore() {
@@ -408,10 +411,13 @@ bool OneShotCamera::initCameraOnTemporaryI2c0() {
   sensor->set_hmirror(sensor, 0);
 
 #if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+  snapshot_.sensor_pid = sensor->id.PID;
   const bool timing_ok = sensor->id.PID == GC0308_PID && sensor->get_reg && sensor->set_reg &&
       camera_speed_profile::apply(
           [sensor](int reg){return sensor->get_reg(sensor,reg,0xff);},
-          [sensor](int reg,int value){return sensor->set_reg(sensor,reg,0xff,value)==0;});
+          [sensor](int reg,int value){return sensor->set_reg(sensor,reg,0xff,value)==0;},
+          [](unsigned ms){delay(ms);},
+          &snapshot_.speed_profile);
   if (!timing_ok) {
     cameraTaskPriorityPatchForgetTask();
     esp_camera_deinit();

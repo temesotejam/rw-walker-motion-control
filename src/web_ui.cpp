@@ -352,7 +352,12 @@ void WebUi::status() {
   json += ",\"processing_max_us\":" + String(f.processing_max_us);
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
   const uint64_t foot_clock=esp_timer_get_time();
-  json+=",\"pipeline_revision\":\"sparse_cached_rows_double_buffer_v20\",\"target_fps\":25";
+  json+=",\"pipeline_revision\":\"sparse_cached_rows_double_buffer_v20\"";
+#if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+  json+=",\"target_fps\":30";
+#else
+  json+=",\"target_fps\":25";
+#endif
   json+=",\"frame_age_ms\":"+String(f.latest.frame_us && foot_clock>=f.latest.frame_us?(foot_clock-f.latest.frame_us)/1000.0:-1.0,1);
   json+=",\"ready_age_ms\":"+String(f.latest.ready_us && foot_clock>=f.latest.ready_us?(foot_clock-f.latest.ready_us)/1000.0:-1.0,1);
   json+=",\"driver_delivery_ms\":"+String(f.latest.timestamp_valid && f.latest.delivered_us>=f.latest.frame_us?(f.latest.delivered_us-f.latest.frame_us)/1000.0:-1.0,2);
@@ -375,6 +380,14 @@ void WebUi::status() {
   json += ",\"pitch_error_deg\":" + num(s.upright_pitch_error_deg);
   json += ",\"gyro_dps\":" + num(s.gyro_norm_dps) + "}";
   json += ",\"camera\":{\"initialized\":" + String(camera.camera_ok ? "true" : "false");
+  json += ",\"error\":\"" + String(camera.error) + "\"";
+  json += ",\"sensor_pid\":" + String(camera.sensor_pid);
+  json += ",\"speed_profile\":{\"stage\":\"" + String(camera.speed_profile.stage) + "\"";
+  json += ",\"applied\":" + String(camera.speed_profile.applied ? "true" : "false");
+  json += ",\"settle_wait_ms\":" + String(camera.speed_profile.settle_wait_ms);
+  json += ",\"register\":" + String(camera.speed_profile.reg);
+  json += ",\"expected\":" + String(camera.speed_profile.expected);
+  json += ",\"actual\":" + String(camera.speed_profile.actual) + "}";
   json += ",\"receiver_active\":" + String(camera.receiver_active ? "true" : "false");
   json += ",\"xclk_active\":" + String(camera.xclk_active ? "true" : "false");
   json += ",\"xclk_hz\":" + String(camera.xclk_hz);
