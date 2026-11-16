@@ -4,6 +4,11 @@
 
 ## 現在の状態
 
+- **2026-11-16 downloadfix2の実測52370695/202970048を正常取得。** 両方ID一致/CRC正常/30s FINISHED/error空、10103/10038samples、足782/787行、energy107/66件全保存。2試行で保存成功、旧再起動理由の確定や将来保証ではない。1本目終盤はユーザー確認で自立足停止、2本目物理状態未確認/動画なし。資料 `docs/DOWNLOADFIX2_TRIALS_20261116.md`。
+- 両方正側ピーク後の戻りで0を越えず停止過程。最後の補助23.780s/14.986s、要求47→制限43msと33→33ms、予測不足0.012057mJ/0mJ。残枠37/47msだが同peak再補助禁止。2本目は計算上仕事充足でも到達失敗し、速度支持外の予測と入力後再評価が課題。最後の1秒胴体中央値+2.59/+2.53度。単純な幅上限拡大を結論にしない。
+- 1本目の補助時点は左足欠落だが欠落時IMU救済を実施。左+8.156度の画像が制御へ届くのは判断21ms後。2本目は両検出/左+8.304度で補助し失敗、欠落だけを共通原因にしない。画像周期中央値50.007/50.002ms、driver→制御61.201/61.021ms、処理9.663/9.680ms。未検出31/583・21/592画像、制御I/O失敗0。実角度精度/接地/前進は未検証。
+- 今回は解析のみ、制御変更/書込みなし。`analysis/2026-11-16-walking/analyze_downloadfix2_trials.py`、各trialのCSV/metadata/latency/trial_review.json/trial_timeline.pngに保存。次は入力後の姿勢・減速・足角と既投入仕事から到達不足を再評価し、同往復内の残量管理下で追加可否を設計する。
+
 - **2026-11-16 診断(5)でログ取得中の本体再起動を確認。** downloadfix1/browser開始boot2760813921/run1→保存boot1032406554/READY/run0/samples0/exportempty。ユーザーは電源操作も接続先変更もしていないと確認、歩行動作あり。端末confirmed/cache/receivedも0で今回RWLOGを回収不能。120s表示は再起動後emptyをbuilding扱いしたUI不具合。reset理由は旧JSONにないため再起動原因は未確定。HTTP読取timeout、USBなし、書込み/新測定/clear/resetなし。
 - **対策候補v20-downloadfix2を準備。実機取得成功は未確認。** metadata生成に実行譲渡がなくCPU0待機taskの5s WDT/panicへ抵触し得る欠陥を修正。export限定callbackで追記境界/経過2msごと1tick待機、manifest metadata進捗/boot追加、status reset理由/前起動export RTC証拠追加。browser別boot/emptyは即中止、消失データの再開を約束しない。エネルギー制御/足認識/出力幅は維持。詳細 `docs/FOOT_FAST_V20_DOWNLOADFIX2.md`。
 - env `atoms3cam-foot-fast-downloadfix2` / ID `walking-foot-fast-v20-downloadfix2` / page `http://127.0.0.1:8767/foot-fast-downloadfix2/`。実C++最大serializer＋export worker/CRC/容量失敗/模擬時間wrap/JSON全一致、実JS再起動/再開/旧UI、transport/両flasher/embed PASS。build184.895s/RAM127620/Flash1924033、bin1924400bytes/SHA256 `09b4be475f978dabefccfb50f8b53f21178796fe55a0dd24192bc39d4b7799f8`。HTTP8files全一致、旧32files保持。local `analysis/2026-11-16-export-reboot/` に診断/解析/build確認を保存。次は同一bootで測定後RWLOGのCRC検証成功を確認し、再発時は再電源投入前の診断reset理由で原因を確定する。
