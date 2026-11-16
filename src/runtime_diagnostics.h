@@ -28,7 +28,11 @@
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
 #if defined(EXPORT_RETRY_FIX) && EXPORT_RETRY_FIX
 #if defined(EXPORT_COOPERATIVE_FIX) && EXPORT_COOPERATIVE_FIX
+#if defined(CAMERA_FRAME_READY_V21) && CAMERA_FRAME_READY_V21
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-frame-ready-v21"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-fast-v20-downloadfix2"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-fast-v20-downloadfix1"
 #endif

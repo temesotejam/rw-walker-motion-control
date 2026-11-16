@@ -4,6 +4,8 @@
 
 ## 現在の状態
 
+- **2026-11-16 画像受渡し待ち短縮v21を準備（未書込み）。** `walking-foot-frame-ready-v21` / `atoms3cam-foot-frame-ready` / `http://127.0.0.1:8767/foot-frame-ready/`。GC0308 QVGA Y8/XCLK20MHzの完全DMAコピー時点で画像を渡し、次VSYNCまでIDLEを保持。約50msにはreadoutも含むため、短縮時間は実機未確認。撮影設定/画像サイズ/校正/40ms worker/認識/エネルギー制御は継承し、boot累計early/VSYNC/queue破棄/最終全画素ageをmetadataへ追加。SDK private ABIをarchive SHAで固定、実HAL event-loop・既存pipeline・v19/v20/v21 metadata・installer試験PASS、ELFでtask priority wrapperとmapでHAL置換確認。build RAM127644/Flash1924989、bin1925360bytes/SHA256 `cd975679b7fb1fece7d7bf1922da3a5d19a68c6fbc96af0b460a0e29bc095b02`。配信8files HTTP200/全一致、旧200files不変。次は書込み後のidle画像/両足追従確認と同条件ログ比較。詳細 `docs/CAMERA_FRAME_READY_V21.md`。今回flash/start/reset/clearなし。
+
 - **2026-11-16 足角度の追加評価。** 2試行の更新は約20Hzだが反映遅延は約61ms、そのうちdriver→画像受取が約50.1ms、認識処理約9.7ms。左未検出25/583・14/592、右9/583・8/592、片足以上欠落5.32%/3.55%。未検出開始画像→復帰画像の最大は左両方約150ms、右50/100ms。左には約50msで5〜8度の急変と復帰があり、実動作/誤検出は未確定。速度改善のみで制御用角度の信頼性十分とは評価しない。画像供給遅延、左追跡欠落/飛び、信頼度を伴う現在時刻予測を次の優先課題とする。資料 `docs/DOWNLOADFIX2_TRIALS_20261116.md` に追記、今回コード変更なし。
 
 - **2026-11-16 downloadfix2の実測52370695/202970048を正常取得。** 両方ID一致/CRC正常/30s FINISHED/error空、10103/10038samples、足782/787行、energy107/66件全保存。2試行で保存成功、旧再起動理由の確定や将来保証ではない。1本目終盤はユーザー確認で自立足停止、2本目物理状態未確認/動画なし。資料 `docs/DOWNLOADFIX2_TRIALS_20261116.md`。

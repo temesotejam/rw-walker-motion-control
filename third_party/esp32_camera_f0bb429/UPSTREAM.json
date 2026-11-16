@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/espressif/esp32-camera",
+  "revision": "f0bb429",
+  "files": {
+    "cam_hal.c": "b72c765666218868abf4c5816e84dc5af7f6774db96828c2274835373d9e550e",
+    "cam_hal.h": "79db4c02c1f7752829f5aa26bd08e44c1c7cba3101f8ce5af7f141c59f591c45",
+    "ll_cam.h": "8dc15e0c4d008bbb838c35e5daa4500d4f4f256db0f89127d63b9ff619a8d08f",
+    "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
+  "modifications": "cam_hal.c: complete QVGA grayscale DMA publication, shared latest-frame queue helper, boot-lifetime diagnostics. Headers unmodified."
+}

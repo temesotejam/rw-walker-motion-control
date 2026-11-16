@@ -60,6 +60,10 @@ FIXTURE = r'''
 #include "immutable_export.h"
 #undef private
 #include "foot_fast_policy.h"
+#include "camera_frame_ready.h"
+#if defined(CAMERA_FRAME_READY_V21) && CAMERA_FRAME_READY_V21
+extern "C" rw_camera_frame_ready_stats_t rw_camera_frame_ready_stats(){return {123,4,5,39000};}
+#endif
 #include "imu_manager.h"
 #include "roller485_manager.h"
 ImuManager imu;Roller485Manager roller;RunControlWorker run_control;FootObserver feet;ExperimentRunner runner;
@@ -256,12 +260,14 @@ def main():
     reports = []
     with tempfile.TemporaryDirectory(prefix='foot_fast_metadata_') as folder:
         temp = Path(folder); (temp / 'fixture.cpp').write_text(fixture, encoding='utf8')
-        for v20 in [False, True]:
-            exe = temp / ('v20.exe' if v20 else 'v19.exe'); destination = exe.with_suffix('.json')
+        for revision in [19, 20, 21]:
+            v20 = revision >= 20
+            additions = ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1', '-DCAMERA_FRAME_READY_V21=1'] if revision == 21 else []
+            exe = temp / ('v'+str(revision)+'.exe'); destination = exe.with_suffix('.json')
             subprocess.run(['g++', '-std=c++17', '-O0', '-Wall', '-Wextra', '-Werror', '-Wno-format',
                             '-DMALLOC_CAP_INTERNAL=4',
                             '-ffunction-sections', '-fdata-sections', '-I' + str(ROOT / 'tools/host_v46o'),
-                            '-I' + str(ROOT / 'src')] + flags(v20) + [str(temp / 'fixture.cpp')] +
+                            '-I' + str(ROOT / 'src')] + flags(v20) + additions + [str(temp / 'fixture.cpp')] +
                            [str(ROOT / s) for s in sources] + ['-Wl,--gc-sections', '-o', str(exe)], check=True)
             result = subprocess.run([str(exe), str(destination)], text=True, capture_output=True, check=True)
             size = json.loads(result.stdout); blob = destination.read_bytes()
@@ -269,7 +275,7 @@ def main():
                                   parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
             validate_tables(metadata)
             expanded = converter.expand_tables(metadata)
-            size.update(version=20 if v20 else 19, hard_budget_bytes=metadata['metadata_json_budget_bytes'],
+            size.update(version=revision, hard_budget_bytes=metadata['metadata_json_budget_bytes'],
                         foot_rows=len(expanded['foot_frames']), energy_rows=len(expanded['walking_energy']['records']))
             size['non_driver_psram_remaining_estimate_bytes'] = (8*1024*1024 - size['core_psram_estimate_bytes'] -
                 size['camera_frame_estimate_bytes'] - size['preview_bytes'] - size['idle_thumbnail_staging_psram_bytes'])
@@ -283,7 +289,7 @@ def main():
             assert size['metadata_bytes'] == len(blob) == metadata['metadata_json_final_bytes']
             assert metadata['metadata_json_reserve_bytes'] == size['metadata_reserve_bytes']
             assert size['metadata_bytes'] <= size['hard_budget_bytes']
-            assert metadata['diagnostic_build_id'] == ('walking-foot-fast-v20' if v20 else 'walking-energy-admission-v19')
+            assert metadata['diagnostic_build_id'] == {19:'walking-energy-admission-v19',20:'walking-foot-fast-v20',21:'walking-foot-frame-ready-v21'}[revision]
             assert metadata['energy_model'] == 'walking_energy_admission_v19'
             assert expanded['walking_energy']['revision'] == 'walking_energy_admission_v19' and expanded['walking_energy']['branch'] == 24
             assert size['foot_rows'] == size['foot_capacity'] == (1280 if v20 else 768)
@@ -302,7 +308,10 @@ def main():
                 assert observation['row_cache_ready'] is True and observation['row_cache_internal_bytes'] == 21120
                 assert observation['performance_validated_on_board'] is False and observation['all_frame_control_receipts_exported'] is True
                 assert size['non_driver_psram_remaining_estimate_bytes'] > 0
-            csv_dir = temp / ('v20_csv' if v20 else 'v19_csv'); csv_dir.mkdir()
+            if revision == 21:
+                assert observation['frame_publication'] == 'complete_qvga_y8_dma_before_vsync_v21'
+                assert [observation[k] for k in ['dma_early_frames','dma_vsync_frames','dma_queue_drops','dma_last_full_age_us']] == [123,4,5,39000]
+            csv_dir = temp / ('v'+str(revision)+'_csv'); csv_dir.mkdir()
             assert converter.write_foot_frames(expanded, csv_dir) == size['foot_rows']
             assert converter.write_walking_energy_diagnostics(expanded, csv_dir) == size['energy_rows']
             with (csv_dir / 'foot_angles.csv').open(encoding='utf8', newline='') as stream:
@@ -319,7 +328,7 @@ def main():
                 'source_sha256': {s: hashlib.sha256((ROOT / s).read_bytes()).hexdigest() for s in sources +
                     ['src/psram_logger.h', 'src/foot_observer.h', 'src/foot_fast_policy.h',
                      'src/walking_energy_runner.inc', 'src/experiment_runner.cpp']}}, indent=2) + '\n', encoding='utf8')
-    print('real v19/v20 full foot + energy metadata capacity, budgets, schema/revisions and host PSRAM estimate PASS')
+    print('real v19/v20/v21 full foot + energy metadata capacity, budgets, schema/revisions and host PSRAM estimate PASS')
 
 
 if __name__ == '__main__':

@@ -1,5 +1,8 @@
 #include "compact_json_table.h"
 #include "foot_observer.h"
+#if defined(CAMERA_FRAME_READY_V21) && CAMERA_FRAME_READY_V21
+#include "camera_frame_ready.h"
+#endif
 #include "foot_range_diagnostics.h"
 #include "foot_control_range.h"
 #include "foot_calibration_diagnostics.h"
@@ -340,6 +343,13 @@ void FootObserver::appendMetadata(PsramString& json) const {
   json+=",\"pixel_processing\":\"same_integer_contrast_and_full_search_row_major\",\"recognition_semantics_changed\":false";
   json+=",\"ready_us_semantics\":\"recognition_and_projection_done_before_publication_lock\",\"released_us_semantics\":\"driver_buffer_return_not_sensor_exposure_end\"";
   json+=",\"performance_validated_on_board\":false,\"all_frame_control_receipts_exported\":true";
+#if defined(CAMERA_FRAME_READY_V21) && CAMERA_FRAME_READY_V21
+  const auto dma = rw_camera_frame_ready_stats();
+  json+=",\"frame_publication\":\"complete_qvga_y8_dma_before_vsync_v21\"";
+  json+=",\"dma_stats_scope\":\"boot_lifetime_independent_counters\"";
+  json+=",\"dma_early_frames\":"+String(dma.early_frames)+",\"dma_vsync_frames\":"+String(dma.vsync_frames);
+  json+=",\"dma_queue_drops\":"+String(dma.queue_drops)+",\"dma_last_full_age_us\":"+String(dma.last_full_age_us);
+#endif
 #else
   json += "\"target_fps\":15,\"capacity\":" + String(kCapacity);
 #endif
