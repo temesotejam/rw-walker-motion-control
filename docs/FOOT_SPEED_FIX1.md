@@ -66,11 +66,52 @@ LinuxのHB64という単独値は、この機体の全設定での安定性を�
 | driver画像時刻→画像受取り | 50.22ms | 41.33ms（17.7%短縮） |
 | driver画像時刻→認識・予測結果ready | 64.42ms | 53.29ms（17.3%短縮） |
 | 足認識の計算 | 8.937ms | 6.172ms（30.9%短縮） |
-| 報告された画像更新fps | 19.84 | 24.16 |
+| 瞬間的な画像更新fpsの標本中央値 | 19.84 | 24.16 |
+| フレームカウンタ差分 / 経過時間 | 14.11Hz | 16.71Hz |
 
 新版の画像受取りp95は42.97ms、最大49.72ms。ready p95は59.73ms、
 最大79.84msで、常に中央値どおりではない。HTTPからの抜き取り標本であり、
 全フレーム精度や歩行中の遅延ではない。撮影露光の物理時刻・動的角度精度は未検証。
+
+### 追加確認で残った問題
+
+ユーザーの「今までのところがうまくいくか」の依頼で、同じ起動のまま60秒間再確認した。
+294応答・292の異なる画像はすべて左右検出、ゼロ確定、MEKF valid/fresh、制御heartbeat fresh。
+カメラ取得失敗・左右検出失敗の累積カウンタは増えず、モータ指令0・run0・samples0を維持した。
+画像取得41.35ms、認識ready53.43ms、認識計算6.017ms（いずれも標本中央値）で高速化は再現した。
+Chrome実画面でも `walking-foot-speed-v22-fix1`、接続中、READY_TO_MEASURE、左右角度、
+ゼロ点確定、約24fpsを確認。8°ボタンは有効だが押していない。
+
+ただし、3秒timeoutの診断HTTP GETが1回timeoutし、再取得で復帰した。
+294応答のうち7応答は `frame_stale`（判定時の画像年齢200ms超）だった。
+最初の180秒記録を再集計すると、こちらにも981応答中27応答のstaleがある。
+「両マーカーを検出できた」と「常に制御に使える新しい画像がある」は別であり、
+安定性を完全に確認できたとはしない。旧v21も111応答中5応答がstaleだった。
+
+画面のfpsは直前2画像の受取間隔の逆数であり、その標本中央値24.16fpsを持続更新率と
+解釈しない。カウンタ差分を同一起動のIMU時刻差で割ると、最初の180秒は16.71Hz、
+追加60秒は17.31Hz。旧v21比較は14.11Hzだった。間欠的な遅れを含む値を併記する。
+Webを開いた待機状態での観測であり、運転中はWeb休止・previewコピー省略という違いがある。
+この記録だけではカメラ更新待ち、task実行待ち、HTTP生成中のsnapshot経過の寄与を分離できず、
+Web負荷を原因と断定しない。モータ禁止を維持し、歩行中の鮮度・追従・実RWLOG取得は未確認。
+
+追加記録は `recheck_idle_60s.json`、`recheck_detailed_60s.summary.json`、
+`recheck_original_180s.summary.json`、`recheck_v21.summary.json`。
+`tools/probe_foot_idle.py` にstale理由・累積カウンタ差分・持続更新率を追加し、
+保存済みrawの再集計、HTTP間隔/timeout指定も可能にした。元のraw/summaryは保持する。
+
+さらに診断GETを応答後1秒間隔・timeout8秒へ変更し、Chromeは開いたまま60秒確認した。
+56/56応答が左右検出・制御開始鮮度Ready・MEKF valid/fresh、通信error0、
+カメラ/検出失敗カウンタ増加0、同じboot・motor0。受取41.26ms/ready53.185ms、
+カウンタ差分から22.07Hz（1313frames/59.499秒）。直前の頻回GET条件より改善したが、
+観測間隔も異なるので「staleを完全に解消」とはしない。記録 `recheck_light_poll_60s.json`
+と `.summary.json`。今後は追加診断通信の負荷を測定条件に含め、待ち時間の原因を切り分ける。
+
+起動後1105.95秒の追加確認で、同じboot ID1572963981、修正版ID、モータ指令0、
+制御コマンド投入0・run0・samples0・足Readyを確認した。実機Web113624bytes全体を受信し、
+プレビュー19200bytesの各chunk/full CRCも一致。目視で左右の白マーカーを確認、
+画素min2/max254/mean81.01で白化なし。`recheck_preview.json` / `.png`、
+`recheck_web_preview.json`、`recheck_final_status.json` に保存。新たな書込みは行っていない。
 
 最終build SUCCESS、RAM127740/Flash1928729 bytes。
 firmware1929088 bytes、SHA256
