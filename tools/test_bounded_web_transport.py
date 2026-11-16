@@ -29,7 +29,11 @@ int send(int, const void* buffer, size_t length, int) {
     errno = errors[(calls - 1) % 4]; return -1;
   }
   if (mode == 6) clock_ms += 80; // About 12 kB/s; the runtime HTML needs over 1.2 s.
-  const size_t maximum = mode == 6 ? 1024 : 37;
+  // Full-page success cases model at least ~12 kB/s, including retry delays.
+  // 37 B every five ticks falls below that and exceeds the unchanged 15 s
+  // total budget once the HTML grows beyond ~111 kB. Slow-progress expiry is
+  // tested separately by mode4; do not assert success outside that budget.
+  const size_t maximum = mode == 6 ? 1024 : mode == 5 ? 64 : 37;
   const auto count = length < maximum ? length : maximum;
   const auto data = static_cast<const char*>(buffer);
   received.insert(received.end(),data,data+count);

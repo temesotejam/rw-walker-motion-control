@@ -4,6 +4,11 @@
 
 ## 現在の状態
 
+- **2026-11-16 機体の区別を訂正。40505704は同じプログラムを実行した試作の別機体。** 起動停止や足角度差の小ささはその機体についての結果で、今回の同じ機体での診断2件の歩行原因へ一般化しない。旧3試行との速度比較も機体/運動条件が揃っていない。前報告 `docs/FOOT_FAST_V20_TRIAL_40505704.md` に訂正を追加。
+- **診断JSON (3)/(4)の保存中abortへ通信修正版を準備。** 両方v20/FINISHED30s/samples10127・10071/error空/export building、末尾fps20.0525・20.1572。FINISHED後camera停止によりstale5〜6sになる仕様で、測定中停止の証拠ではない。右足は許容0.2度外挿でcontrol_range_ok、memory0はsampled=false。browser旧3s timeoutの英語例外を直出しし、prepare/manifestは再試行せず全体中断する構造を再現。診断には失敗先がなく実通信先/遅延原因は未特定。現在接続boot2265249153は別起動/run0/samples0/exportemptyで当時RWLOGを回収不能。歩行の原因評価は時系列不足で保留。
+- 修正版 `walking-foot-fast-v20-downloadfix1` / env `atoms3cam-foot-fast-downloadfix` / page `http://127.0.0.1:8767/foot-fast-downloadfix/`。要求8s×5、prepare/manifestも再試行、building待ち120s、一時停止でfetch中止、CRC/token付きcache再開/既存完成保持。診断にbrowser_transfer段階/要求/例外/取得bytesを追加。v20raw全receiptをbrowserCSVで消さない修正も含む。足認識/エネルギー制御の設定・係数・入力幅は維持。詳細 `docs/FOOT_FAST_V20_DOWNLOADFIX1.md`。
+- 実JSのタイムアウト/失敗上限/8192byte再開/CRC/409/pause/診断/新旧receipt、旧UI/transport/v19実runner、新旧flasherをPASS。最終build35.551s/RAM127604/Flash1921001、bin1921360bytes/SHA256 `617ba429ae118a595eb08cfdc0579c238ed5cbc5e628775c0753b9e800a1f587`、HTML全bytes内包確認。専用配信8filesがHTTP200/全一致、旧v20/v19/v18配信24filesSHA保持。実機書込み/新測定/実無線での修正版取得は未実施。ローカル `analysis/2026-11-16-download-abort/` に診断コピー2/解析/ビルド確認を保存。以下は今回以前の履歴。
+
 - **2026-11-16 v20実機試行40505704を解析。画像更新は高速化、歩行は起動後に減衰。** ユーザーは自立で歩行を試したと確認。ID `walking-foot-fast-v20` / branch24 / format56 / CRC正常、9713samples、足787/測定中context587、overflowなし。画像周期中央値100→49.992ms（平均換算19.57Hz）、processing12.65〜12.84→9.899ms、driver timestamp→制御受取68.65〜69.25→62.090ms。旧試行と運動条件は異なる。新tracker8.408ms/copy1.022ms/ready→control1.425ms。driver→画像受取50.069msは残る。約100ms間隔3回/150ms5回、原因段階は未特定。詳しくは `docs/FOOT_FAST_V20_TRIAL_40505704.md`。
 - 足は587/587両検出/範囲内/zero/cache使用だが、右−0.032〜+0.099度/左−0.343〜+0.090度と動きが小さい。動画なし、動く足の精度や誤認識は未検証。起動300mA/100ms1回後、左右角−2.343595度→最接近−0.43度で0を跨がず、−4.12度へ戻って約−2.3度へ減衰。peak判定101ms1件、実ZERO0、walking_energy/support判断0、追加入力0、30秒FINISHED/error空。現救済の両足検出時3度差条件に対し最大差0.35475度で未成立。次課題は足がほぼ揃った起動から最初のZEROまでの不足J評価。今回制御変更/書込みなし。
 - 制御監査12091件でcontrol-ready平均0.475ms/最大2.195、done平均0.853ms/最大2.843、2.5ms超4件、I/O失敗0。旧done平均約0.59msと条件が異なりカメラ変更だけの因果とはしない。原本SHA256 `1c9abcd1351ccc847837b4f2d2dcbf3f34626180ccac4b544dede9964dd2b569`、ローカル `analysis/2026-11-16-walking/40505704/` に変換・比較・グラフ・review保存。以下は準備時の記録で、「実機速度未確認」は今回の測定前の状態。

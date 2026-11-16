@@ -26,7 +26,11 @@
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+#if defined(EXPORT_RETRY_FIX) && EXPORT_RETRY_FIX
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-fast-v20-downloadfix1"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-fast-v20"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-energy-admission-v19"
 #endif

@@ -16,7 +16,8 @@ vm.runInContext(code,context);
 (async()=>{
   // Headers succeed immediately, response body never completes until aborted.
   context.fetch=async(_path,opts)=>({ok:true,json:()=>new Promise((_,reject)=>opts.signal.addEventListener('abort',()=>reject(Error('body_aborted'))))});
-  await assert.rejects(vm.runInContext("request('/status.json',{timeout:25})",context),/body_aborted/);
+  await assert.rejects(vm.runInContext("request('/status.json',{timeout:25})",context),
+    error => error.name === 'RequestTimeoutError' && error.code === 'request_timeout' && error.path === '/status.json');
   assert.strictEqual(vm.runInContext("crc32(new Uint8Array([49,50,51,52,53,54,55,56,57]))",context),0xcbf43926);
   await vm.runInContext('refresh()',context); // real production refresh cleanup
   assert.strictEqual(vm.runInContext('refreshInFlight',context),false);

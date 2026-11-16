@@ -508,6 +508,8 @@ let previewRunning = false, previewEvidence = null;
 let poseRunning = false, poseCancelled = false, poseSession = null, poseSaved = false;
 let latest = null, lastSeen = 0, refreshInFlight = false, commandInFlight = false;
 let transferRunning = false, cancelTransfer = false, completedFile = null, completedName = '', completedFoot = null;
+let transferAbort = null, transferDiagnostic = null;
+const exportPolicy = {requestTimeoutMs:8000, maxAttempts:5, buildWaitMs:120000, pollMs:500};
 let wheelWorkReport = null;
 function calculateWheelWork() {
   wheelWorkReport = null;
@@ -547,17 +549,34 @@ function crc32(data, crc = 0) {
   }
   return (~crc) >>> 0;
 }
-async function request(path, {method = 'GET', kind = 'json', timeout = 3000} = {}) {
+async function request(path, {method = 'GET', kind = 'json', timeout = 3000, signal = null} = {}) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort();
+  if (signal?.aborted) abortFromCaller();
+  else signal?.addEventListener('abort', abortFromCaller, {once:true});
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeout);
   try {
     const response = await fetch(path, {method, signal: controller.signal, cache: 'no-store'});
-    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+    if (!response.ok) {
+      const error = new Error(`${response.status}: ${await response.text()}`);
+      error.status = response.status; throw error;
+    }
     // Abort remains armed through body consumption, including response.json().
     if (kind === 'bytes') return new Uint8Array(await response.arrayBuffer());
     if (kind === 'text') return await response.text();
     return await response.json();
-  } finally { clearTimeout(timer); }
+  } catch (error) {
+    if (timedOut) {
+      const failure = new Error(`通信の応答待ちが${timeout / 1000}秒を超えました（${path.split('?')[0]}）。`);
+      failure.name = 'RequestTimeoutError'; failure.code = 'request_timeout';
+      failure.path = path.split('?')[0]; failure.timeout_ms = timeout;
+      throw failure;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer); signal?.removeEventListener('abort', abortFromCaller);
+  }
 }
 function walkingEnergyTrial(s = latest) {
   return walkingTransferTrial(s) || /^walking-return-energy-v17(?:-|$)/.test(s?.diagnostic_build_id || '');
@@ -1115,7 +1134,10 @@ function expandFootTable(value, observations = null) {
   const frames = rows.map(row => Object.fromEntries(fields.map((field,i) => [field,row[i]])));
   if (observations != null) {
     if (observations.version !== 1 || !Array.isArray(observations.rows)) throw Error('Invalid foot observations');
-    for (const f of frames) f.control_observed_us = null;
+    // v20 records every receipt in the raw rows; older files only have the
+    // sparse supplemental table. Do not erase the additional v20 timestamps.
+    for (const f of frames)
+      if (!Number.isSafeInteger(f.control_observed_us) || f.control_observed_us <= 0) f.control_observed_us = null;
     const seen = new Set();
     for (const row of observations.rows) {
       if (!Array.isArray(row) || row.length !== 2 || !Number.isSafeInteger(row[0]) ||
@@ -1128,41 +1150,81 @@ function expandFootTable(value, observations = null) {
   }
   return frames;
 }
+function transferCheck() {
+  if (cancelTransfer) throw new Error('一時停止しました。取得・再開で続けられます。');
+}
+function transferNote(values) {
+  if (transferDiagnostic) Object.assign(transferDiagnostic, values, {updated_at:new Date().toISOString()});
+}
+function diagnosticSnapshot() {
+  return {...latest, browser_transfer:transferDiagnostic, browser_saved_at:new Date().toISOString()};
+}
+async function exportRequest(path, options, label, validate = value => value) {
+  for (let attempt = 1; attempt <= exportPolicy.maxAttempts; ++attempt) {
+    transferCheck();
+    transferNote({request:path, attempt, request_started_at:new Date().toISOString()});
+    try {
+      const value = await request(path, {...options, timeout:exportPolicy.requestTimeoutMs, signal:transferAbort?.signal});
+      transferCheck();
+      return validate(value);
+    } catch (error) {
+      transferNote({last_failure:{path, attempt, name:error.name, code:error.code ?? null,
+        status:error.status ?? null, message:error.message, at:new Date().toISOString()}});
+      transferCheck();
+      const permanent = Number.isInteger(error.status) && error.status >= 400 && error.status < 500 &&
+        ![408,429].includes(error.status);
+      if (permanent || attempt === exportPolicy.maxAttempts) throw error;
+      transferNote({retries:transferDiagnostic.retries + 1});
+      $('transfer').textContent = `${label} · 通信を再試行 ${attempt}/${exportPolicy.maxAttempts - 1}`;
+      await nap(250 * attempt);
+    }
+  }
+}
 async function download() {
+  if (transferRunning) return;
   transferRunning = true; cancelTransfer = false; controls();
+  transferAbort = new AbortController();
+  transferDiagnostic = {revision:'resumable_export_retry_v1', phase:'prepare',
+    started_at:new Date().toISOString(), boot_id:latest?.boot_id ?? null, run_id:latest?.run_id ?? null,
+    confirmed_bytes:0, cached_bytes:0, received_bytes:0, retries:0, manifest:null, last_failure:null};
   try {
     $('transfer').textContent = 'ログを確定中…';
-    await request('/export/prepare', {method: 'POST', kind: 'text'});
+    await exportRequest('/export/prepare', {method:'POST', kind:'text'}, 'ログ確定の開始');
+    transferNote({phase:'manifest'});
+    const waitStarted = Date.now();
     let m;
     do {
-      if (cancelTransfer) throw new Error('一時停止しました。取得・再開で続けられます。');
-      m = await request('/export/manifest');
+      transferCheck();
+      if (Date.now() - waitStarted >= exportPolicy.buildWaitMs)
+        throw new Error('本体のログ確定が120秒以内に完了しませんでした。診断JSONを保存してください。');
+      m = await exportRequest('/export/manifest', {}, 'ログ確定状況の確認');
+      transferNote({manifest:m});
       if (m.phase === 'error') throw new Error(m.error);
-      if (m.phase !== 'ready') { $('transfer').textContent = `ログ確定中 ${m.hashed_bytes} / ${m.bytes || '?'} bytes`; await nap(400); }
+      if (m.phase !== 'ready') { $('transfer').textContent = `ログ確定中 ${m.hashed_bytes} / ${m.bytes || '?'} bytes`; await nap(exportPolicy.pollMs); }
     } while (m.phase !== 'ready');
     if (!/^[a-f0-9]{16}$/.test(m.token) || !Number.isInteger(m.bytes) || m.bytes < 114 || m.bytes > 9 * 1024 * 1024 || m.chunk_bytes !== 4096)
       throw new Error('ログ仕様が一致しません。ページを更新してください。');
+    transferCheck();
     await pruneCache(m.token);
+    transferNote({phase:'chunks'});
     const file = new Uint8Array(m.bytes); $('progress').max = m.bytes; $('progress').value = 0;
     for (let offset = 0; offset < m.bytes;) {
-      if (cancelTransfer) throw new Error('一時停止しました。取得・再開で続けられます。');
+      transferCheck();
       const length = Math.min(m.chunk_bytes, m.bytes - offset), key = `${m.token}:${offset}`;
       let payload, packet = await cacheGet(key);
       if (packet) { try { payload = validateChunk(packet, offset, length); } catch { packet = null; } }
-      for (let retry = 0; !payload && retry < 5; ++retry) {
-        if (cancelTransfer) throw new Error('一時停止しました。');
-        try {
-          packet = await request(`/export/chunk?token=${m.token}&offset=${offset}&length=${length}`, {kind: 'bytes'});
-          payload = validateChunk(packet, offset, length); await cachePut(key, packet);
-        } catch (error) {
-          if (retry === 4 || error.message.startsWith('409:')) throw error;
-          $('transfer').textContent = `${offset} bytesまで取得済み · 再試行 ${retry + 1}/5`;
-          await nap(250 * (retry + 1));
-        }
+      if (payload) transferNote({cached_bytes:transferDiagnostic.cached_bytes + length});
+      else {
+        packet = await exportRequest(`/export/chunk?token=${m.token}&offset=${offset}&length=${length}`,
+          {kind:'bytes'}, `${offset} bytesまで取得済み`, bytes => { validateChunk(bytes, offset, length); return bytes; });
+        payload = validateChunk(packet, offset, length); await cachePut(key, packet);
+        transferNote({received_bytes:transferDiagnostic.received_bytes + length});
       }
       file.set(payload, offset); offset += length; $('progress').value = offset;
+      transferNote({confirmed_bytes:offset});
       $('transfer').textContent = `${(100 * offset / m.bytes).toFixed(1)}% · ${offset} / ${m.bytes} bytes`;
     }
+    transferCheck(); transferNote({phase:'verifying'});
     const v = new DataView(file.buffer), crc = crc32(file.subarray(0, file.length - 4));
     if (crc !== m.crc32 || crc !== v.getUint32(file.length - 4, true)) throw new Error('ファイル全体のCRCが一致しません');
     const headerSize = v.getUint16(10, true), metadataLength = v.getUint32(24, true);
@@ -1170,11 +1232,15 @@ async function download() {
     const metadata = JSON.parse(new TextDecoder().decode(file.subarray(headerSize, headerSize + metadataLength)));
     completedFoot = expandFootTable(metadata.foot_frames ?? null, metadata.foot_control_observations ?? null); completedFile = file; completedName = m.filename;
     saveBlob(new Blob([file], {type: 'application/octet-stream'}), m.filename);
+    transferNote({phase:'complete', filename:m.filename});
     $('transfer').textContent = `CRC検証完了 · ${m.bytes} bytes · 足角度 ${completedFoot?.length ?? 0}行`;
     calculateWheelWork();
   } catch (error) {
-    $('transfer').textContent = `${error.message}（保存済みの部分は保持しています）`;
-  } finally { transferRunning = false; controls(); }
+    transferNote({phase:cancelTransfer ? 'paused' : 'error', error:error.message});
+    const retained = transferDiagnostic.confirmed_bytes;
+    const progress = retained ? `今回の取得・再開で検証済み${retained} bytes。` : 'ログ確定または最初のチャンクの取得が未完了です。';
+    $('transfer').textContent = `${error.message}（${progress}取得済みの部分は再開に利用します。）`;
+  } finally { transferAbort = null; transferRunning = false; controls(); }
 }
 function footCsv(rows) {
   if (!rows.length) return '';
@@ -1343,7 +1409,7 @@ if ($('usb-diag')) $('usb-diag').onchange = async () => {
 };
 $('clear').onclick = () => command('/clear');
 $('download').onclick = download;
-$('cancel').onclick = () => { cancelTransfer = true; };
+$('cancel').onclick = () => { cancelTransfer = true; transferAbort?.abort(); };
 $('work-calculate').onclick = calculateWheelWork;
 $('work-pulses').onclick = () => saveWheelWorkCsv('pulses');
 $('work-intervals').onclick = () => saveWheelWorkCsv('intervals');
@@ -1351,7 +1417,7 @@ $('work-kinematics').onclick = () => saveWheelWorkCsv('kinematics');
 $('csv').onclick = () => saveBlob(new Blob(['\ufeff', footCsv(completedFoot)], {type: 'text/csv;charset=utf-8'}), completedName.replace(/\.rwlog$/, '_foot.csv'));
 $('preview').onclick = capturePreview;
 $('preview-save').onclick = () => saveBlob(new Blob([JSON.stringify(previewEvidence, null, 2)], {type:'application/json'}), `freefoot-vision-diagnostics-${previewEvidence.sequence}.json`);
-$('diagnostics').onclick = () => saveBlob(new Blob([JSON.stringify(latest, null, 2)], {type: 'application/json'}), 'freefoot-diagnostics.json');
+$('diagnostics').onclick = () => saveBlob(new Blob([JSON.stringify(diagnosticSnapshot(), null, 2)], {type: 'application/json'}), 'freefoot-diagnostics.json');
 $('pose-base').onclick = () => capturePose(true);
 $('pose-add').onclick = () => capturePose(false);
 $('pose-cancel').onclick = () => { poseCancelled = true; };

@@ -18,13 +18,22 @@ EXPECTED_PARTS = [('firmware/bootloader.bin', 0), ('firmware/partitions.bin', 32
                   ('firmware/boot_app0.bin', 57344), ('firmware/firmware.bin', 65536)]
 
 
-def installer_text(root=ROOT):
+def settings(profile=None):
+    result = {'environment':ENVIRONMENT, 'identity':IDENTITY, 'suffix':SUFFIX,
+              'title':'歩行器 v20 足角度認識の低遅延版',
+              'name':'RW Walker foot recognition low latency v20 trial'}
+    result.update(profile or {})
+    return result
+
+
+def installer_text(root=ROOT, *, profile=None):
     """Render and validate source templates without writing files."""
+    selected = settings(profile)
     page = (root / 'flasher/index.html').read_text(encoding='utf8')
     replacements = {
-        'angle-early-weak-zero-v2': IDENTITY,
-        '<title>歩行器ファームウェア書き込み</title>': '<title>歩行器 v20 足角度認識の低遅延版</title>',
-        '<h1>歩行器ファームウェア書き込み</h1>': '<h1>歩行器 v20 足角度認識の低遅延版</h1>',
+        'angle-early-weak-zero-v2': selected['identity'],
+        '<title>歩行器ファームウェア書き込み</title>': '<title>' + selected['title'] + '</title>',
+        '<h1>歩行器ファームウェア書き込み</h1>': '<h1>' + selected['title'] + '</h1>',
     }
     if any(page.count(old) != 1 for old in replacements) or page.count('<esp-web-install-button ') != 1:
         raise ValueError('Unexpected base installer template')
@@ -36,30 +45,32 @@ def installer_text(root=ROOT):
         '足角度と更新を確認してください。</p>\n  '
         '<p>比較用のv19書込みページは保持しています。</p>\n  '
     )
-    page = page.replace('<esp-web-install-button ', description + '<esp-web-install-button ', 1)
+    page = page.replace('<esp-web-install-button ', selected.get('description', description) + '<esp-web-install-button ', 1)
     manifest = json.loads((root / 'flasher/manifest.json').read_text(encoding='utf8'))
     builds = manifest.get('builds', [])
     if (len(builds) != 1 or builds[0].get('chipFamily') != 'ESP32-S3' or
             [(part.get('path'), part.get('offset')) for part in builds[0].get('parts', [])] != EXPECTED_PARTS):
         raise ValueError('Unexpected ESP32-S3 installer layout')
-    manifest.update(name='RW Walker foot recognition low latency v20 trial', version=IDENTITY)
+    manifest.update(name=selected['name'], version=selected['identity'])
     return page, json.dumps(manifest, indent=2, ensure_ascii=False) + '\n'
 
 
-def dry_run(root=ROOT):
-    page, manifest = installer_text(root)
-    return {'dry_run': True, 'environment': ENVIRONMENT, 'identity': IDENTITY,
-            'url': 'http://127.0.0.1:8767/' + SUFFIX + '/',
+def dry_run(root=ROOT, *, profile=None):
+    selected = settings(profile)
+    page, manifest = installer_text(root, profile=selected)
+    return {'dry_run': True, 'environment': selected['environment'], 'identity': selected['identity'],
+            'url': 'http://127.0.0.1:8767/' + selected['suffix'] + '/',
             'page_bytes': len(page.encode('utf8')), 'manifest': json.loads(manifest)}
 
 
-def prepare(root=ROOT, boot_app=None):
-    build = root / '.pio/build' / ENVIRONMENT
+def prepare(root=ROOT, boot_app=None, *, profile=None):
+    selected = settings(profile)
+    build = root / '.pio/build' / selected['environment']
     firmware = build / 'firmware.bin'
     blob = firmware.read_bytes() if firmware.is_file() else b''
-    pattern = rb'(?<![A-Za-z0-9_-])' + re.escape(IDENTITY.encode()) + rb'(?![A-Za-z0-9_-])'
+    pattern = rb'(?<![A-Za-z0-9_-])' + re.escape(selected['identity'].encode()) + rb'(?![A-Za-z0-9_-])'
     if re.search(pattern, blob) is None:
-        raise SystemExit('Build ' + ENVIRONMENT + ' successfully first (v20 identity required).')
+        raise SystemExit('Build ' + selected['environment'] + ' successfully first (v20 identity required).')
     parts = {name: build / name for name in ['bootloader.bin', 'partitions.bin', 'firmware.bin']}
     parts['boot_app0.bin'] = Path(boot_app) if boot_app is not None else (
         Path.home() / '.platformio/packages/framework-arduinoespressif32@3.20016.0/tools/partitions/boot_app0.bin')
@@ -67,9 +78,9 @@ def prepare(root=ROOT, boot_app=None):
     invalid = [str(path) for path in list(parts.values()) + support if not path.is_file() or not path.stat().st_size]
     if invalid:
         raise SystemExit('Missing or empty installer file(s): ' + ', '.join(invalid))
-    page, manifest = installer_text(root)
+    page, manifest = installer_text(root, profile=selected)
     # Validate identity, templates, layout and every source before writing.
-    dest = root / 'flasher' / SUFFIX
+    dest = root / 'flasher' / selected['suffix']
     (dest / 'firmware').mkdir(parents=True, exist_ok=True)
     for name, path in parts.items():
         shutil.copyfile(path, dest / 'firmware' / name)
@@ -77,8 +88,8 @@ def prepare(root=ROOT, boot_app=None):
         shutil.copyfile(path, dest / path.name)
     (dest / 'index.html').write_text(page, encoding='utf8')
     (dest / 'manifest.json').write_text(manifest, encoding='utf8')
-    return {'environment': ENVIRONMENT, 'identity': IDENTITY,
-            'url': 'http://127.0.0.1:8767/' + SUFFIX + '/',
+    return {'environment': selected['environment'], 'identity': selected['identity'],
+            'url': 'http://127.0.0.1:8767/' + selected['suffix'] + '/',
             'parts': {name: {'bytes': path.stat().st_size,
                              'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
                       for name, path in parts.items()}}
