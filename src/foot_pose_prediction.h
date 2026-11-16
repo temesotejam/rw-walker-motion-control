@@ -1,4 +1,5 @@
 #pragma once
+#include "foot_timing_policy.h"
 #include <cmath>
 #include <cstdint>
 
@@ -26,7 +27,7 @@ class Predictor {
     const float dl=l-left_,dr=r-right_;
     frame_=frame;left_=l;right_=r;have_=true;
     if(!prior)return out;
-    if(dt<40 || dt>200){out.reason=Reason::Gap;return out;}
+    if(dt<foot_timing_policy::kMinFrameIntervalMs || dt>200){out.reason=Reason::Gap;return out;}
     out.left_rate=dl*1000.f/dt;out.right_rate=dr*1000.f/dt;
     if(std::fabs(dl)>8 || std::fabs(dr)>8 || std::fabs(out.left_rate)>80 || std::fabs(out.right_rate)>80) {
       have_=false;out.reason=Reason::Jump;return out;

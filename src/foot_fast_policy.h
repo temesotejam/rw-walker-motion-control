@@ -5,7 +5,11 @@
 // v20 bounds capture/recognition load. Actual sensor FPS and end-to-end age
 // must be measured on the board; these settings are not performance claims.
 namespace foot_fast_policy {
+#if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+constexpr uint32_t kWorkerPeriodUs=33333;
+#else
 constexpr uint32_t kWorkerPeriodUs=40000;
+#endif
 constexpr uint32_t kControlPollMs=2;
 constexpr unsigned kCameraFrameBuffers=2;
 constexpr uint32_t kArchiveCapacity=1280; // 40 seconds *25Hz plus margin.

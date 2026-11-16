@@ -345,11 +345,17 @@ static void readCounts(){
  assert(legacy_pixel_reads==87040);
  WhiteMarker1DTracker a(0),b(1);rows::readCounts()=rows::ReadCounts{};
  a.process(image.data());b.process(image.data());
- assert(rows::readCounts().full_rows==272 && rows::readCounts().missing_rows==0);
+ const unsigned expected_rows =
+#if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+ 144;
+#else
+ 272;
+#endif
+ assert(rows::readCounts().full_rows==expected_rows && rows::readCounts().missing_rows==0);
  std::vector<uint8_t> storage(rows::kRequiredBytes);rows::RowCache cache(storage.data(),storage.size());
  rows::readCounts()=rows::ReadCounts{};assert(cache.capture(image.data()));
  a.process(cache.view());b.process(cache.view());
- assert(rows::readCounts().capture_rows==66 && rows::readCounts().packed_rows==272);
+ assert(rows::readCounts().capture_rows==66 && rows::readCounts().packed_rows==expected_rows);
  assert(rows::readCounts().full_rows==0 && rows::readCounts().missing_rows==0);
  std::cout<<"READS {\"legacy_source_bytes\":"<<legacy_pixel_reads<<",\"cache_source_bytes\":"<<rows::readCounts().capture_rows*320
     <<",\"cache_internal_pixel_bytes\":"<<rows::readCounts().packed_rows*320<<",\"required_rows\":66}\n";
@@ -384,7 +390,7 @@ int main(int argc,char** argv){
 '''
 
 
-def compile_probe(temp, counted, fast=True):
+def compile_probe(temp, counted, fast=True, speed=False):
     source = temp / 'probe.cpp'
     source.write_text(CPP, encoding='utf8')
     (temp / 'legacy_tracker.h').write_text('#pragma once\n#include "white_marker_tracker.h"\n' + LEGACY_HEADER, encoding='utf8')
@@ -393,6 +399,7 @@ def compile_probe(temp, counted, fast=True):
     exe = temp / ('counted.exe' if counted and fast else 'fallback.exe' if counted else 'benchmark.exe')
     subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
                     '-DFOOT_LOW_LATENCY_V20=' + str(int(fast)), '-DFOOT_IMAGE_ROWS_TEST_READS=' + str(int(counted)),
+                    '-DFOOT_SPEED_V22=' + str(int(speed)),
                     '-I' + str(ROOT / 'tools/host_v46o'), '-I' + str(ROOT / 'src'), '-I' + str(temp),
                     str(source), str(legacy), str(ROOT / 'src/white_marker_tracker.cpp'), '-o', str(exe)], check=True)
     return exe
@@ -418,6 +425,14 @@ def main():
         output = subprocess.check_output([str(ordinary), 'bench', str(args.bench_frames)], text=True)
         print(output.strip())
         report['host_benchmark'] = json.loads(next(line[6:] for line in output.splitlines() if line.startswith('BENCH ')))
+        speed_counted=compile_probe(temp, True, speed=True)
+        output=subprocess.check_output([str(speed_counted)],text=True)
+        print('v22:',output.strip())
+        report['v22_reads']=json.loads(next(line[6:] for line in output.splitlines() if line.startswith('READS ')))
+        speed_binary=compile_probe(temp,False,speed=True)
+        output=subprocess.check_output([str(speed_binary),'bench',str(args.bench_frames)],text=True)
+        print('v22:',output.strip())
+        report['v22_host_benchmark']=json.loads(next(line[6:] for line in output.splitlines() if line.startswith('BENCH ')))
         compat = temp / 'compat.cpp'
         compat.write_text('#include "foot_image_rows.h"\nstatic_assert(foot_image_rows::kRequiredRows==66,"rows");\nint main(){return 0;}\n', encoding='utf8')
         subprocess.run(['g++', '-std=c++11', '-Wall', '-Wextra', '-Werror', '-I' + str(ROOT / 'src'),

@@ -336,7 +336,15 @@ void FootObserver::appendMetadata(PsramString& json) const {
   json += "\"control_context_semantics\":\"latest_control_snapshot_at_frame_delivery_not_exposure\",";
   json += "\"preview_generation\":\"idle_only_last_idle_frame_retained\",";
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+#if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+  json+="\"target_fps\":30,\"capacity\":"+String(kCapacity);
+  json+=",\"sensor_speed_profile\":\"gc0308_hb64_aec396_v22\",\"sensor_profile_startup_readback_required\":true";
+  json+=",\"sensor_hblank\":64,\"sensor_vblank\":12,\"sensor_max_exposure_level_rows\":396,\"sensor_flicker_step_rows\":132";
+  json+=",\"sensor_period_estimate_ms\":37.9,\"sensor_period_estimate_validated\":false,\"predictor_min_interval_ms\":25";
+  json+=",\"contrast_reuse\":\"exact_integer_vertical_rolling_v22\"";
+#else
   json+="\"target_fps\":25,\"capacity\":"+String(kCapacity);
+#endif
   json+=",\"pipeline_revision\":\"sparse_cached_rows_double_buffer_v20\",\"camera_buffers\":2,\"grab_latest\":true,\"active_cam_take_zero_drain\":false";
   json+=",\"worker_min_period_us\":"+String(foot_fast_policy::kWorkerPeriodUs)+",\"control_poll_ms\":"+String(foot_fast_policy::kControlPollMs);
   json+=",\"row_cache_ready\":"+String(s.row_cache_ready?"true":"false")+",\"row_cache_internal_bytes\":"+String(foot_image_rows::kRequiredBytes);

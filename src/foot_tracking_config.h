@@ -34,6 +34,14 @@ static constexpr int kWhiteSearchStepYPx = 4;
 static constexpr int kWhiteMaxTemplates =
     1 + 2 * kWhiteSearchRadiusYPx / kWhiteSearchStepYPx;
 static_assert(kWhiteSearchRadiusYPx % kWhiteSearchStepYPx == 0, "Complete vertical search");
+#if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+constexpr bool evenlySpaced(const int* rows,int count) {
+    return count<2 || (rows[count-1]-rows[count-2]==kWhiteSearchStepYPx && evenlySpaced(rows,count-1));
+}
+static_assert(evenlySpaced(kWhiteMarkerARows,5) && evenlySpaced(kWhiteMarkerBRows,5) &&
+              evenlySpaced(kWhiteReferenceARows,3) && evenlySpaced(kWhiteReferenceBRows,3),
+              "Rolling contrast requires consecutive template sample rows");
+#endif
 static_assert(kWhiteReferenceARows[0] - kWhiteSearchRadiusYPx >= 0, "Upper reference in frame");
 static_assert(kWhiteReferenceBRows[kWhiteReferenceRowCount - 1] + kWhiteSearchRadiusYPx < kFrameHeight,
               "Lower reference in frame");

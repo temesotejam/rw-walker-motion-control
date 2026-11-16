@@ -3,6 +3,7 @@
 #include "camera_lifecycle.h"
 #include "runtime_diagnostics.h"
 #include "foot_fast_policy.h"
+#include "camera_speed_profile.h"
 
 #include <Arduino.h>
 #include "driver/gpio.h"
@@ -405,6 +406,20 @@ bool OneShotCamera::initCameraOnTemporaryI2c0() {
   sensor->set_framesize(sensor, FRAMESIZE_QVGA);
   sensor->set_vflip(sensor, 1);
   sensor->set_hmirror(sensor, 0);
+
+#if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+  const bool timing_ok = sensor->id.PID == GC0308_PID && sensor->get_reg && sensor->set_reg &&
+      camera_speed_profile::apply(
+          [sensor](int reg){return sensor->get_reg(sensor,reg,0xff);},
+          [sensor](int reg,int value){return sensor->set_reg(sensor,reg,0xff,value)==0;});
+  if (!timing_ok) {
+    cameraTaskPriorityPatchForgetTask();
+    esp_camera_deinit();
+    (void)i2c_driver_delete(I2C_NUM_0);
+    setError("camera_speed_timing_readback_failed");
+    return false;
+  }
+#endif
 
   err = i2c_driver_delete(I2C_NUM_0);
   if (err != ESP_OK) {

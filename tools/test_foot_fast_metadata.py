@@ -260,9 +260,10 @@ def main():
     reports = []
     with tempfile.TemporaryDirectory(prefix='foot_fast_metadata_') as folder:
         temp = Path(folder); (temp / 'fixture.cpp').write_text(fixture, encoding='utf8')
-        for revision in [19, 20, 21]:
+        for revision in [19, 20, 21, 22]:
             v20 = revision >= 20
-            additions = ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1', '-DCAMERA_FRAME_READY_V21=1'] if revision == 21 else []
+            additions = ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1', '-DCAMERA_FRAME_READY_V21=1'] if revision >= 21 else []
+            if revision == 22: additions += ['-DFOOT_SPEED_V22=1']
             exe = temp / ('v'+str(revision)+'.exe'); destination = exe.with_suffix('.json')
             subprocess.run(['g++', '-std=c++17', '-O0', '-Wall', '-Wextra', '-Werror', '-Wno-format',
                             '-DMALLOC_CAP_INTERNAL=4',
@@ -289,7 +290,7 @@ def main():
             assert size['metadata_bytes'] == len(blob) == metadata['metadata_json_final_bytes']
             assert metadata['metadata_json_reserve_bytes'] == size['metadata_reserve_bytes']
             assert size['metadata_bytes'] <= size['hard_budget_bytes']
-            assert metadata['diagnostic_build_id'] == {19:'walking-energy-admission-v19',20:'walking-foot-fast-v20',21:'walking-foot-frame-ready-v21'}[revision]
+            assert metadata['diagnostic_build_id'] == {19:'walking-energy-admission-v19',20:'walking-foot-fast-v20',21:'walking-foot-frame-ready-v21',22:'walking-foot-speed-v22'}[revision]
             assert metadata['energy_model'] == 'walking_energy_admission_v19'
             assert expanded['walking_energy']['revision'] == 'walking_energy_admission_v19' and expanded['walking_energy']['branch'] == 24
             assert size['foot_rows'] == size['foot_capacity'] == (1280 if v20 else 768)
@@ -304,13 +305,16 @@ def main():
                 assert expanded['foot_frames'][-1]['control_observed_us'] == 123456789012 + 1279*40000 + 50000 + 123456
                 assert expanded['foot_frames'][-1]['row_cache_used'] is True
                 observation = expanded['foot_observation']
-                assert observation['target_fps'] == 25 and observation['capacity'] == 1280
+                assert observation['target_fps'] == (30 if revision == 22 else 25) and observation['capacity'] == 1280
                 assert observation['row_cache_ready'] is True and observation['row_cache_internal_bytes'] == 21120
                 assert observation['performance_validated_on_board'] is False and observation['all_frame_control_receipts_exported'] is True
                 assert size['non_driver_psram_remaining_estimate_bytes'] > 0
-            if revision == 21:
+            if revision >= 21:
                 assert observation['frame_publication'] == 'complete_qvga_y8_dma_before_vsync_v21'
                 assert [observation[k] for k in ['dma_early_frames','dma_vsync_frames','dma_queue_drops','dma_last_full_age_us']] == [123,4,5,39000]
+            if revision == 22:
+                assert observation['sensor_hblank']==64 and observation['worker_min_period_us']==33333
+                assert observation['contrast_reuse']=='exact_integer_vertical_rolling_v22'
             csv_dir = temp / ('v'+str(revision)+'_csv'); csv_dir.mkdir()
             assert converter.write_foot_frames(expanded, csv_dir) == size['foot_rows']
             assert converter.write_walking_energy_diagnostics(expanded, csv_dir) == size['energy_rows']
@@ -328,7 +332,7 @@ def main():
                 'source_sha256': {s: hashlib.sha256((ROOT / s).read_bytes()).hexdigest() for s in sources +
                     ['src/psram_logger.h', 'src/foot_observer.h', 'src/foot_fast_policy.h',
                      'src/walking_energy_runner.inc', 'src/experiment_runner.cpp']}}, indent=2) + '\n', encoding='utf8')
-    print('real v19/v20/v21 full foot + energy metadata capacity, budgets, schema/revisions and host PSRAM estimate PASS')
+    print('real v19/v20/v21/v22 full foot + energy metadata capacity, budgets, schema/revisions and host PSRAM estimate PASS')
 
 
 if __name__ == '__main__':

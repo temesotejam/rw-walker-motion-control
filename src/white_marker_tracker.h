@@ -44,7 +44,8 @@ private:
     const int* referenceRows() const;
     int nominalCenterY() const;
     void evaluate(const foot_image_rows::GrayRowView& gray, int y_offset, Candidate* candidates,
-                  int& count, bool& overflow, WhiteMarkerObservation& weak) const;
+                  int& count, bool& overflow, WhiteMarkerObservation& weak,
+                  int* shared_contrast=nullptr, bool slide=false) const;
 
     int _id;
     uint32_t _success_count = 0;

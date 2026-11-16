@@ -11,6 +11,7 @@ import tempfile
 import prepare_foot_fast_downloadfix_flasher as fix
 import prepare_foot_fast_downloadfix2_flasher as fix2
 import prepare_foot_frame_ready_flasher as ready
+import prepare_foot_speed_flasher as speed
 import prepare_foot_fast_flasher as base
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,6 +73,7 @@ def main():
     check(fix, base, ['-DEXPORT_RETRY_FIX=1'], ['通信再試行', '先に「RWLOGを取得・再開」で保存'])
     check(fix2, fix, ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1'], ['小分けに実行', '再起動理由'])
     check(ready, fix2, ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1', '-DCAMERA_FRAME_READY_V21=1'], ['全画素', '実機では未確認'])
+    check(speed, ready, ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1', '-DCAMERA_FRAME_READY_V21=1', '-DFOOT_SPEED_V22=1'], ['行間待ち時間', '短縮時間は未確認'])
 
 
 if __name__=='__main__':

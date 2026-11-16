@@ -48,12 +48,21 @@ WhiteMarkerObservation WhiteMarker1DTracker::process(const foot_image_rows::Gray
     if (gray.valid()) {
         Candidate candidates[appcfg::kWhiteMaxCandidates];
         int count = 0; bool overflow = false;
+#if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+        int contrast_state[kWidth];
+        bool slide=false;
+#endif
         out.reason = MarkerDetectionReason::LowContrast;
         // Always search all heights. A nominal-row distractor must not hide a
         // stronger displaced marker. Each distinct horizontal island is kept.
         for (int dy = -appcfg::kWhiteSearchRadiusYPx; dy <= appcfg::kWhiteSearchRadiusYPx;
              dy += appcfg::kWhiteSearchStepYPx) {
+#if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+            evaluate(gray, dy, candidates, count, overflow, out, contrast_state, slide);
+            slide=true;
+#else
             evaluate(gray, dy, candidates, count, overflow, out);
+#endif
             ++out.templates_tested;
         }
         out.candidate_count = count;
@@ -111,9 +120,21 @@ WhiteMarkerObservation WhiteMarker1DTracker::process(const foot_image_rows::Gray
 }
 
 void WhiteMarker1DTracker::evaluate(const foot_image_rows::GrayRowView& gray, int dy, Candidate* candidates,
-                                   int& count, bool& overflow, WhiteMarkerObservation& weak) const {
-    int contrast[kWidth], smooth[kWidth] = {};
+                                   int& count, bool& overflow, WhiteMarkerObservation& weak,
+                                   int* shared_contrast, bool slide) const {
+    int local_contrast[kWidth], smooth[kWidth] = {};
+    int* contrast=shared_contrast ? shared_contrast : local_contrast;
     const int* rows = markerRows(); const int* refs = referenceRows();
+    if (slide) {
+        // Each template shifts by one sampled row. Keep exactly the same
+        // integer contrast, replacing only rows entering/leaving each band.
+        const int step=appcfg::kWhiteSearchStepYPx;
+        const uint8_t* old_m=gray.row(rows[0]+dy-step);
+        const uint8_t* new_m=gray.row(rows[appcfg::kWhiteMarkerRowCount-1]+dy);
+        const uint8_t* old_r=gray.row(refs[0]+dy-step);
+        const uint8_t* new_r=gray.row(refs[appcfg::kWhiteReferenceRowCount-1]+dy);
+        for(int x=0;x<kWidth;++x) contrast[x]+=3*(int(new_m[x])-old_m[x])-5*(int(new_r[x])-old_r[x]);
+    } else {
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
     // Stream complete rows instead of alternating eight distant image rows
     // at every column. All sums are integer and keep the original scale.
@@ -140,6 +161,7 @@ void WhiteMarker1DTracker::evaluate(const foot_image_rows::GrayRowView& gray, in
         contrast[x] = 3 * a - 5 * b;
     }
 #endif
+    }
     int rolling = 0;
     for (int x = 0; x < kWindow; ++x) rolling += contrast[x];
     for (int x = kRadius; x < kWidth - kRadius; ++x) {

@@ -262,7 +262,7 @@ static Result run(std::vector<Plan> input,bool poison_image,bool archive_full=fa
  current=nullptr;return out;
 }
 static std::vector<Plan> scenario(){
- std::vector<Plan> out(60); // real idle zero locks only after continuous >=2s
+ std::vector<Plan> out(70); // >=2s even at the v22 worker cadence
  for(int i=0;i<8;++i){Plan p;p.before.running=p.after.running=true;p.before.state_id=p.after.state_id=3;
   p.original=image(202-i,201-i);if(i==0){p.before.running=false;p.before.state_id=2;}
   out.push_back(p);}
@@ -289,24 +289,24 @@ static void fullPipeline(){
   const bool null_frame=source[i].invalid==Invalid::NullFrame;
   if(null_frame)assert(f.released_us==0);
   else assert(f.released_us>f.delivered_us && f.ready_us>f.released_us);
-  assert(b.delay>=37 && b.delay<=40);
+  assert(b.delay>=foot_fast_policy::kWorkerPeriodUs/1000-3 && b.delay<=foot_fast_policy::kWorkerPeriodUs/1000);
   if(i+1<source.size()-1){const auto dt=poisoned.history[i+1].snapshot.latest.delivered_us-f.delivered_us;
    assert(dt>=foot_fast_policy::kWorkerPeriodUs && dt<foot_fast_policy::kWorkerPeriodUs+1100);}
-  if(i<60){assert(b.preview_ok && b.preview==thumbnail(source[i].original));
+  if(i<70){assert(b.preview_ok && b.preview==thumbnail(source[i].original));
    detectionEqual(b.info.frame,f,false);assert(b.info.mekf_attitude.sentinel==73 && b.info.imu_ok);
    assert(equal(b.info.right.center_x_px,f.right_x) && equal(b.info.left.center_x_px,f.left_x));}
-  else {assert(b.preview_ok && b.info.frame.sequence==60 && b.preview==thumbnail(source[59].original));}
-  if(i>=60 && i<68){assert(f.zero_ready && f.right_valid && f.left_valid);
+  else {assert(b.preview_ok && b.info.frame.sequence==70 && b.preview==thumbnail(source[69].original));}
+  if(i>=70 && i<78){assert(f.zero_ready && f.right_valid && f.left_valid);
    assert(f.right_templates==17 && f.left_templates==17);
    phase_ready|=f.pose_projection.reason==foot_phase_prediction::Reason::Ready;
    local_ready|=f.local_projection.reason==foot_local_prediction::Reason::Ready;}
-  if(i>=68 && i<71){assert(!f.frame_valid && !f.row_cache_used && !f.right_valid && !f.left_valid);
+  if(i>=78 && i<81){assert(!f.frame_valid && !f.row_cache_used && !f.right_valid && !f.left_valid);
    assert(std::isnan(f.right_x) && std::isnan(f.left_x));
    assert(f.right_reason==MarkerDetectionReason::NoFrame && f.left_reason==MarkerDetectionReason::NoFrame);
    assert(b.reads.packed_rows==0 && b.reads.capture_rows==0);}
   else assert(f.row_cache_used && b.reads.capture_rows==foot_image_rows::kRequiredRows && b.reads.packed_rows>0 && b.reads.full_rows==0);
  }
- assert(phase_ready && local_ready && poisoned.history[59].snapshot.zero_ready);
+ assert(phase_ready && local_ready && poisoned.history[69].snapshot.zero_ready);
  const auto& last=poisoned.history.back();assert(last.delay==20 && last.snapshot.latest.sequence==poisoned.take);
  assert(last.snapshot.frame_failures==3 && last.snapshot.captured_frames==poisoned.take-3);
  assert(last.snapshot.right_marker_failures==0 && last.snapshot.left_marker_failures==0);
@@ -328,7 +328,7 @@ static void edgeCases(){
  auto c=testedConfig();assert(c.fb_count==2 && c.grab_mode==CAMERA_GRAB_LATEST);
  assert(c.pixel_format==PIXFORMAT_GRAYSCALE && c.frame_size==FRAMESIZE_QVGA && c.fb_location==CAMERA_FB_IN_PSRAM);
  assert(c.xclk_freq_hz==20000000 && c.sccb_i2c_port==I2C_NUM_0 && c.pin_sccb_sda==-1 && c.pin_sccb_scl==-1);
- assert(foot_fast_policy::kWorkerPeriodUs==40000 && foot_fast_policy::kArchiveCapacity==1280);
+ assert(foot_fast_policy::kArchiveCapacity==1280);
  std::cout<<"invalid idle preview, bad timestamps, overrun, full archive, source camera2/LATEST/SCCB0/priority3 Core0 PASS\n";
 }
 static void manualOneShot(){
@@ -383,6 +383,8 @@ def main():
             '-o', str(binary)]
         subprocess.run(command, check=True)
         subprocess.run([str(binary)], check=True)
+        subprocess.run(command+['-DFOOT_SPEED_V22=1'],check=True)
+        subprocess.run([str(binary)],check=True)
 
 
 if __name__ == '__main__':

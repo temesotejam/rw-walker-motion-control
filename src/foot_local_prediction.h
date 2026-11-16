@@ -1,4 +1,5 @@
 #pragma once
+#include "foot_timing_policy.h"
 #include <cmath>
 #include <cstdint>
 
@@ -97,7 +98,7 @@ class Predictor {
     if(ready-frame>160u){count_=0;return reason_=Reason::Stale;}
     if(count_){
       const Point& prior=points_[count_-1];const uint32_t dt=frame-prior.ms;
-      if(dt<40u || dt>200u){
+      if(dt<foot_timing_policy::kMinFrameIntervalMs || dt>200u){
         points_[0]=Point(frame,left,right);count_=1;return reason_=Reason::Gap;
       }
       if(std::fabs(left-prior.left)>8.f || std::fabs(right-prior.right)>8.f ||
