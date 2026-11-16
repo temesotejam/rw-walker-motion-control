@@ -27,7 +27,11 @@
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
 #if defined(EXPORT_RETRY_FIX) && EXPORT_RETRY_FIX
+#if defined(EXPORT_COOPERATIVE_FIX) && EXPORT_COOPERATIVE_FIX
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-fast-v20-downloadfix2"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-fast-v20-downloadfix1"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-fast-v20"
 #endif
@@ -85,6 +89,12 @@
 #endif
 
 namespace RuntimeDiag {
+struct ResetSnapshot {
+  uint32_t reason = 0;
+  const char* name = "UNKNOWN";
+  bool previous_export_valid = false;
+  uint32_t previous_export_phase = 0, previous_export_bytes = 0;
+};
 struct MemorySnapshot { uint32_t at_ms, internal_free, internal_min, largest, dma_free, psram_free; };
 struct ExecutionSnapshot { int32_t camera_init_core = -1, camera_deinit_core = -1, wifi_event_core = -1; };
 enum class Lane : uint32_t { Control, Imu, Camera, Http, Roller, Export, Count };
@@ -101,6 +111,7 @@ enum class Phase : uint32_t {
 };
 #if defined(ARDUINO_ARCH_ESP32)
 void begin();
+ResetSnapshot resetSnapshot();
 bool enabled();
 void setEnabled(bool enabled);
 bool runActive();
@@ -123,6 +134,7 @@ void cameraDriverStopped();
 void wifiEvent(uint32_t event, int client_change = 0, int ap_active = -1);
 void pollFallback(); // Only used if the independent observer task could not be created.
 #else
+inline ResetSnapshot resetSnapshot() { return {}; }
 inline bool& enabledState() { static bool value = false; return value; }
 inline bool& runState() { static bool value = false; return value; }
 inline bool enabled() { return enabledState(); }

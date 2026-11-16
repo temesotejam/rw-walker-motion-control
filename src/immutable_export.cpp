@@ -35,9 +35,27 @@ void ImmutableExport::loop() {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY); build();
   }
 }
+void ImmutableExport::metadataProgress(void* context, size_t bytes) {
+  auto& self = *static_cast<ImmutableExport*>(context);
+  const uint32_t now = micros();
+  if (static_cast<uint32_t>(now - self.metadata_yield_us_) < 2000U) return;
+  portENTER_CRITICAL(&self.mux_);
+  self.status_.metadata_bytes = bytes;
+  portEXIT_CRITICAL(&self.mux_);
+  RuntimeDiag::beat(RuntimeDiag::Lane::Export, bytes, false);
+  // A scheduler yield alone cannot run the lower-priority idle task. Block for
+  // one tick so watchdog housekeeping and networking can progress on core 0.
+  vTaskDelay(1);
+  self.metadata_yield_us_ = micros();
+}
 void ImmutableExport::build() {
   RuntimeDiag::phase(RuntimeDiag::Lane::Export, RuntimeDiag::Phase::ExportMetadata);
-  if (!logger_->buildMetadataJson(metadata_)) {
+  metadata_yield_us_ = micros();
+  metadata_.setProgress(metadataProgress, this);
+  const bool metadata_ok = logger_->buildMetadataJson(metadata_);
+  metadata_.setProgress(nullptr);
+  portENTER_CRITICAL(&mux_); status_.metadata_bytes = metadata_.length(); portEXIT_CRITICAL(&mux_);
+  if (!metadata_ok) {
     portENTER_CRITICAL(&mux_);
     snprintf(status_.error, sizeof(status_.error), "metadata_build_failed_at_%lu_bytes",
         static_cast<unsigned long>(metadata_.length()));
@@ -67,6 +85,7 @@ void ImmutableExport::build() {
   // Publish only after the complete CRC and every byte/offset are immutable.
   RuntimeDiag::phase(RuntimeDiag::Lane::Export, RuntimeDiag::Phase::Publish);
   Status complete;
+  complete.metadata_bytes = metadata_.length();
   complete.bytes = header_.crc_offset + 4; complete.hashed_bytes = complete.bytes;
   complete.crc = crc_;
   snprintf(complete.token, sizeof(complete.token), "%08lx%08lx",

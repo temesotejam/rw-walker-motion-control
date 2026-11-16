@@ -11,6 +11,7 @@ class ImmutableExport {
   struct Status {
     Phase phase = Phase::Empty;
     uint32_t bytes = 0, hashed_bytes = 0, crc = 0;
+    uint32_t metadata_bytes = 0;
     char token[24] = {}, filename[80] = {}, error[80] = {};
   };
   bool reserveMetadata();
@@ -24,6 +25,8 @@ class ImmutableExport {
   static void entry(void* p) { static_cast<ImmutableExport*>(p)->loop(); }
   void loop();
   void build();
+  static void metadataProgress(void* context, size_t bytes);
+  uint32_t metadata_yield_us_ = 0;
   PsramLogger* logger_ = nullptr;
   TaskHandle_t task_ = nullptr;
   mutable portMUX_TYPE mux_ = portMUX_INITIALIZER_UNLOCKED;

@@ -156,6 +156,16 @@ void tick() {
     }
   }
   if (!enabled()) {
+    // Retain export evidence across reset without heap scans or USB reporting.
+    const auto export_phase = currentPhase(Lane::Export);
+    if (export_phase == Phase::ExportMetadata || export_phase == Phase::ExportCrc) {
+      const uint32_t now = millis();
+      if (now - last_sample_ms >= 250 || !last_sample_ms) {
+        sample_journal.save(capture()); last_sample_ms = now;
+      }
+      report_sent = report_length = 0;
+      return;
+    }
     report_sent = report_length = 0; last_sample_ms = last_report_ms = 0;
     return;
   }
@@ -207,6 +217,16 @@ void observer(void*) { for (;;) { tick(); vTaskDelay(pdMS_TO_TICKS(20)); } }
 }
 
 bool enabled() { return get(diagnostics_enabled) != 0; }
+ResetSnapshot resetSnapshot() {
+  ResetSnapshot s;
+  s.reason = current_boot.reset; s.name = reason(current_boot.reset);
+  s.previous_export_valid = have_previous_sample;
+  if (have_previous_sample) {
+    const auto& p = previous_sample.lanes[static_cast<uint32_t>(Lane::Export)];
+    s.previous_export_phase = p.phase; s.previous_export_bytes = p.detail;
+  }
+  return s;
+}
 void setEnabled(bool value) { put(diagnostics_enabled, value); }
 bool runActive() { return get(run_active) != 0; }
 ExecutionSnapshot executionSnapshot() {

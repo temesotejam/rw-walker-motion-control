@@ -63,6 +63,18 @@ function harness(scenario={}) {
 }
 
 (async()=>{
+  // The recorded failure: after reboot the manifest becomes empty. Do not wait
+  // 120 seconds or promise resumption of data that no longer exists on device.
+  for (const changed of [{phase:'empty'}, {boot_id:999}, {boot_id:999,phase:'ready'}]) {
+    const lost=harness({manifest:changed});await lost.run();
+    assert.equal(lost.manifestCount,1);assert.equal(lost.saves.length,0);
+    assert.equal(lost.diagnostic().browser_transfer.source_lost,true);
+    assert.match(lost.element('transfer').textContent,/再起動/);
+    assert.match(lost.element('transfer').textContent,/続きは取得できません/);
+    assert(!lost.requests.some(p=>p.startsWith('/export/chunk')));
+  }
+  const same=harness({manifest:{boot_id:123,metadata_bytes:12345}});await same.run();
+  assert.equal(same.diagnostic().browser_transfer.phase,'complete');
   // Both formerly-unretried phases fail once. A timed-out POST may already have
   // queued export; retry the idempotent endpoint, then wait through building.
   let h=harness({prepareAbort:true,manifestAbort:1,building:true});await h.run();

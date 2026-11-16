@@ -1199,8 +1199,16 @@ async function download() {
         throw new Error('本体のログ確定が120秒以内に完了しませんでした。診断JSONを保存してください。');
       m = await exportRequest('/export/manifest', {}, 'ログ確定状況の確認');
       transferNote({manifest:m});
+      if ((m.boot_id != null && transferDiagnostic.boot_id != null && m.boot_id !== transferDiagnostic.boot_id) || m.phase === 'empty') {
+        transferNote({source_lost:true, observed_boot_id:m.boot_id ?? null});
+        throw new Error('取得元のログが失われています。本体の再起動・接続先の変更・ログ消去の可能性があります。診断JSONを保存してください。');
+      }
       if (m.phase === 'error') throw new Error(m.error);
-      if (m.phase !== 'ready') { $('transfer').textContent = `ログ確定中 ${m.hashed_bytes} / ${m.bytes || '?'} bytes`; await nap(exportPolicy.pollMs); }
+      if (m.phase !== 'ready') {
+        $('transfer').textContent = m.bytes ? `ログCRC計算中 ${m.hashed_bytes} / ${m.bytes} bytes` :
+          `ログ付加情報を作成中 ${m.metadata_bytes ?? 0} bytes`;
+        await nap(exportPolicy.pollMs);
+      }
     } while (m.phase !== 'ready');
     if (!/^[a-f0-9]{16}$/.test(m.token) || !Number.isInteger(m.bytes) || m.bytes < 114 || m.bytes > 9 * 1024 * 1024 || m.chunk_bytes !== 4096)
       throw new Error('ログ仕様が一致しません。ページを更新してください。');
@@ -1239,7 +1247,9 @@ async function download() {
     transferNote({phase:cancelTransfer ? 'paused' : 'error', error:error.message});
     const retained = transferDiagnostic.confirmed_bytes;
     const progress = retained ? `今回の取得・再開で検証済み${retained} bytes。` : 'ログ確定または最初のチャンクの取得が未完了です。';
-    $('transfer').textContent = `${error.message}（${progress}取得済みの部分は再開に利用します。）`;
+    $('transfer').textContent = transferDiagnostic.source_lost ?
+      `${error.message}（端末に取得済みの部分は保持しますが、失われた本体ログの続きは取得できません。）` :
+      `${error.message}（${progress}取得済みの部分は再開に利用します。）`;
   } finally { transferAbort = null; transferRunning = false; controls(); }
 }
 function footCsv(rows) {

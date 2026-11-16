@@ -57,6 +57,7 @@ FIXTURE = r'''
 #include "psram_logger.h"
 #include "foot_observer.h"
 #include "experiment_runner.h"
+#include "immutable_export.h"
 #undef private
 #include "foot_fast_policy.h"
 #include "imu_manager.h"
@@ -170,6 +171,35 @@ int main(int argc,char** argv){
  feet.control_observation_attempts_=FootObserver::kCapacity;
  logger.markMeasurementDone();logger.seal();PsramString json;assert(json.reserve(PsramLogger::kMetadataJsonReserveBytes));
  const bool built=logger.buildMetadataJson(json);
+ // Exercise the production export callback throughout real maximum-capacity
+ // serializers. Simulated CPU time is not a board performance measurement.
+ ImmutableExport export_job;export_job.logger_=&logger;
+ export_job.metadata_yield_us_=host_us=UINT32_MAX-5000;
+ PsramString cooperative;assert(cooperative.reserve(PsramLogger::kMetadataJsonReserveBytes));
+ cooperative.setProgress([](void* context,size_t bytes){
+   auto* job=static_cast<ImmutableExport*>(context);
+   host_us+=1000;const auto before=host_us;
+   ImmutableExport::metadataProgress(job,bytes);
+   assert(static_cast<uint32_t>(host_us-before)==0 || static_cast<uint32_t>(host_us-before)==1000);
+   assert(static_cast<uint32_t>(host_us-job->metadata_yield_us_)<2000);
+ },&export_job);
+ assert(logger.buildMetadataJson(cooperative));cooperative.setProgress(nullptr);
+ assert(export_job.status().metadata_bytes>json.length()-4096);
+ assert(std::string(json.c_str())==cooperative.c_str());
+ // Run the actual worker through immutable publication and CRC validation.
+ assert(export_job.reserveMetadata());export_job.build();
+ const auto exported=export_job.status();
+ assert(exported.phase==ImmutableExport::Phase::Ready && exported.metadata_bytes==json.length());
+ assert(export_job.metadata_.progress_==nullptr);
+ std::vector<uint8_t> binary(exported.bytes);
+ for(uint32_t offset=0;offset<exported.bytes;){
+   const uint32_t n=std::min<uint32_t>(4096,exported.bytes-offset);
+   assert(export_job.chunk(exported.token,offset,n,binary.data()+offset));offset+=n;
+ }
+ assert(export_protocol::crc32(0,binary.data(),binary.size()-4)==exported.crc);
+ ImmutableExport failed;failed.logger_=&logger;assert(failed.metadata_.reserve(128));failed.build();
+ assert(failed.status().phase==ImmutableExport::Phase::Error && failed.metadata_.progress_==nullptr);
+ assert(!failed.chunk("",0,1,binary.data()));
  std::ofstream output(argv[1],std::ios::binary);output.write(json.c_str(),json.length());output.close();
  const size_t samples=Config::LOG_BUFFER_BYTES/sizeof(LogSample)*sizeof(LogSample);
  const size_t core=samples+PsramLogger::eventStorageBytes()+sizeof(FootFrame)*FootObserver::kCapacity+
@@ -220,7 +250,7 @@ def main():
     inc = (ROOT / 'src/walking_energy_runner.inc').read_text(encoding='utf8')
     fixture = FIXTURE.replace('__WALKING_SERIALIZER__', function(inc, 'void ExperimentRunner::appendWalkingEnergyMetadata('))
     fixture = fixture.replace('__FOOT_SUPPORT_SERIALIZER__', function(cpp, 'void ExperimentRunner::appendFootSupportMetadata('))
-    sources = ['src/psram_logger.cpp', 'src/foot_observer.cpp', 'src/foot_angle_estimator.cpp',
+    sources = ['src/immutable_export.cpp', 'src/psram_logger.cpp', 'src/foot_observer.cpp', 'src/foot_angle_estimator.cpp',
                'src/white_marker_tracker.cpp', 'src/control_work_profile.cpp', 'src/control_latency.cpp', 'src/mekf6.cpp',
                'tools/fixtures/adafruit_ahrs_2_4_0/Adafruit_AHRS_Madgwick.cpp']
     reports = []

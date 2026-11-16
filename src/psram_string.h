@@ -29,6 +29,12 @@ class PsramString {
   void append(const char* s, size_t n) {
     if (failed_ || !data_ || n > capacity_ - length_) { failed_ = true; return; }
     memcpy(data_ + length_, s, n); length_ += n; data_[length_] = 0;
+    if (progress_) progress_(progress_context_, length_);
+  }
+  // Export owner only, outside application locks; disabled for other users.
+  using Progress = void (*)(void*, size_t);
+  void setProgress(Progress progress, void* context = nullptr) {
+    progress_ = progress; progress_context_ = context;
   }
   size_t length() const { return length_; }
   const char* c_str() const { return data_ ? data_ : ""; }
@@ -38,8 +44,11 @@ class PsramString {
   void swap(PsramString& s) {
     std::swap(data_, s.data_); std::swap(length_, s.length_);
     std::swap(capacity_, s.capacity_); std::swap(failed_, s.failed_);
+    std::swap(progress_, s.progress_); std::swap(progress_context_, s.progress_context_);
   }
   char* data_ = nullptr;
   size_t length_ = 0, capacity_ = 0;
   bool failed_ = false;
+  Progress progress_ = nullptr;
+  void* progress_context_ = nullptr;
 };

@@ -4,6 +4,10 @@
 
 ## 現在の状態
 
+- **2026-11-16 診断(5)でログ取得中の本体再起動を確認。** downloadfix1/browser開始boot2760813921/run1→保存boot1032406554/READY/run0/samples0/exportempty。ユーザーは電源操作も接続先変更もしていないと確認、歩行動作あり。端末confirmed/cache/receivedも0で今回RWLOGを回収不能。120s表示は再起動後emptyをbuilding扱いしたUI不具合。reset理由は旧JSONにないため再起動原因は未確定。HTTP読取timeout、USBなし、書込み/新測定/clear/resetなし。
+- **対策候補v20-downloadfix2を準備。実機取得成功は未確認。** metadata生成に実行譲渡がなくCPU0待機taskの5s WDT/panicへ抵触し得る欠陥を修正。export限定callbackで追記境界/経過2msごと1tick待機、manifest metadata進捗/boot追加、status reset理由/前起動export RTC証拠追加。browser別boot/emptyは即中止、消失データの再開を約束しない。エネルギー制御/足認識/出力幅は維持。詳細 `docs/FOOT_FAST_V20_DOWNLOADFIX2.md`。
+- env `atoms3cam-foot-fast-downloadfix2` / ID `walking-foot-fast-v20-downloadfix2` / page `http://127.0.0.1:8767/foot-fast-downloadfix2/`。実C++最大serializer＋export worker/CRC/容量失敗/模擬時間wrap/JSON全一致、実JS再起動/再開/旧UI、transport/両flasher/embed PASS。build184.895s/RAM127620/Flash1924033、bin1924400bytes/SHA256 `09b4be475f978dabefccfb50f8b53f21178796fe55a0dd24192bc39d4b7799f8`。HTTP8files全一致、旧32files保持。local `analysis/2026-11-16-export-reboot/` に診断/解析/build確認を保存。次は同一bootで測定後RWLOGのCRC検証成功を確認し、再発時は再電源投入前の診断reset理由で原因を確定する。
+
 - **2026-11-16 機体の区別を訂正。40505704は同じプログラムを実行した試作の別機体。** 起動停止や足角度差の小ささはその機体についての結果で、今回の同じ機体での診断2件の歩行原因へ一般化しない。旧3試行との速度比較も機体/運動条件が揃っていない。前報告 `docs/FOOT_FAST_V20_TRIAL_40505704.md` に訂正を追加。
 - **診断JSON (3)/(4)の保存中abortへ通信修正版を準備。** 両方v20/FINISHED30s/samples10127・10071/error空/export building、末尾fps20.0525・20.1572。FINISHED後camera停止によりstale5〜6sになる仕様で、測定中停止の証拠ではない。右足は許容0.2度外挿でcontrol_range_ok、memory0はsampled=false。browser旧3s timeoutの英語例外を直出しし、prepare/manifestは再試行せず全体中断する構造を再現。診断には失敗先がなく実通信先/遅延原因は未特定。現在接続boot2265249153は別起動/run0/samples0/exportemptyで当時RWLOGを回収不能。歩行の原因評価は時系列不足で保留。
 - 修正版 `walking-foot-fast-v20-downloadfix1` / env `atoms3cam-foot-fast-downloadfix` / page `http://127.0.0.1:8767/foot-fast-downloadfix/`。要求8s×5、prepare/manifestも再試行、building待ち120s、一時停止でfetch中止、CRC/token付きcache再開/既存完成保持。診断にbrowser_transfer段階/要求/例外/取得bytesを追加。v20raw全receiptをbrowserCSVで消さない修正も含む。足認識/エネルギー制御の設定・係数・入力幅は維持。詳細 `docs/FOOT_FAST_V20_DOWNLOADFIX1.md`。

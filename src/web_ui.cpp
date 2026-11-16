@@ -254,6 +254,11 @@ void WebUi::status() {
   json += ",\"diagnostic_build_id\":\"" RUNTIME_DIAGNOSTIC_BUILD_ID "\"";
 #endif
   json += ",\"boot_id\":" + String(boot_id_);
+  const auto reset = RuntimeDiag::resetSnapshot();
+  json += ",\"reset\":{\"reason\":" + String(reset.reason) + ",\"name\":\"" + String(reset.name);
+  json += "\",\"previous_export_valid\":" + String(reset.previous_export_valid ? "true" : "false");
+  json += ",\"previous_export_phase\":" + String(reset.previous_export_phase);
+  json += ",\"previous_export_bytes\":" + String(reset.previous_export_bytes) + "}";
   json += ",\"network\":{\"phase\":\"" + String(offline_.name()) + "\",\"last_error\":\"" + String(offline_.error()) + "\"}";
   json += ",\"usb_diagnostics\":" + String(RuntimeDiag::enabled() ? "true" : "false");
   json += ",\"running\":" + String(s.running ? "true" : "false");
@@ -395,12 +400,13 @@ void WebUi::status() {
 void WebUi::manifest() {
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpManifest);
   const auto s = export_->status();
-  char body[420];
+  char body[540];
   snprintf(body, sizeof(body),
       "{\"phase\":\"%s\",\"token\":\"%s\",\"bytes\":%lu,\"hashed_bytes\":%lu,\"crc32\":%lu,"
-      "\"chunk_bytes\":4096,\"filename\":\"%s\",\"error\":\"%s\"}",
+      "\"chunk_bytes\":4096,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"metadata_bytes\":%lu}",
       phase(s.phase), s.token, static_cast<unsigned long>(s.bytes), static_cast<unsigned long>(s.hashed_bytes),
-      static_cast<unsigned long>(s.crc), s.filename, s.error);
+      static_cast<unsigned long>(s.crc), s.filename, s.error,
+      static_cast<unsigned long>(boot_id_), static_cast<unsigned long>(s.metadata_bytes));
   server_->sendHeader("Cache-Control", "no-store"); server_->send(200, "application/json", body);
 }
 static bool unsignedArg(const String& text, uint32_t& value) {
