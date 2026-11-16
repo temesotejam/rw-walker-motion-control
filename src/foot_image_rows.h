@@ -9,6 +9,49 @@
 // No allocation or camera lifetime is hidden in either type.
 namespace foot_image_rows {
 constexpr size_t kFrameBytes=static_cast<size_t>(appcfg::kFrameWidth)*appcfg::kFrameHeight;
+// Logical tracker/calibration coordinates remain 320x240. Native sensor bytes
+// have a distinct shape and must enter through an explicitly mapping cache.
+constexpr int kRawFrameWidth=appcfg::kFrameWidth;
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+constexpr int kRawFrameHeight=236,kRawYOrigin=-2;
+#else
+constexpr int kRawFrameHeight=appcfg::kFrameHeight,kRawYOrigin=0;
+#endif
+constexpr size_t kRawFrameBytes=static_cast<size_t>(kRawFrameWidth)*kRawFrameHeight;
+constexpr int rawYForLogical(int logical_y) {return logical_y+kRawYOrigin;}
+constexpr bool rawFrameBytesValid(size_t bytes) {
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  return bytes==kRawFrameBytes;
+#else
+  return bytes>=kRawFrameBytes;
+#endif
+}
+// Display-only padding. Missing sensor rows never become tracker evidence.
+inline uint8_t rawPixelOrZero(const uint8_t* raw,size_t bytes,int logical_x,int logical_y) {
+  const int raw_y=rawYForLogical(logical_y);
+  return raw && rawFrameBytesValid(bytes) && logical_x>=0 && logical_x<kRawFrameWidth &&
+      logical_y>=0 && logical_y<appcfg::kFrameHeight && raw_y>=0 && raw_y<kRawFrameHeight
+      ? raw[static_cast<size_t>(raw_y)*kRawFrameWidth+logical_x] : 0;
+}
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+// Display-only 2:1 sampling in logical coordinates. Validate the two buffers
+// once, then map each row once instead of checking all 19,200 output pixels.
+// Source and destination must not overlap; invalid inputs leave output intact.
+inline bool copyNativeThumbnail(const uint8_t* raw,size_t bytes,uint8_t* output,size_t capacity) {
+  constexpr size_t width=appcfg::kFrameWidth/2,height=appcfg::kFrameHeight/2;
+  if(!raw || !rawFrameBytesValid(bytes) || !output || capacity<width*height)return false;
+  for(size_t y=0;y<height;++y) {
+    uint8_t* destination=output+y*width;
+    const int raw_y=rawYForLogical(static_cast<int>(y)*2);
+    if(raw_y<0 || raw_y>=kRawFrameHeight)memset(destination,0,width);
+    else {
+      const uint8_t* source=raw+static_cast<size_t>(raw_y)*kRawFrameWidth;
+      for(size_t x=0;x<width;++x)destination[x]=source[x*2];
+    }
+  }
+  return true;
+}
+#endif
 constexpr bool reachesRow(int y,int base) {
   return y-base>=-appcfg::kWhiteSearchRadiusYPx && y-base<=appcfg::kWhiteSearchRadiusYPx &&
       (y-base+appcfg::kWhiteSearchRadiusYPx)%appcfg::kWhiteSearchStepYPx==0;
@@ -28,6 +71,11 @@ constexpr size_t countRows(int y=0) {
 }
 constexpr size_t kRequiredRows=countRows();
 constexpr size_t kRequiredBytes=kRequiredRows*appcfg::kFrameWidth;
+constexpr bool requiredRawRowsValid(int y=0) {
+  return y>=appcfg::kFrameHeight || ((!neededRow(y) ||
+      (rawYForLogical(y)>=0 && rawYForLogical(y)<kRawFrameHeight)) && requiredRawRowsValid(y+1));
+}
+static_assert(requiredRawRowsValid(),"Every requested logical row exists in raw sensor geometry");
 static_assert(kRequiredRows>0 && kRequiredRows<255,"Packed row index fits one byte");
 static_assert(appcfg::kWhiteSearchStepYPx>0,"Finite complete height search");
 
@@ -40,6 +88,7 @@ inline ReadCounts& readCounts(){static ReadCounts counts;return counts;}
 
 class RowCache;
 class UpperRowCache;
+class LowerRowCache;
 class GrayRowView {
  public:
   GrayRowView()=default;
@@ -62,6 +111,7 @@ class GrayRowView {
  private:
   friend class RowCache;
   friend class UpperRowCache;
+  friend class LowerRowCache;
   GrayRowView(const uint8_t* data,const uint8_t* indices):data_(data),indices_(indices){}
   const uint8_t* data_=nullptr;
   const uint8_t* indices_=nullptr;
@@ -75,12 +125,12 @@ class RowCache {
   }
   // Source and caller storage must not overlap. A failed capture invalidates
   // the previous cache instead of silently reusing older pixels.
-  bool capture(const uint8_t* gray,size_t bytes=kFrameBytes) {
+  bool capture(const uint8_t* gray,size_t bytes=kRawFrameBytes) {
     invalidate();
-    if(!gray || bytes<kFrameBytes || !storage_ || capacity_<kRequiredBytes)return false;
+    if(!gray || !rawFrameBytesValid(bytes) || !storage_ || capacity_<kRequiredBytes)return false;
     for(int y=0;y<appcfg::kFrameHeight;++y)if(indices_[y]!=255) {
       memcpy(storage_+static_cast<size_t>(indices_[y])*appcfg::kFrameWidth,
-             gray+static_cast<size_t>(y)*appcfg::kFrameWidth,appcfg::kFrameWidth);
+             gray+static_cast<size_t>(rawYForLogical(y))*kRawFrameWidth,appcfg::kFrameWidth);
 #if defined(FOOT_IMAGE_ROWS_TEST_READS) && FOOT_IMAGE_ROWS_TEST_READS
       ++readCounts().capture_rows;
 #endif

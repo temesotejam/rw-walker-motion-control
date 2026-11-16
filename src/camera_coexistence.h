@@ -4,10 +4,16 @@
 #include "esp_camera.h"
 #include "freertos/semphr.h"
 #include "camera_speed_profile.h"
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+#include "camera_native_skip_profile.h"
+#endif
 
 struct CameraOneShotSnapshot {
   char error[64] = "not_initialized";
   camera_speed_profile::Report speed_profile;
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  camera_native_skip_profile::Report native_profile;
+#endif
   uint16_t sensor_pid = 0;
   bool camera_ok = false;
   bool first_frame_seen = false;

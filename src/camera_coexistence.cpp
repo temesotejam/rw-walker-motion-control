@@ -3,6 +3,7 @@
 #include "camera_lifecycle.h"
 #include "runtime_diagnostics.h"
 #include "foot_fast_policy.h"
+#include "foot_image_rows.h"
 #include "camera_speed_profile.h"
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
 #include "camera_row_overlap.h"
@@ -139,12 +140,28 @@ bool OneShotCamera::beginOnOwnerCore() {
   // Complete exactly one boot frame so cam_task is known to be out of an
   // in-progress frame, then enter the idle state. There is NO background
   // camera task in this serial-debug build.
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  // Reject pre-change queued/in-progress frames, including a QVGA prefix that
+  // happened to have the native byte count before the sensor was configured.
+  const uint64_t fresh_since=esp_timer_get_time();
+  const uint64_t boot_deadline=fresh_since+uint64_t(kCaptureTimeoutMs)*1000;
+  cam_start();
+  camera_fb_t* boot_frame=nullptr;
+  while(esp_timer_get_time()<boot_deadline) {
+    boot_frame=cam_take(pdMS_TO_TICKS(50));
+    if(!boot_frame)continue;
+    const uint64_t stamp=uint64_t(boot_frame->timestamp.tv_sec)*1000000ULL+boot_frame->timestamp.tv_usec;
+    if(stamp>=fresh_since && boot_frame->len==foot_image_rows::kRawFrameBytes)break;
+    cam_give(boot_frame);boot_frame=nullptr;
+  }
+#else
 #if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
   // The clock switch stopped VSYNC admission. Rearm only after sensor timing
   // and SCCB release have completed, before waiting for the first full frame.
   cam_start();
 #endif
   camera_fb_t* boot_frame = cam_take(pdMS_TO_TICKS(kCaptureTimeoutMs));
+#endif
   cameraTaskPriorityPatchSampleStack();
   if (!boot_frame) {
     cam_stop();
@@ -164,7 +181,7 @@ bool OneShotCamera::beginOnOwnerCore() {
   snapshot_.frame_count = 1;
   snapshot_.last_frame_bytes = boot_frame->len;
   snapshot_.last_width = 320;
-  snapshot_.last_height = 240;
+  snapshot_.last_height = foot_image_rows::kRawFrameHeight;
 
   cam_stop();
   setXclkEnabled(false);
@@ -224,7 +241,7 @@ camera_fb_t* OneShotCamera::acquire(uint32_t timeout_ms) {
   }
 
   fb->width = 320;
-  fb->height = 240;
+  fb->height = foot_image_rows::kRawFrameHeight;
   fb->format = PIXFORMAT_GRAYSCALE;
 
   portENTER_CRITICAL(&mux_);
@@ -458,6 +475,27 @@ bool OneShotCamera::initCameraOnTemporaryI2c0() {
   }
 #endif
 
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  cam_stop();
+  delay(2);
+  flushQueuedFrames(); // Receiver is stopped; this is not the live polling path.
+  const bool native_ok=camera_native_skip_profile::apply(
+      [sensor](int reg){return sensor->get_reg(sensor,reg,0xff);},
+      [sensor](int reg,int value){return sensor->set_reg(sensor,reg,0xff,value)==0;},
+      [](unsigned ms){delay(ms);}, &snapshot_.native_profile);
+  if(!native_ok) {
+    cameraTaskPriorityPatchForgetTask();
+    esp_camera_deinit();
+    (void)i2c_driver_delete(I2C_NUM_0);
+    setError("camera_native_skip_readback_failed");
+    return false;
+  }
+  // Keep SDK bookkeeping consistent with the verified empirical orientation.
+  sensor->status.vflip=0;
+  sensor->status.hmirror=0;
+  delay(50);
+  flushQueuedFrames();
+#endif
   err = i2c_driver_delete(I2C_NUM_0);
   if (err != ESP_OK) {
     cameraTaskPriorityPatchForgetTask();
@@ -503,7 +541,7 @@ camera_fb_t* OneShotCamera::acquireContinuous(uint32_t timeout_ms) {
   cameraTaskPriorityPatchSampleStack();
   // The low-level cam_take API does not populate the wrapper's format fields.
   // Length is checked by FootObserver before any image access.
-  if (fb) { fb->width = 320; fb->height = 240; fb->format = PIXFORMAT_GRAYSCALE; }
+  if (fb) { fb->width = 320; fb->height = foot_image_rows::kRawFrameHeight; fb->format = PIXFORMAT_GRAYSCALE; }
   portENTER_CRITICAL(&mux_);
   snapshot_.last_capture_us = static_cast<uint32_t>(micros() - start);
   if (snapshot_.last_capture_us > snapshot_.max_capture_us) snapshot_.max_capture_us = snapshot_.last_capture_us;

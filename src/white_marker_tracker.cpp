@@ -128,6 +128,9 @@ WhiteMarkerObservation WhiteMarker1DTracker::process(const foot_image_rows::Gray
 WhiteMarker1DTracker::PreparedFeatures WhiteMarker1DTracker::prepare(const foot_image_rows::GrayRowView& gray) const {
     const uint32_t start=micros();
     PreparedFeatures prepared;
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+    prepared.admitted_=true; // Preserve ordinary NoFrame handling as well.
+#endif
     prepared.marker_id_=_id; prepared.image_valid_=gray.valid();
     auto& out=prepared.observation_;
     out.id=_id; out.center_y_px=nominalCenterY();
@@ -156,13 +159,80 @@ WhiteMarker1DTracker::PreparedFeatures WhiteMarker1DTracker::prepare(const foot_
     prepared.processing_us=micros()-start;
     return prepared;
 }
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+WhiteMarker1DTracker::PreparedScan WhiteMarker1DTracker::beginScan() const {
+    PreparedScan scan;
+    if(_id!=appcfg::kMarkerAId && _id!=appcfg::kMarkerBId)return scan;
+    scan.failed_=false;
+    auto& prepared=scan.features_;
+    prepared.marker_id_=_id; prepared.image_valid_=true;
+    prepared.observation_.id=_id;
+    prepared.observation_.center_y_px=nominalCenterY();
+    prepared.observation_.reason=MarkerDetectionReason::LowContrast;
+    return scan;
+}
+bool WhiteMarker1DTracker::appendAvailable(PreparedScan& scan,
+        const foot_image_rows::GrayRowView& gray,int maxLogicalRow) const {
+    const uint32_t start=micros();
+    auto& prepared=scan.features_;
+    if(!scan.valid() || prepared.marker_id_!=_id || !gray.valid() ||
+       maxLogicalRow < -1 || maxLogicalRow >= appcfg::kFrameHeight) {
+        scan.failed_=true;
+        prepared.processing_us+=micros()-start;
+        return false;
+    }
+    const int* marker=markerRows(); const int* reference=referenceRows();
+    while(scan.next_dy_<=appcfg::kWhiteSearchRadiusYPx) {
+        const int dy=scan.next_dy_;
+        bool available=true;
+        // Check all current-template rows before asking the view for any pixel.
+        for(int i=0;i<appcfg::kWhiteMarkerRowCount;++i)
+            if(marker[i]+dy>maxLogicalRow)available=false;
+        for(int i=0;i<appcfg::kWhiteReferenceRowCount;++i)
+            if(reference[i]+dy>maxLogicalRow)available=false;
+        if(!available)break;
+        bool rows_present=true;
+        for(int i=0;i<appcfg::kWhiteMarkerRowCount;++i)
+            if(!gray.row(marker[i]+dy))rows_present=false;
+        for(int i=0;i<appcfg::kWhiteReferenceRowCount;++i)
+            if(!gray.row(reference[i]+dy))rows_present=false;
+#if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+        const bool slide=dy!=-appcfg::kWhiteSearchRadiusYPx;
+        if(slide && (!gray.row(marker[0]+dy-appcfg::kWhiteSearchStepYPx) ||
+                     !gray.row(reference[0]+dy-appcfg::kWhiteSearchStepYPx)))rows_present=false;
+#endif
+        if(!rows_present){scan.failed_=true;break;}
+#if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+        evaluate(gray,dy,prepared.candidates_,prepared.count_,prepared.overflow_,
+                 prepared.observation_,scan.contrast_,slide);
+#else
+        evaluate(gray,dy,prepared.candidates_,prepared.count_,prepared.overflow_,prepared.observation_);
+#endif
+        ++prepared.observation_.templates_tested;
+        prepared.observation_.candidate_count=prepared.count_;
+        scan.next_dy_+=appcfg::kWhiteSearchStepYPx;
+    }
+    prepared.processing_us+=micros()-start;
+    return !scan.failed_;
+}
+WhiteMarker1DTracker::PreparedFeatures WhiteMarker1DTracker::finishScan(const PreparedScan& scan) const {
+    if(!scan.complete() || scan.features_.marker_id_!=_id)return PreparedFeatures{};
+    PreparedFeatures prepared=scan.features_;
+    prepared.admitted_=true;
+    return prepared;
+}
+#endif
 WhiteMarkerObservation WhiteMarker1DTracker::processPrepared(const PreparedFeatures& prepared) {
     return processPreparedAt(prepared,micros());
 }
 WhiteMarkerObservation WhiteMarker1DTracker::processPreparedAt(const PreparedFeatures& prepared,uint32_t now) {
     // A different lane/default value is a programming/admission error, not a
     // new failed image. Refuse it without changing temporal state or counters.
-    if(prepared.marker_id_!=_id) {
+    if(prepared.marker_id_!=_id
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+       || !prepared.admitted_
+#endif
+    ) {
         WhiteMarkerObservation out;
         out.id=_id; out.center_y_px=nominalCenterY();
         out.success_count=_success_count; out.fail_count=_fail_count;

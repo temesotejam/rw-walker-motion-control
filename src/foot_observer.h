@@ -7,6 +7,9 @@
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
 #include "camera_row_overlap.h"
 #endif
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+#include "foot_lower_rows.h"
+#endif
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
 #include "foot_image_rows.h"
 #include "foot_fast_policy.h"
@@ -76,6 +79,12 @@ struct FootSnapshot {
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
   uint32_t upper_attempts=0,upper_hits=0,upper_misses=0;
 #endif
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+  // Latest admission/timing and boot counters only; FootFrame archive is unchanged.
+  uint32_t lower_attempts=0,lower_hits=0,lower_misses=0,lower_prepare_us=0;
+  bool lower_overlap_used=false;
+  uint8_t lower_templates_before_delivery=0;
+#endif
 #endif
   float right_zero = appcfg::kFootAngleAZeroXPx, left_zero = appcfg::kFootAngleBZeroXPx;
   float fps = 0;
@@ -92,6 +101,11 @@ struct FootPreviewInfo {
 };
 class FootObserver {
  public:
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+  static constexpr int kTaskCore=1,kTaskPriority=3;
+#else
+  static constexpr int kTaskCore=0,kTaskPriority=1;
+#endif
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
   static constexpr uint32_t kCapacity = foot_fast_policy::kArchiveCapacity;
 #else
@@ -99,6 +113,12 @@ class FootObserver {
 #endif
   static constexpr uint32_t kPreviewWidth = 160, kPreviewHeight = 120;
   static constexpr uint32_t kPreviewBytes = kPreviewWidth * kPreviewHeight;
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  // Preview dimensions are logical; its raw source is never mislabeled QVGA.
+  static constexpr uint32_t kRawSourceWidth=foot_image_rows::kRawFrameWidth;
+  static constexpr uint32_t kRawSourceHeight=foot_image_rows::kRawFrameHeight;
+  static constexpr int kRawSourceYOrigin=foot_image_rows::kRawYOrigin;
+#endif
   bool begin(OneShotCamera& camera, RunControlWorker& control);
   void beginRun(uint16_t id, uint64_t log_epoch_us);
   void finishRun();
@@ -137,5 +157,14 @@ class FootObserver {
   uint8_t* upper_storage_=nullptr;
   uint64_t upper_frame_us_=0;
   uint32_t upper_attempts_=0;
+#endif
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+  static void prepareLower(const foot_image_rows::GrayRowView&,uint64_t,uint32_t,int,void*);
+  // The incremental contrast/candidate workspace must outlive callbacks and
+  // resides in this observer, never as a persistent worker-stack local.
+  WhiteMarker1DTracker::PreparedScan lower_scan_;
+  uint8_t* lower_storage_=nullptr;
+  uint64_t lower_frame_us_=0;
+  uint32_t lower_attempts_=0,lower_prepare_us_=0;
 #endif
 };

@@ -71,6 +71,29 @@ source. The full HAL supplies the existing public symbols so the static SDK
 archive's HAL object is not extracted. The SDK still supplies low-level DMA,
 sensor and camera initialization code. Global SDK files are not modified.
 
+The isolated `FOOT_NATIVE_SKIP_V25` profile admits GC0308 grayscale320x236
+frames (75520 bytes) after configuring native row skipping. Its1280-byte DMA
+chunks use30720 bytes of DMA storage. The raw geometry is distinct from the
+logical320x240 tracker coordinates; all requested logical rows map to actual
+received rows. Only a complete raw frame is published. A bounded single queued
+frame discard at acquisition entry prevents old completed frames from adding
+latency; live polling never calls the SDK timeout-reset path with zero timeout.
+
+`FOOT_NATIVE_STREAM_V26` adds an independently owned lower-row mailbox. The HAL
+task offers cumulative row snapshots at four progress points, never in the ISR.
+The consumer computes image-only features and commits tracking only after the
+complete raw frame and64-bit timestamp match. Ready snapshots may be replaced;
+Reading/Writing snapshots cannot. Incomplete same-frame feature preparation
+may finish from the consumer-owned complete row cache after delivery. This
+preserves the normal rejection/fallback path and the1280-frame archive.
+
+`CAMERA_GEOMETRY_PROBE_V25` is a separate camera-only bench and cannot coexist
+with the native production profile. It allocates VGA capacity and returns only
+received whole DMA prefixes at VSYNC, with event timing and failure counters.
+A bench prefix is not asserted to be a complete physical image without separate
+HREF geometry and length validation. See `docs/FOOT_NATIVE_V25.md` for measured
+results, rejected settings and the actual-image orientation check.
+
 This private ABI is pinned to Arduino 2.0.16 / IDF 4.4.7 and the camera archive
 fingerprint in `tools/check_camera_hal_abi.py`. A different archive fails the
 build rather than silently mixing private layouts. Re-verify headers, sdkconfig,

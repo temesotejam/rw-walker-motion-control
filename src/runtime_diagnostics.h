@@ -33,7 +33,15 @@
 #if defined(FOOT_SPEED_FIX1) && FOOT_SPEED_FIX1
 #if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-native-stream-v26"
+#else
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-native-v25"
+#endif
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-overlap-v24"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-capture-v23"
 #endif

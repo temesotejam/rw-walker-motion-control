@@ -1,6 +1,9 @@
 #include "work_target_policy.h"
 #include "work_start_policy.h"
 #include "web_ui.h"
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+#include "camera_frame_ready.h"
+#endif
 #include "config.h"
 #include "runtime_web.h"
 #include "runtime_diagnostics.h"
@@ -319,6 +322,7 @@ void WebUi::status() {
 #endif
   json += ",\"foot\":{\"available\":" + String(f.available ? "true" : "false");
   json += ",\"detector\":\"" + String(appcfg::kWhiteDetectorRevision) + "\"";
+  json += ",\"worker_core\":" + String(FootObserver::kTaskCore) + ",\"worker_priority\":" + String(FootObserver::kTaskPriority);
   json += ",\"range\":" + footRangeDiagnosticsJson();
   json += ",\"calibration\":" + footCalibrationDiagnosticsJson();
   json += ",\"zero_ready\":" + String(f.zero_ready ? "true" : "false") + ",\"zero_samples\":" + String(f.zero_samples);
@@ -372,6 +376,13 @@ void WebUi::status() {
   const auto overlap=rw_camera_overlap_stats();
   json+=",\"upper_prepare_us\":"+String(f.latest.upper_prepare_us)+",\"upper_overlap_used\":"+String(f.latest.upper_overlap_used?"true":"false");
   json+=",\"upper_attempts\":"+String(f.upper_attempts)+",\"upper_hits\":"+String(f.upper_hits)+",\"upper_misses\":"+String(f.upper_misses);
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+  json+=",\"lower_prepare_us\":"+String(f.lower_prepare_us)+",\"lower_overlap_used\":"+String(f.lower_overlap_used?"true":"false");
+  json+=",\"lower_attempts\":"+String(f.lower_attempts)+",\"lower_hits\":"+String(f.lower_hits)+",\"lower_misses\":"+String(f.lower_misses);
+  json+=",\"lower_templates_before_delivery\":"+String(f.lower_templates_before_delivery);
+  const auto lower_overlap=rw_camera_lower_overlap_stats();
+  json+=",\"lower_offered\":"+String(lower_overlap.offered)+",\"lower_busy\":"+String(lower_overlap.busy)+",\"lower_replaced\":"+String(lower_overlap.replaced);
+#endif
   json+=",\"upper_offered\":"+String(overlap.offered)+",\"upper_busy\":"+String(overlap.busy)+",\"upper_replaced\":"+String(overlap.replaced);
 #endif
   json += ",\"frame_valid\":" + String(f.latest.frame_valid ? "true" : "false");
@@ -399,6 +410,18 @@ void WebUi::status() {
   json += ",\"register\":" + String(camera.speed_profile.reg);
   json += ",\"expected\":" + String(camera.speed_profile.expected);
   json += ",\"actual\":" + String(camera.speed_profile.actual) + "}";
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  json += ",\"native_profile\":{\"stage\":\"" + String(camera.native_profile.stage) + "\"";
+  json += ",\"applied\":" + String(camera.native_profile.applied?"true":"false");
+  json += ",\"register\":" + String(camera.native_profile.reg);
+  json += ",\"expected\":" + String(camera.native_profile.expected);
+  json += ",\"actual\":" + String(camera.native_profile.actual);
+  json += ",\"page0_restored\":" + String(camera.native_profile.page0_restored?"true":"false");
+  json += ",\"orientation\":" + String(camera_native_skip_profile::kOrientation);
+  json += ",\"hblank\":" + String(camera_native_skip_profile::kHorizontalBlank);
+  json += ",\"raw_height\":236,\"logical_height\":240,\"raw_y_offset\":-2}";
+  json += ",\"queued_frame_discards\":" + String(rw_camera_native_stale_discard_count());
+#endif
   json += ",\"receiver_active\":" + String(camera.receiver_active ? "true" : "false");
   json += ",\"xclk_active\":" + String(camera.xclk_active ? "true" : "false");
   json += ",\"xclk_hz\":" + String(camera.xclk_hz);

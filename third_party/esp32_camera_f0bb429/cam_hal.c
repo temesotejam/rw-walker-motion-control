@@ -25,6 +25,9 @@
 #if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
 #include "../../src/camera_capture_dma.h"
 #endif
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25 && defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+#error "Native walking capture and the variable-length geometry probe are separate profiles"
+#endif
 
 #if (ESP_IDF_VERSION_MAJOR == 3) && (ESP_IDF_VERSION_MINOR == 3)
 #include "rom/ets_sys.h"
@@ -48,6 +51,10 @@
 
 static const char *TAG = "cam_hal";
 static cam_obj_t *cam_obj = NULL;
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+typedef struct {cam_event_t type; uint64_t isr_us;} rw_probe_event_t;
+static uint32_t rw_probe_event_queue_drops;
+#endif
 
 static const uint32_t JPEG_SOI_MARKER = 0xFFD8FF;  // written in little-endian for esp32
 static const uint16_t JPEG_EOI_MARKER = 0xD9FF;  // written in little-endian for esp32
@@ -111,7 +118,16 @@ static bool cam_start_frame(int * frame_pos)
 
 void IRAM_ATTR ll_cam_send_event(cam_obj_t *cam, cam_event_t cam_event, BaseType_t * HPTaskAwoken)
 {
-    if (xQueueSendFromISR(cam->event_queue, (void *)&cam_event, HPTaskAwoken) != pdTRUE) {
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+    const rw_probe_event_t tagged_event = {cam_event, (uint64_t)esp_timer_get_time()};
+    void *event_data = (void *)&tagged_event;
+#else
+    void *event_data = (void *)&cam_event;
+#endif
+    if (xQueueSendFromISR(cam->event_queue, event_data, HPTaskAwoken) != pdTRUE) {
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+        __atomic_fetch_add(&rw_probe_event_queue_drops, 1, __ATOMIC_RELAXED);
+#endif
         ll_cam_stop(cam);
         cam->state = CAM_STATE_IDLE;
         ESP_CAMERA_ETS_PRINTF(DRAM_STR("cam_hal: EV-%s-OVF\r\n"), cam_event==CAM_IN_SUC_EOF_EVENT ? DRAM_STR("EOF") : DRAM_STR("VSYNC"));
@@ -121,6 +137,98 @@ void IRAM_ATTR ll_cam_send_event(cam_obj_t *cam, cam_event_t cam_event, BaseType
 // Walker v21: publish only a complete QVGA Y8 frame; no sensor/timestamp changes.
 static bool rw_early_enabled = false;
 static uint32_t rw_early_count, rw_vsync_count, rw_queue_drops, rw_last_full_age_us;
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+static bool rw_native_enabled;
+static uint32_t rw_native_stale_discards;
+uint32_t rw_camera_native_stale_discard_count(void)
+{
+    return __atomic_load_n(&rw_native_stale_discards, __ATOMIC_RELAXED);
+}
+#endif
+
+static bool rw_early_y8_geometry(void)
+{
+    if (!rw_early_enabled || cam_obj->jpeg_mode || cam_obj->psram_mode ||
+        cam_obj->width != 320 || cam_obj->in_bytes_per_pixel != 1 ||
+        cam_obj->fb_bytes_per_pixel != 1) return false;
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+    if (rw_native_enabled)
+        return cam_obj->height == 236 && cam_obj->fb_size == 75520 && cam_obj->recv_size == 75520;
+#endif
+    return cam_obj->height == 240 && cam_obj->fb_size == 76800;
+}
+
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+static bool rw_native_dma_layout(void)
+{
+    if (!rw_native_enabled) return true;
+    // ll_cam_dma_sizes uses the actual 236 rows, yielding 4-row nodes/EOFs.
+    // 59 whole chunks complete a frame. Retain the former 30720-byte allocation
+    // as 24 physical slots, rather than the SDK's rounded 32000-byte buffer.
+    if (!rw_early_y8_geometry() || cam_obj->dma_bytes_per_item != 1 ||
+        cam_obj->dma_node_buffer_size != 1280 || cam_obj->dma_half_buffer_size != 1280 ||
+        cam_obj->dma_buffer_size < 30720 || cam_obj->dma_buffer_size % 1280) return false;
+    cam_obj->dma_buffer_size = 30720;
+    cam_obj->dma_node_buffer_size = 1280;
+    cam_obj->dma_half_buffer_size = 1280;
+    cam_obj->dma_half_buffer_cnt = 24;
+    return true;
+}
+#endif
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+static bool rw_probe_enabled;
+static portMUX_TYPE rw_probe_mux = portMUX_INITIALIZER_UNLOCKED;
+static rw_camera_geometry_probe_stats_t rw_probe_stats;
+
+rw_camera_geometry_probe_stats_t rw_camera_geometry_probe_stats(void)
+{
+    portENTER_CRITICAL(&rw_probe_mux);
+    rw_camera_geometry_probe_stats_t s = rw_probe_stats;
+    portEXIT_CRITICAL(&rw_probe_mux);
+    s.event_queue_drops = __atomic_load_n(&rw_probe_event_queue_drops, __ATOMIC_RELAXED);
+    return s;
+}
+
+static bool rw_geometry_probe_dma_layout(void)
+{
+    if (!rw_probe_enabled) return true;
+    // 1280 divides VGA/QVGA/QQVGA and native 320/640 x236 Y8 lengths.
+    // Keep the allocation: 24 physical slots on the pinned 30720-byte layout.
+    const uint32_t chunk = 1280;
+    if (cam_obj->jpeg_mode || cam_obj->psram_mode || cam_obj->width != 640 ||
+        cam_obj->height != 480 || cam_obj->fb_size != 307200 ||
+        cam_obj->recv_size != 307200 || cam_obj->dma_bytes_per_item != 1 ||
+        cam_obj->in_bytes_per_pixel != 1 || cam_obj->fb_bytes_per_pixel != 1 ||
+        cam_obj->dma_buffer_size < 2 * chunk || cam_obj->dma_buffer_size % chunk) return false;
+    cam_obj->dma_node_buffer_size = chunk;
+    cam_obj->dma_half_buffer_size = chunk;
+    cam_obj->dma_half_buffer_cnt = cam_obj->dma_buffer_size / chunk;
+    portENTER_CRITICAL(&rw_probe_mux);
+    rw_probe_stats.enabled = 1;
+    rw_probe_stats.dma_chunk_bytes = chunk;
+    rw_probe_stats.frame_capacity_bytes = cam_obj->fb_size;
+    portEXIT_CRITICAL(&rw_probe_mux);
+    return true;
+}
+
+static bool rw_geometry_probe_boundary(camera_fb_t *fb, uint64_t start_event_us,
+                                       uint64_t end_event_us, uint64_t eof_event_us, bool overflow)
+{
+    // A capacity overrun invalidates the entire frame, including a full prefix.
+    const bool accepted = !overflow && fb->len && fb->len <= cam_obj->fb_size;
+    portENTER_CRITICAL(&rw_probe_mux);
+    ++rw_probe_stats.boundaries;
+    if (overflow) ++rw_probe_stats.overflow_frames;
+    else if (!fb->len) ++rw_probe_stats.empty_frames;
+    rw_probe_stats.last_prefix_bytes = fb->len;
+    rw_probe_stats.last_start_vsync_event_us = start_event_us;
+    rw_probe_stats.last_end_vsync_event_us = end_event_us;
+    rw_probe_stats.last_eof_event_us = eof_event_us;
+    rw_probe_stats.last_capture_start_us = (uint64_t)fb->timestamp.tv_sec * 1000000ULL + fb->timestamp.tv_usec;
+    portEXIT_CRITICAL(&rw_probe_mux);
+    return accepted;
+}
+#endif
 
 rw_camera_frame_ready_stats_t rw_camera_frame_ready_stats(void)
 {
@@ -156,11 +264,21 @@ static void cam_task(void *arg)
     int frame_pos = 0;
     cam_obj->state = CAM_STATE_IDLE;
     cam_event_t cam_event = 0;
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+    rw_probe_event_t tagged_event = {0, 0};
+    uint64_t probe_start_event_us = 0, probe_eof_event_us = 0;
+    bool probe_overflow = false;
+#endif
 
     xQueueReset(cam_obj->event_queue);
 
     while (1) {
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+        xQueueReceive(cam_obj->event_queue, (void *)&tagged_event, portMAX_DELAY);
+        cam_event = tagged_event.type;
+#else
         xQueueReceive(cam_obj->event_queue, (void *)&cam_event, portMAX_DELAY);
+#endif
         DBG_PIN_SET(1);
         switch (cam_obj->state) {
 
@@ -170,6 +288,10 @@ static void cam_task(void *arg)
                     if(cam_start_frame(&frame_pos)){
                         cam_obj->frames[frame_pos].fb.len = 0;
                         cam_obj->state = CAM_STATE_READ_BUF;
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+                        probe_start_event_us = tagged_event.isr_us;
+                        probe_eof_event_us = 0; probe_overflow = false;
+#endif
                     }
                     cnt = 0;
                 }
@@ -181,8 +303,14 @@ static void cam_task(void *arg)
                 size_t pixels_per_dma = (cam_obj->dma_half_buffer_size * cam_obj->fb_bytes_per_pixel) / (cam_obj->dma_bytes_per_item * cam_obj->in_bytes_per_pixel);
 
                 if (cam_event == CAM_IN_SUC_EOF_EVENT) {
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+                    if (rw_probe_enabled && probe_overflow) {DBG_PIN_SET(0); continue;}
+#endif
                     if(!cam_obj->psram_mode){
                         if (cam_obj->fb_size < (frame_buffer_event->len + pixels_per_dma)) {
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+                            if (rw_probe_enabled) probe_overflow = true;
+#endif
                             ESP_LOGW(TAG, "FB-OVF");
                             ll_cam_stop(cam_obj);
                             DBG_PIN_SET(0);
@@ -192,6 +320,9 @@ static void cam_task(void *arg)
                             &frame_buffer_event->buf[frame_buffer_event->len],
                             &cam_obj->dma_buffer[(cnt % cam_obj->dma_half_buffer_cnt) * cam_obj->dma_half_buffer_size],
                             cam_obj->dma_half_buffer_size);
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+                        if (rw_probe_enabled) probe_eof_event_us = tagged_event.isr_us;
+#endif
                     }
                     //Check for JPEG SOI in the first buffer. stop if not found
                     if (cam_obj->jpeg_mode && cnt == 0 && cam_verify_jpeg_soi(frame_buffer_event->buf, frame_buffer_event->len) != 0) {
@@ -200,19 +331,14 @@ static void cam_task(void *arg)
                     }
                     cnt++;
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
-                    if(rw_early_enabled && !cam_obj->jpeg_mode && !cam_obj->psram_mode &&
-                       cam_obj->width==320 && cam_obj->height==240 && cam_obj->fb_size==76800 &&
-                       cam_obj->in_bytes_per_pixel==1 && cam_obj->fb_bytes_per_pixel==1 &&
+                    if(rw_early_y8_geometry() &&
                        frame_buffer_event->len<=cam_obj->fb_size) {
                         const uint64_t frame_us=(uint64_t)frame_buffer_event->timestamp.tv_sec*1000000ULL+
                             frame_buffer_event->timestamp.tv_usec;
                         rw_camera_overlap_offer(frame_buffer_event->buf,frame_buffer_event->len,frame_us);
                     }
 #endif
-                    if (rw_early_enabled && !cam_obj->jpeg_mode && !cam_obj->psram_mode &&
-                        cam_obj->width == 320 && cam_obj->height == 240 &&
-                        cam_obj->in_bytes_per_pixel == 1 && cam_obj->fb_bytes_per_pixel == 1 &&
-                        cam_obj->fb_size == 320 * 240 && frame_buffer_event->len == cam_obj->fb_size) {
+                    if (rw_early_y8_geometry() && frame_buffer_event->len == cam_obj->fb_size) {
                         // Stop DMA before giving ownership to the consumer. VSYNC remains
                         // enabled; start the next frame only at its physical boundary.
                         ll_cam_stop(cam_obj);
@@ -254,20 +380,41 @@ static void cam_task(void *arg)
                                 frame_buffer_event->len = cam_obj->recv_size;
                             }
                         } else if (!cam_obj->jpeg_mode) {
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+                            if (rw_probe_enabled) {
+                                // Never fill or invent the uncopied tail. A probe
+                                // frame is only the received whole-chunk prefix.
+                                if (!rw_geometry_probe_boundary(frame_buffer_event, probe_start_event_us,
+                                        tagged_event.isr_us, probe_eof_event_us, probe_overflow))
+                                    cam_obj->frames[frame_pos].en = 1;
+                            } else
+#endif
                             if (frame_buffer_event->len != cam_obj->fb_size) {
                                 cam_obj->frames[frame_pos].en = 1;
                                 ESP_LOGE(TAG, "FB-SIZE: %u != %u", frame_buffer_event->len, (unsigned) cam_obj->fb_size);
                             }
                         }
                         // Same latest-frame queue ownership policy for the fallback path.
-                        if (!cam_obj->frames[frame_pos].en && rw_publish_frame(frame_pos, frame_buffer_event))
+                        if (!cam_obj->frames[frame_pos].en && rw_publish_frame(frame_pos, frame_buffer_event)) {
                             __atomic_fetch_add(&rw_vsync_count, 1, __ATOMIC_RELAXED);
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+                            if (rw_probe_enabled) {
+                                portENTER_CRITICAL(&rw_probe_mux);
+                                ++rw_probe_stats.published_frames;
+                                portEXIT_CRITICAL(&rw_probe_mux);
+                            }
+#endif
+                        }
                     }
 
                     if(!cam_start_frame(&frame_pos)){
                         cam_obj->state = CAM_STATE_IDLE;
                     } else {
                         cam_obj->frames[frame_pos].fb.len = 0;
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+                        probe_start_event_us = tagged_event.isr_us;
+                        probe_eof_event_us = 0; probe_overflow = false;
+#endif
                     }
                     cnt = 0;
                 }
@@ -303,6 +450,12 @@ static esp_err_t cam_dma_config(const camera_config_t *config)
     if (0 == ret) {
         return ESP_FAIL;
     }
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+    if (!rw_geometry_probe_dma_layout()) return ESP_FAIL;
+#endif
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+    if (!rw_native_dma_layout()) return ESP_FAIL;
+#endif
 
 #if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
     if(!cam_obj->jpeg_mode && !cam_obj->psram_mode && cam_obj->width==320 && cam_obj->height==240) {
@@ -432,6 +585,20 @@ esp_err_t cam_config(const camera_config_t *config, framesize_t frame_size, uint
     cam_obj->frame_cnt = config->fb_count;
     cam_obj->width = resolution[frame_size].width;
     cam_obj->height = resolution[frame_size].height;
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+    // SDK selects QVGA, but this isolated sensor profile emits 320 x236 Y8.
+    // Describe the real wire geometry before sizes, DMA and buffers are made.
+    rw_native_enabled = rw_early_enabled && !cam_obj->jpeg_mode && !cam_obj->psram_mode &&
+        cam_obj->in_bytes_per_pixel == 1 && cam_obj->fb_bytes_per_pixel == 1;
+    if (rw_native_enabled) cam_obj->height = 236;
+#endif
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+    // This bench reserves a VGA-sized buffer while sensor output may shrink.
+    // No early EOF publication or foot-overlap callback is permitted here.
+    rw_early_enabled = false;
+    rw_probe_enabled = sensor_pid == GC0308_PID && config->pixel_format == PIXFORMAT_GRAYSCALE &&
+        frame_size == FRAMESIZE_VGA && config->xclk_freq_hz == 20000000 && !cam_obj->psram_mode;
+#endif
 
     if(cam_obj->jpeg_mode){
         cam_obj->recv_size = cam_obj->width * cam_obj->height / 5;
@@ -448,7 +615,13 @@ esp_err_t cam_config(const camera_config_t *config, framesize_t frame_size, uint
     if (queue_size == 0) {
         queue_size = 1;
     }
-    cam_obj->event_queue = xQueueCreate(queue_size, sizeof(cam_event_t));
+    cam_obj->event_queue = xQueueCreate(queue_size,
+#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+        sizeof(rw_probe_event_t)
+#else
+        sizeof(cam_event_t)
+#endif
+    );
     CAM_CHECK_GOTO(cam_obj->event_queue != NULL, "event_queue create failed", err);
 
     size_t frame_buffer_queue_len = cam_obj->frame_cnt;
@@ -580,11 +753,19 @@ void* rw_camera_take_overlap(uint32_t timeout_ticks)
 {
     if(!cam_obj)return NULL;
     // Used only by the continuous grayscale consumer. Keep manual/boot cam_take.
-    if(!rw_early_enabled || cam_obj->jpeg_mode || cam_obj->psram_mode ||
-       cam_obj->width!=320 || cam_obj->height!=240 || cam_obj->in_bytes_per_pixel!=1 ||
-       cam_obj->fb_bytes_per_pixel!=1)return cam_take((TickType_t)timeout_ticks);
+    if(!rw_early_y8_geometry())return cam_take((TickType_t)timeout_ticks);
     camera_fb_t* fb=NULL;
     const TickType_t start=xTaskGetTickCount();
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+    // The worker can run more slowly than this sensor. Drop at most the one
+    // already completed LATEST-queue frame, then await a fresh completion.
+    // Direct dequeue owns this buffer; it cannot return a borrowed frame.
+    if(rw_native_enabled && xQueueReceive(cam_obj->frame_buffer_queue,&fb,0)==pdTRUE) {
+        cam_give(fb);
+        __atomic_fetch_add(&rw_native_stale_discards,1,__ATOMIC_RELAXED);
+        fb=NULL;
+    }
+#endif
     for(;;) {
         // A completed frame takes precedence over speculative preparation.
         if(xQueueReceive(cam_obj->frame_buffer_queue,&fb,0)==pdTRUE)return fb;

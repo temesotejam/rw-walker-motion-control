@@ -13,12 +13,23 @@ typedef struct {
   uint32_t offered,busy,replaced,consumed;
 } rw_camera_overlap_stats_t;
 rw_camera_overlap_stats_t rw_camera_overlap_stats(void);
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+rw_camera_overlap_stats_t rw_camera_lower_overlap_stats(void);
+#endif
 #ifdef __cplusplus
 }
 #include "foot_upper_rows.h"
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+#include "foot_lower_rows.h"
+#endif
 namespace camera_row_overlap {
 using Consumer=void(*)(const foot_image_rows::GrayRowView&,uint64_t,uint32_t,void*);
 // Initialize once at boot, before the foot consumer starts; storage outlives it.
 bool initialize(uint8_t* storage,size_t capacity,Consumer consumer,void* context);
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+using LowerConsumer=void(*)(const foot_image_rows::GrayRowView&,uint64_t,uint32_t,int,void*);
+// Separate storage must outlive callbacks and must not alias the upper slot.
+bool initializeLower(uint8_t* storage,size_t capacity,LowerConsumer consumer,void* context);
+#endif
 }
 #endif

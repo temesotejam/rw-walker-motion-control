@@ -15,6 +15,8 @@ import prepare_foot_speed_flasher as speed
 import prepare_foot_speed_fix_flasher as speed_fix
 import prepare_foot_capture_flasher as capture
 import prepare_foot_overlap_flasher as overlap
+import prepare_foot_native_flasher as native
+import prepare_foot_native_stream_flasher as native_stream
 import prepare_foot_fast_flasher as base
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,7 +49,12 @@ def check(profile, parent, additions, page_terms):
             shutil.copyfile(ROOT/'flasher'/name,root/'flasher'/name)
         old=root/'flasher/foot-fast';(old/'firmware').mkdir(parents=True)
         (old/'index.html').write_bytes(b'previous page');(old/'firmware/firmware.bin').write_bytes(b'previous firmware')
-        previous=snapshot(old);before=snapshot(root)
+        parent_path=root/'flasher'/parent.SUFFIX
+        if parent_path != old:
+            (parent_path/'firmware').mkdir(parents=True)
+            (parent_path/'index.html').write_bytes(b'parent page')
+            (parent_path/'firmware/firmware.bin').write_bytes(b'parent firmware')
+        previous=snapshot(old);previous_parent=snapshot(parent_path);before=snapshot(root)
         dry=fix.dry_run(root);assert snapshot(root)==before
         assert dry['identity']==fix.IDENTITY and dry['url'].endswith('/'+fix.SUFFIX+'/')
         page,_=base.installer_text(root,profile=fix.PROFILE)
@@ -55,12 +62,14 @@ def check(profile, parent, additions, page_terms):
         build=root/'.pio/build'/fix.ENVIRONMENT;build.mkdir(parents=True)
         for name in ['bootloader.bin','partitions.bin']:(build/name).write_bytes(name.encode())
         boot=root/'boot_app0.bin';boot.write_bytes(b'boot')
-        firmware=build/'firmware.bin';firmware.write_bytes(b'\0'+base.IDENTITY.encode()+b'\0')
-        before=snapshot(root)
-        try:fix.prepare(root,boot)
-        except SystemExit:pass
-        else:raise AssertionError('Old v20 firmware accepted as hotfix')
-        assert snapshot(root)==before
+        firmware=build/'firmware.bin'
+        for rejected in dict.fromkeys([base.IDENTITY,parent.IDENTITY]):
+            firmware.write_bytes(b'\0'+rejected.encode()+b'\0')
+            before=snapshot(root)
+            try:fix.prepare(root,boot)
+            except SystemExit:pass
+            else:raise AssertionError('Parent/old firmware accepted as '+fix.IDENTITY)
+            assert snapshot(root)==before
         firmware.write_bytes(b'\0'+fix.IDENTITY.encode()+b'\0payload')
         result=fix.prepare(root,boot);dest=root/'flasher'/fix.SUFFIX
         assert (dest/'firmware/firmware.bin').read_bytes()==firmware.read_bytes()
@@ -69,6 +78,7 @@ def check(profile, parent, additions, page_terms):
         assert manifest['version']==fix.IDENTITY
         assert [(p['path'],p['offset']) for p in manifest['builds'][0]['parts']]==base.EXPECTED_PARTS
         assert snapshot(old)==previous
+        assert snapshot(parent_path)==previous_parent
     print(f'{fix.IDENTITY} installer PASS: v20 flags retained, distinct ID/layout, old identity rejected, all old bytes retained')
 
 
@@ -80,6 +90,8 @@ def main():
     check(speed_fix, speed, ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1', '-DCAMERA_FRAME_READY_V21=1', '-DFOOT_SPEED_V22=1', '-DFOOT_SPEED_FIX1=1'], ['カメラ初期化', 'まず測定を開始せず'])
     check(capture, speed_fix, ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1', '-DCAMERA_FRAME_READY_V21=1', '-DFOOT_SPEED_V22=1', '-DFOOT_SPEED_FIX1=1', '-DFOOT_CAPTURE_V23=1'], ['カメラ取得', 'まず測定を開始せず'])
     check(overlap, capture, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1'], ['画像の受信中', 'まず測定を開始せず'])
+    check(native, overlap, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96'], ['生画像236行', '測定を始めず'])
+    check(native_stream, native, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96','-DFOOT_NATIVE_STREAM_V26=1'], ['全画像の到着', '測定を始めず'])
 
 
 if __name__=='__main__':

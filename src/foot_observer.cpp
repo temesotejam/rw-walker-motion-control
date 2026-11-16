@@ -32,6 +32,10 @@ bool FootObserver::begin(OneShotCamera& camera, RunControlWorker& control) {
   upper_storage_=static_cast<uint8_t*>(ps_malloc(foot_image_rows::kUpperBytes));
   if(!upper_storage_ || !camera_row_overlap::initialize(upper_storage_,foot_image_rows::kUpperBytes,prepareUpper,this))return false;
 #endif
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+  lower_storage_=static_cast<uint8_t*>(ps_malloc(foot_image_rows::kLowerBytes));
+  if(!lower_storage_ || !camera_row_overlap::initializeLower(lower_storage_,foot_image_rows::kLowerBytes,prepareLower,this))return false;
+#endif
   portENTER_CRITICAL(&mux_); status_.available = true;
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
   status_.row_cache_ready=true;
@@ -43,7 +47,7 @@ bool FootObserver::begin(OneShotCamera& camera, RunControlWorker& control) {
 #else
       10240;
 #endif
-  if (xTaskCreatePinnedToCore(entry, "foot_observer", stack_bytes, this, 1, &task_, 0) != pdPASS) {
+  if (xTaskCreatePinnedToCore(entry, "foot_observer", stack_bytes, this, kTaskPriority, &task_, kTaskCore) != pdPASS) {
     portENTER_CRITICAL(&mux_); status_.available = false; portEXIT_CRITICAL(&mux_); return false;
   }
   return true;
@@ -63,6 +67,28 @@ void FootObserver::prepareUpper(const foot_image_rows::GrayRowView& rows,uint64_
   ++self.upper_attempts_;
 }
 #endif
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+void FootObserver::prepareLower(const foot_image_rows::GrayRowView& rows,uint64_t stamp,uint32_t,int max_logical_y,void* context) {
+  auto& self=*static_cast<FootObserver*>(context);
+  const uint32_t begin=micros();
+  ++self.lower_attempts_; // Callback attempts, not the number of admitted frames.
+  if(!stamp){self.lower_frame_us_=0;self.lower_prepare_us_=0;return;}
+  if(stamp!=self.lower_frame_us_) {
+    self.lower_scan_=self.left_.beginScan();
+    self.lower_frame_us_=stamp;
+    self.lower_prepare_us_=0;
+  }
+  // All earlier required rows from this same immutable frame remain available.
+  // Recopy the available set into internal RAM; neither scan nor features alias it.
+  self.row_cache_.invalidate();
+  foot_image_rows::LowerRowCache scratch(self.row_storage_,foot_image_rows::kRequiredBytes);
+  if(!scratch.capture(rows,max_logical_y) ||
+      !self.left_.appendAvailable(self.lower_scan_,scratch.view(),scratch.maxLogicalY())) {
+    self.lower_frame_us_=0; // Failed speculative work cannot be admitted.
+  }
+  self.lower_prepare_us_+=micros()-begin;
+}
+#endif
 bool FootObserver::copyPreview(uint8_t* out, FootPreviewInfo& info) const {
   if (!out || !preview_ || !preview_mutex_ || xSemaphoreTake(preview_mutex_, 0) != pdTRUE) return false;
   const bool valid = preview_info_.frame.frame_valid;
@@ -80,8 +106,12 @@ void FootObserver::publishPreview(const uint8_t* gray, const FootPreviewInfo& in
   // optional preview update. Network transmission never holds this mutex.
   if (!preview_ || !preview_mutex_ || xSemaphoreTake(preview_mutex_, 0) != pdTRUE) return;
   if(gray && thumbnail)memcpy(preview_,gray,kPreviewBytes);
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  else if(gray)foot_image_rows::copyNativeThumbnail(gray,foot_image_rows::kRawFrameBytes,preview_,kPreviewBytes);
+#else
   else if (gray) for (uint32_t y = 0; y < kPreviewHeight; ++y)
     for (uint32_t x = 0; x < kPreviewWidth; ++x) preview_[y * kPreviewWidth + x] = gray[(y * 2) * 320 + x * 2];
+#endif
   preview_info_ = info;
   xSemaphoreGive(preview_mutex_);
 }
@@ -136,6 +166,11 @@ void FootObserver::clearRun() {
 void FootObserver::loop() {
   uint32_t seq = 0;
   uint64_t last_valid_us = 0;
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  uint64_t last_idle_preview_us=0;
+  bool have_idle_preview=false;
+  constexpr uint64_t idle_preview_period_us=200000;
+#endif
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
   foot_phase_prediction::Predictor pose_predictor;
 #if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
@@ -162,6 +197,10 @@ void FootObserver::loop() {
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
     upper_frame_us_=0; // A candidate belongs only to this acquisition attempt.
 #endif
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+    lower_frame_us_=0;
+    lower_prepare_us_=0;
+#endif
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::CameraCapture);
     camera_fb_t* fb = camera_->startContinuous() ? camera_->acquireContinuous(200) : nullptr;
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::Snapshot);
@@ -174,8 +213,14 @@ void FootObserver::loop() {
     f.imu_sample_us = run.imu_sample_us; f.state_id = run.state_id;
     f.led_state = run.led_state; f.sync_event_id = run.sync_event_id;
     f.run_id = run.run_id;
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+    f.frame_valid = fb && fb->buf && fb->len == foot_image_rows::kRawFrameBytes &&
+        fb->width == foot_image_rows::kRawFrameWidth && fb->height == foot_image_rows::kRawFrameHeight &&
+        fb->format == PIXFORMAT_GRAYSCALE;
+#else
     f.frame_valid = fb && fb->buf && fb->len == 320U * 240U &&
         fb->width == 320 && fb->height == 240 && fb->format == PIXFORMAT_GRAYSCALE;
+#endif
     if (fb) {
       f.frame_us = static_cast<uint64_t>(fb->timestamp.tv_sec) * 1000000ULL + fb->timestamp.tv_usec;
       f.timestamp_valid = f.frame_us > 0 && f.frame_us <= f.delivered_us &&
@@ -186,12 +231,39 @@ void FootObserver::loop() {
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
     const bool preview_active=!(run_before.running || run.running);
     const uint32_t copy_start=micros();
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+    const bool both_prepared=f.frame_valid && f.timestamp_valid &&
+        upper_frame_us_ && upper_frame_us_==f.frame_us &&
+        lower_frame_us_ && lower_frame_us_==f.frame_us && lower_scan_.complete();
+    // Complete owned features need no second image-row copy. A mismatch on
+    // either lane retains the normal full cache for that lane's fallback.
+    if(both_prepared)row_cache_.invalidate();
+    else {
+      f.row_cache_used=f.frame_valid && row_cache_.capture(fb->buf,fb->len);
+      if(!f.row_cache_used){row_cache_.invalidate();f.frame_valid=false;}
+    }
+#else
     f.row_cache_used=f.frame_valid && row_cache_.capture(fb->buf,fb->len);
     if(!f.row_cache_used){row_cache_.invalidate();f.frame_valid=false;}
+#endif
     f.row_copy_us=micros()-copy_start;
-    if(f.frame_valid && preview_active){
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+    const bool preview_due=preview_active && (!f.frame_valid || !have_idle_preview ||
+        f.delivered_us-last_idle_preview_us>=idle_preview_period_us);
+#endif
+    if(f.frame_valid &&
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+        preview_due
+#else
+        preview_active
+#endif
+    ){
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+      foot_image_rows::copyNativeThumbnail(fb->buf,fb->len,preview_staging_,kPreviewBytes);
+#else
       for(uint32_t y=0;y<kPreviewHeight;++y)for(uint32_t x=0;x<kPreviewWidth;++x)
         preview_staging_[y*kPreviewWidth+x]=fb->buf[(y*2)*320+x*2];
+#endif
     }
     // No camera pixels may be accessed after this point. Tracker and preview
     // own independent copies, including on idle/zero-calibration frames.
@@ -205,7 +277,21 @@ void FootObserver::loop() {
 #else
     const auto a=right_.process(row_cache_.view());
 #endif
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+    const bool lower_candidate=f.frame_valid && f.timestamp_valid && lower_frame_us_ &&
+        lower_frame_us_==f.frame_us && lower_scan_.valid();
+    const uint8_t lower_templates_before_delivery=lower_candidate?lower_scan_.templatesTested():0;
+    // The complete frame can arrive before the last mailbox callback. Finish
+    // only this matching scan from owned full rows; never poll another frame's
+    // mailbox after dequeue. This remaining work belongs to recognition_us.
+    if(lower_candidate && !lower_scan_.complete())
+      left_.appendAvailable(lower_scan_,row_cache_.view(),appcfg::kFrameHeight-1);
+    const bool lower_overlap_used=lower_candidate && lower_scan_.complete();
+    const auto b=lower_overlap_used?left_.processPrepared(left_.finishScan(lower_scan_)):
+        left_.process(row_cache_.view());
+#else
     const auto b=left_.process(row_cache_.view());
+#endif
     f.recognition_us=micros()-recognition_start;
 #else
     const auto a = right_.process(f.frame_valid ? fb->buf : nullptr);
@@ -239,7 +325,11 @@ void FootObserver::loop() {
     preview.frame = f; preview.right = a; preview.left = b;
     preview.mekf_attitude = run.mekf_attitude; preview.imu_ok = run.imu_ok;
     preview.right_zero = zero_.a_zero; preview.left_zero = zero_.b_zero; preview.zero_samples = zero_.count;
-#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+    // Publish the staged image after ready/status, retaining its own matching
+    // frame metadata. Undue frames do neither thumbnail copy and still update
+    // all tracking, zeroing, predictions, status and archive observations.
+#elif defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
     publishPreview(f.frame_valid ? preview_staging_ : nullptr,preview,run_before.running || run.running,true);
 #else
     publishPreview(f.frame_valid ? fb->buf : nullptr, preview,run_before.running || run.running);
@@ -276,7 +366,8 @@ void FootObserver::loop() {
     f.local_compute_us=micros()-local_start;
 #endif
     // Availability includes history matching; a driver timestamp is not a
-    // verified exposure timestamp. No history matching runs on Core1.
+    // verified exposure timestamp. History matching stays in the foot worker,
+    // below the control task's priority, outside the control task itself.
     if(pose_time)f.pose_projection.received_ms=static_cast<uint32_t>((esp_timer_get_time()-run.measurement_epoch_us)/1000);
 #if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
     f.local_projection.received_ms=f.pose_projection.received_ms;
@@ -331,6 +422,13 @@ void FootObserver::loop() {
     status_.upper_attempts=upper_attempts_;
     if(f.upper_overlap_used)++status_.upper_hits;else ++status_.upper_misses;
 #endif
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+    status_.lower_attempts=lower_attempts_;
+    status_.lower_overlap_used=lower_overlap_used;
+    status_.lower_prepare_us=lower_overlap_used?lower_prepare_us_:0;
+    status_.lower_templates_before_delivery=lower_overlap_used?lower_templates_before_delivery:0;
+    if(lower_overlap_used)++status_.lower_hits;else ++status_.lower_misses;
+#endif
     if (status_.recording && f.run_id == recording_run_id_) {
       // Signed offsets retain frame-boundary cases; never label them as zero.
       f.log_time_us = f.timestamp_valid ? static_cast<int64_t>(f.frame_us) - log_epoch_us_ : -1;
@@ -346,6 +444,16 @@ void FootObserver::loop() {
     status_.preview_available = preview_ && preview_mutex_;
     status_.fps = fps;
     portEXIT_CRITICAL(&mux_);
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+    if(preview_due) {
+      preview.frame=f;
+      publishPreview(f.frame_valid?preview_staging_:nullptr,preview,false,true);
+      // An invalid idle frame clears availability immediately; the next valid
+      // image is eligible without waiting for the previous preview interval.
+      have_idle_preview=f.frame_valid;
+      last_idle_preview_us=f.delivered_us;
+    }
+#endif
     RuntimeDiag::beat(RuntimeDiag::Lane::Camera, seq);
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::Wait);
     const int64_t remaining =
@@ -381,22 +489,43 @@ void FootObserver::appendMetadata(PsramString& json) const {
   json += "\"frame_timestamp_semantics\":\"camera_driver_frame_timestamp_not_verified_exposure_time\",";
   json += "\"control_context_semantics\":\"latest_control_snapshot_at_frame_delivery_not_exposure\",";
   json += "\"preview_generation\":\"idle_only_last_idle_frame_retained\",";
+  json += "\"worker_core\":"+String(kTaskCore)+",\"worker_priority\":"+String(kTaskPriority)+",";
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  json += "\"raw_sensor_geometry\":{\"width\":320,\"height\":236,\"bytes\":75520,\"logical_width\":320,\"logical_height\":240,\"raw_y_origin\":-2,\"row_mapping\":\"raw_y=logical_y-2;raw_x=logical_x\",\"preview_missing_rows\":\"zero_display_only\",\"dynamic_angle_mapping_validated\":false},";
+  json += "\"idle_preview_period_us\":200000,\"preview_publication\":\"after_control_ready_and_status;staging_before_buffer_release_only_when_due\",\"preview_retention\":\"original_pixels_and_matching_metadata;invalid_idle_clears;first_valid_immediate\",";
+#endif
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
 #if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
   json+="\"target_fps\":30,\"capacity\":"+String(kCapacity);
 #if defined(FOOT_SPEED_FIX1) && FOOT_SPEED_FIX1
 #if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  json+=",\"sensor_speed_profile\":\"gc0308_native_skip_v25\",\"native_sensor_mode\":\"even_skip_p0_15_4a_p1_54_12\",\"sensor_profile_startup_readback_required\":true";
+  json+=",\"native_sensor_orientation\":"+String(camera_native_skip_profile::kOrientation);
+  json+=",\"sensor_period_estimate_ms\":null,\"sensor_xclk_nominal_hz\":22857142";
+#else
   json+=",\"sensor_speed_profile\":\"gc0308_div7_hb128_sdk_aec_v23\",\"sensor_profile_startup_readback_required\":true";
   json+=",\"sensor_period_estimate_ms\":35.96,\"sensor_xclk_nominal_hz\":22857142";
+#endif
   json+=",\"sensor_xclk_divider\":7,\"sensor_xclk_fraction_num\":0,\"sensor_xclk_fraction_den\":0";
   json+=",\"recognition_math\":\"integer_peak_and_bounded_int32_centroid_v23\"";
 #else
   json+=",\"sensor_speed_profile\":\"gc0308_hb128_sdk_aec_v22_fix1\",\"sensor_profile_startup_readback_required\":true";
   json+=",\"sensor_period_estimate_ms\":41.1";
 #endif
-  json+=",\"sensor_hblank\":128,\"sensor_vblank\":12,\"sensor_max_exposure_level_rows\":480,\"sensor_flicker_step_rows\":120";
+#if !defined(FOOT_NATIVE_SKIP_V25) || !FOOT_NATIVE_SKIP_V25
+  json+=",\"sensor_hblank\":128";
+#else
+  json+=",\"sensor_hblank\":"+String(camera_native_skip_profile::kHorizontalBlank);
+  json+=",\"queued_frame_discards\":"+String(rw_camera_native_stale_discard_count());
+#endif
+  json+=",\"sensor_vblank\":12,\"sensor_max_exposure_level_rows\":480,\"sensor_flicker_step_rows\":120";
   json+=",\"sensor_aec_modified\":false,\"sensor_readback_timeout_ms\":100";
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  const auto speed=cameraSnapshot().native_profile;
+#else
   const auto speed=cameraSnapshot().speed_profile;
+#endif
   json+=",\"sensor_profile_applied\":"+String(speed.applied?"true":"false");
   json+=",\"sensor_profile_stage\":\""+String(speed.stage)+"\",\"sensor_profile_settle_wait_ms\":"+String(speed.settle_wait_ms);
 #else
@@ -423,9 +552,22 @@ void FootObserver::appendMetadata(PsramString& json) const {
   json+=",\"upper_attempts\":"+String(s.upper_attempts)+",\"upper_hits\":"+String(s.upper_hits)+",\"upper_misses\":"+String(s.upper_misses);
   json+=",\"upper_offered\":"+String(overlap.offered)+",\"upper_busy\":"+String(overlap.busy)+",\"upper_replaced\":"+String(overlap.replaced);
 #endif
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+  json+=",\"lower_overlap\":\"incremental_image_features_before_complete_frame_tracking_after_identity_validation\"";
+  json+=",\"lower_cache_bytes\":"+String(foot_image_rows::kLowerBytes)+",\"lower_scan_bytes\":"+String(sizeof(WhiteMarker1DTracker::PreparedScan));
+  json+=",\"lower_attempts\":"+String(s.lower_attempts)+",\"lower_hits\":"+String(s.lower_hits)+",\"lower_misses\":"+String(s.lower_misses);
+  json+=",\"lower_attempts_semantics\":\"callback_milestones_not_frames\",\"lower_timing_scope\":\"status_latest_only_not_frame_archive\"";
+  json+=",\"lower_completion_policy\":\"matching_partial_scan_finishes_from_owned_full_rows_after_delivery;no_mailbox_poll_after_dequeue\"";
+  json+=",\"lower_prepare_us_semantics\":\"callback_work_only;remaining_templates_in_recognition_us\",\"lower_templates_before_delivery_semantics\":\"status_latest_0_to_17_templates_reused_before_post_delivery_completion\"";
+  json+=",\"full_row_cache_policy\":\"skip_only_when_both_owned_features_match_admitted_full_frame\"";
+#endif
 #if defined(CAMERA_FRAME_READY_V21) && CAMERA_FRAME_READY_V21
   const auto dma = rw_camera_frame_ready_stats();
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  json+=",\"frame_publication\":\"complete_native_320x236_y8_dma_before_vsync_v25\"";
+#else
   json+=",\"frame_publication\":\"complete_qvga_y8_dma_before_vsync_v21\"";
+#endif
   json+=",\"dma_stats_scope\":\"boot_lifetime_independent_counters\"";
   json+=",\"dma_early_frames\":"+String(dma.early_frames)+",\"dma_vsync_frames\":"+String(dma.vsync_frames);
   json+=",\"dma_queue_drops\":"+String(dma.queue_drops)+",\"dma_last_full_age_us\":"+String(dma.last_full_age_us);

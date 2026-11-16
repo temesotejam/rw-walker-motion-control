@@ -26,6 +26,7 @@ static Queue queue;
 struct Camera {
     bool jpeg_mode=false,psram_mode=false;
     unsigned width=320,height=240,in_bytes_per_pixel=1,fb_bytes_per_pixel=1;
+    unsigned fb_size=76800,recv_size=76800;
     Queue* frame_buffer_queue=&queue;
 };
 static Camera storage,*cam_obj=&storage;
@@ -135,7 +136,8 @@ def main():
     if not compiler:
         raise SystemExit('g++ is required for the actual overlap wait test')
     source = (ROOT/'third_party/esp32_camera_f0bb429/cam_hal.c').read_text(encoding='utf8')
-    code = PREAMBLE + function(source, 'void* rw_camera_take_overlap(') + '\n' + CASES
+    code = PREAMBLE + function(source, 'static bool rw_early_y8_geometry(') + '\n'
+    code += function(source, 'void* rw_camera_take_overlap(') + '\n' + CASES
     with tempfile.TemporaryDirectory(prefix='camera_overlap_wait_') as folder:
         path = Path(folder)
         (path/'test.cpp').write_text(code, encoding='utf8')

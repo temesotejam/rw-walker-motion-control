@@ -62,6 +62,9 @@ def fixture():
 #include "foot_image_rows.h"
 #include "foot_fast_policy.h"
 #include "camera_speed_profile.h"
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+#include "camera_native_skip_profile.h"
+#endif
 #include "foot_zero.h"
 #include "white_marker_tracker.h"
 #include "foot_angle_estimator.h"
@@ -80,6 +83,17 @@ bool initialize(uint8_t* storage,size_t capacity,Consumer consumer,void* context
  // Each test observer represents a separate device lifetime.
  mock_storage=storage;mock_capacity=capacity;mock_consumer=consumer;mock_context=context;return true;
 }
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+static LowerConsumer mock_lower_consumer=nullptr;
+static void* mock_lower_context=nullptr;
+static uint8_t* mock_lower_storage=nullptr;
+static size_t mock_lower_capacity=0;
+bool initializeLower(uint8_t* storage,size_t capacity,LowerConsumer consumer,void* context){
+ assert(storage && capacity==foot_image_rows::kLowerBytes && consumer && context);
+ mock_lower_storage=storage;mock_lower_capacity=capacity;
+ mock_lower_consumer=consumer;mock_lower_context=context;return true;
+}
+#endif
 }
 #endif
 using TickType_t=uint32_t;
@@ -97,13 +111,20 @@ static void* heap_caps_malloc(size_t size,int caps){assert(caps==3);return std::
 static SemaphoreHandle_t xSemaphoreCreateMutex(){return reinterpret_cast<void*>(1);}
 static int xSemaphoreTake(SemaphoreHandle_t s,TickType_t){return s?pdTRUE:0;}
 static void xSemaphoreGive(SemaphoreHandle_t s){assert(s);}
+static int created_foot_core=-1,created_foot_priority=-1;
 static int xTaskCreatePinnedToCore(void(*)(void*),const char* name,uint32_t stack,void*,int priority,TaskHandle_t* task,int core){
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
  constexpr uint32_t expected_stack=12288;
 #else
  constexpr uint32_t expected_stack=10240;
 #endif
- assert(std::string(name)=="foot_observer" && stack==expected_stack && priority==1 && core==0);
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+ constexpr int expected_core=1,expected_priority=3;
+#else
+ constexpr int expected_core=0,expected_priority=1;
+#endif
+ assert(std::string(name)=="foot_observer" && stack==expected_stack && priority==expected_priority && core==expected_core);
+ created_foot_core=core;created_foot_priority=priority;
  *task=reinterpret_cast<void*>(1);return pdPASS;
 }
 static int xPortGetCoreID(){return 0;}
@@ -139,6 +160,8 @@ static void cameraTaskPriorityPatchSampleStack(){}
         'void FootObserver::loop()'])
     methods += '\n#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24\n' + function(
         observer, 'void FootObserver::prepareUpper(') + '\n#endif\n'
+    methods += '\n#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26\n' + function(
+        observer, 'void FootObserver::prepareLower(') + '\n#endif\n'
     camera_methods = '\n'.join(function(camera, signature) for signature in [
         'void OneShotCamera::setError(', 'void OneShotCamera::flushQueuedFrames()',
         'camera_fb_t* OneShotCamera::acquire(', 'void OneShotCamera::release(',
@@ -156,17 +179,24 @@ static void cameraTaskPriorityPatchSampleStack(){}
 
 using Image=std::vector<uint8_t>;
 static Image image(int right=203,int left=202){
- Image out(320*240,30);
+ Image out(foot_image_rows::kRawFrameBytes,30);
  for(int row=-10;row<=10;++row)for(int dx=-10;dx<=10;++dx){
-  out[(66+row)*320+right+dx]=230;out[(160+row)*320+left+dx]=230;
+  out[foot_image_rows::rawYForLogical(66+row)*320+right+dx]=230;
+  out[foot_image_rows::rawYForLogical(160+row)*320+left+dx]=230;
  }
  return out;
 }
-enum class Invalid {None,NullFrame,Short,NullBuffer,FutureTimestamp,OldTimestamp};
+enum class Invalid {None,NullFrame,Short,NullBuffer,FutureTimestamp,OldTimestamp,FullLogicalLength,WrongHeight};
 struct Plan {
  Image original=image();ControlSnapshot before,after;
  Invalid invalid=Invalid::None;uint32_t wait_us=2000;bool stop=false;
  bool early=true;int64_t early_stamp_delta=0;Image early_image;
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+ bool lower=true,lower_abandoned_first=false,lower_invalid_view=false;
+ int64_t lower_stamp_delta=0;Image lower_image;
+ std::vector<int> lower_stages{174,190,206,222};
+#endif
+ uint64_t force_delivered_us=0; // Focused boundary cases; zero keeps ordinary clocks.
 };
 struct Iteration {FootSnapshot snapshot;FootPreviewInfo info;Image preview;bool preview_ok=false;
  uint64_t time=0;uint32_t delay=0;foot_image_rows::ReadCounts reads;};
@@ -182,7 +212,10 @@ static bool override_stamp=false;
 static uint64_t full_stamp=0;
 #endif
 ControlSnapshot RunControlWorker::snapshot()const {
- const auto& p=plans.at(plan_index);return context_calls++==0?p.before:p.after;
+ const auto& p=plans.at(plan_index);const bool before=context_calls++==0;
+ if(!before && borrowed && p.invalid==Invalid::WrongHeight)frame.height=240;
+ if(!before && p.force_delivered_us)host_clock=p.force_delivered_us-1;
+ return before?p.before:p.after;
 }
 static camera_fb_t* cam_take(TickType_t timeout){
  if(timeout==0){assert(!live && !borrowed);++flush_takes;return nullptr;}
@@ -190,9 +223,11 @@ static camera_fb_t* cam_take(TickType_t timeout){
  auto& p=plans.at(plan_index);host_clock+=p.wait_us;
  foot_image_rows::readCounts()={};
  if(p.invalid==Invalid::NullFrame)return nullptr;
- buffer=p.original;frame={};frame.buf=p.invalid==Invalid::NullBuffer?nullptr:buffer.data();
+ buffer=p.original;if(p.invalid==Invalid::FullLogicalLength)buffer.resize(320*240);
+ frame={};frame.buf=p.invalid==Invalid::NullBuffer?nullptr:buffer.data();
  frame.len=p.invalid==Invalid::Short?123:buffer.size();
  uint64_t stamp=host_clock-50000;
+ if(p.force_delivered_us)stamp=p.force_delivered_us-50000;
  if(p.invalid==Invalid::FutureTimestamp)stamp=host_clock+5000;
  if(p.invalid==Invalid::OldTimestamp)stamp=host_clock-600000;
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
@@ -205,6 +240,7 @@ static camera_fb_t* cam_take(TickType_t timeout){
 extern "C" void* rw_camera_take_overlap(uint32_t timeout){
  const auto& p=plans.at(plan_index);
  full_stamp=host_clock+p.wait_us-50000;
+ if(p.force_delivered_us)full_stamp=p.force_delivered_us-50000;
  if(p.invalid==Invalid::FutureTimestamp)full_stamp=host_clock+p.wait_us+5000;
  if(p.invalid==Invalid::OldTimestamp)full_stamp=host_clock+p.wait_us-600000;
  if(p.early){
@@ -217,6 +253,22 @@ extern "C" void* rw_camera_take_overlap(uint32_t timeout){
   // Original early pixels may be released before the full image arrives.
   std::memset(camera_row_overlap::mock_storage,0,camera_row_overlap::mock_capacity);
  }
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+ if(p.lower){
+  auto stage=[&](const Image& pixels,uint64_t stamp,int max_y,bool invalid){
+   foot_image_rows::LowerRowCache lower(camera_row_overlap::mock_lower_storage,camera_row_overlap::mock_lower_capacity);
+   const size_t prefix=(foot_image_rows::rawYForLogical(max_y)+1)*320;
+   assert(lower.capture(pixels.data(),prefix));
+   camera_row_overlap::mock_lower_consumer(invalid?foot_image_rows::GrayRowView{}:lower.view(),
+       stamp,1,max_y,camera_row_overlap::mock_lower_context);
+   std::memset(camera_row_overlap::mock_lower_storage,0,camera_row_overlap::mock_lower_capacity);
+  };
+  // Abandoned features are deliberately inconsistent with the accepted frame.
+  if(p.lower_abandoned_first)stage(image(50,50),full_stamp-1,222,false);
+  const auto& pixels=p.lower_image.empty()?p.original:p.lower_image;
+  for(int max_y:p.lower_stages)stage(pixels,full_stamp+p.lower_stamp_delta,max_y,p.lower_invalid_view);
+ }
+#endif
  override_stamp=true;auto* result=cam_take(timeout);override_stamp=false;return result;
 }
 #endif
@@ -225,8 +277,15 @@ static void cam_give(camera_fb_t* fb){
  if(enforce_rows){
   const auto& r=foot_image_rows::readCounts();
   const auto invalid=plans.at(plan_index).invalid;
-  const bool cache_valid=invalid!=Invalid::Short && invalid!=Invalid::NullBuffer;
-  assert(r.capture_rows==(cache_valid?foot_image_rows::kRequiredRows:0));
+  const bool cache_valid=invalid!=Invalid::Short && invalid!=Invalid::NullBuffer &&
+      invalid!=Invalid::FullLogicalLength && invalid!=Invalid::WrongHeight;
+  bool needs_cache=cache_valid;
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+  const bool valid_stamp=full_stamp && full_stamp<=host_clock && host_clock-full_stamp<500000;
+  if(valid_stamp && current->upper_frame_us_==full_stamp && current->lower_frame_us_==full_stamp &&
+      current->lower_scan_.complete())needs_cache=false;
+#endif
+  assert(r.capture_rows==(needs_cache?foot_image_rows::kRequiredRows:0));
   assert(r.packed_rows==0 && r.full_rows==0); // actual recognition has not read any row
  }
  if(poison)std::fill(buffer.begin(),buffer.end(),0);
@@ -264,7 +323,14 @@ static void detectionEqual(const FootFrame& a,const FootFrame& b,bool projection
 }
 static Image thumbnail(const Image& source){
  Image out(FootObserver::kPreviewBytes);
- for(unsigned y=0;y<120;++y)for(unsigned x=0;x<160;++x)out[y*160+x]=source[(y*2)*320+x*2];
+ for(unsigned y=0;y<120;++y)for(unsigned x=0;x<160;++x){
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  const int raw_y=int(y)*2-2;
+  out[y*160+x]=raw_y>=0 && raw_y<236?source[size_t(raw_y)*320+x*2]:0;
+#else
+  out[y*160+x]=source[(y*2)*320+x*2];
+#endif
+ }
  return out;
 }
 struct Result {std::vector<Iteration> history;unsigned take=0,give=0,flush=0,stop=0;};
@@ -276,6 +342,7 @@ static Result run(std::vector<Plan> input,bool poison_image,bool archive_full=fa
  camera.snapshot_.camera_driver_active=true;camera.snapshot_.receiver_active=true;camera.snapshot_.xclk_active=true;
  RunControlWorker control;FootObserver observer;current=&observer;
  assert(observer.begin(camera,control));assert(observer.snapshot().row_cache_ready);
+ assert(created_foot_core==FootObserver::kTaskCore && created_foot_priority==FootObserver::kTaskPriority);
  observer.beginRun(7,500000);
  FootFrame canary;canary.sequence=0xdeadbeef;
  if(archive_full){
@@ -311,6 +378,9 @@ static Result run(std::vector<Plan> input,bool poison_image,bool archive_full=fa
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
  std::free(observer.upper_storage_);
 #endif
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+ std::free(observer.lower_storage_);
+#endif
  current=nullptr;return out;
 }
 static std::vector<Plan> scenario(){
@@ -330,6 +400,9 @@ static void fullPipeline(){
  assert(poisoned.take==source.size()-1 && poisoned.give==poisoned.take-1);
  assert(poisoned.flush==1 && poisoned.stop==1);
  bool phase_ready=false,local_ready=false;
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+ size_t preview_index=0;uint64_t preview_delivery=0;
+#endif
  for(size_t i=0;i<source.size()-1;++i){
   const auto& a=baseline.history[i];const auto& b=poisoned.history[i];const auto& f=b.snapshot.latest;
   detectionEqual(a.snapshot.latest,f);
@@ -344,10 +417,20 @@ static void fullPipeline(){
   assert(b.delay>=foot_fast_policy::kWorkerPeriodUs/1000-3 && b.delay<=foot_fast_policy::kWorkerPeriodUs/1000);
   if(i+1<source.size()-1){const auto dt=poisoned.history[i+1].snapshot.latest.delivered_us-f.delivered_us;
    assert(dt>=foot_fast_policy::kWorkerPeriodUs && dt<foot_fast_policy::kWorkerPeriodUs+1100);}
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+  if(i<70){
+   if(!i || f.delivered_us-preview_delivery>=200000){preview_index=i;preview_delivery=f.delivered_us;}
+   assert(b.preview_ok && b.preview==thumbnail(source[preview_index].original));
+   detectionEqual(b.info.frame,poisoned.history[preview_index].snapshot.latest,false);
+   assert(b.info.frame.ready_us==poisoned.history[preview_index].snapshot.latest.ready_us);
+   assert(b.info.mekf_attitude.sentinel==73 && b.info.imu_ok);
+  }else assert(b.preview_ok && b.info.frame.sequence==preview_index+1 && b.preview==thumbnail(source[preview_index].original));
+#else
   if(i<70){assert(b.preview_ok && b.preview==thumbnail(source[i].original));
    detectionEqual(b.info.frame,f,false);assert(b.info.mekf_attitude.sentinel==73 && b.info.imu_ok);
    assert(equal(b.info.right.center_x_px,f.right_x) && equal(b.info.left.center_x_px,f.left_x));}
   else {assert(b.preview_ok && b.info.frame.sequence==70 && b.preview==thumbnail(source[69].original));}
+#endif
   if(i>=70 && i<78){assert(f.zero_ready && f.right_valid && f.left_valid);
    assert(f.right_templates==17 && f.left_templates==17);
    phase_ready|=f.pose_projection.reason==foot_phase_prediction::Reason::Ready;
@@ -356,7 +439,14 @@ static void fullPipeline(){
    assert(std::isnan(f.right_x) && std::isnan(f.left_x));
    assert(f.right_reason==MarkerDetectionReason::NoFrame && f.left_reason==MarkerDetectionReason::NoFrame);
    assert(b.reads.packed_rows==0 && b.reads.capture_rows==0);}
-  else assert(f.row_cache_used && b.reads.capture_rows==foot_image_rows::kRequiredRows && b.reads.packed_rows>0 && b.reads.full_rows==0);
+  else {
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+   assert(b.snapshot.lower_overlap_used && f.upper_overlap_used && !f.row_cache_used);
+   assert(b.reads.capture_rows==0 && b.reads.packed_rows==0 && b.reads.full_rows==0);
+#else
+   assert(f.row_cache_used && b.reads.capture_rows==foot_image_rows::kRequiredRows && b.reads.packed_rows>0 && b.reads.full_rows==0);
+#endif
+  }
  }
  assert(phase_ready && local_ready && poisoned.history[69].snapshot.zero_ready);
  const auto& last=poisoned.history.back();assert(last.delay==20 && last.snapshot.latest.sequence==poisoned.take);
@@ -439,7 +529,110 @@ static void overlapAdmission(){
  std::cout<<"real v24 observer: matching frame reuse, wrong/invalid/timeout fallback, no speculative state commit PASS\n";
 #endif
 }
-int main(){fullPipeline();edgeCases();manualOneShot();idleReceipt();overlapAdmission();}
+static void nativeGeometryAdmission(){
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+ Plan good,wrong_length,wrong_height,short_frame;
+ wrong_length.invalid=Invalid::FullLogicalLength;
+ wrong_height.invalid=Invalid::WrongHeight;
+ short_frame.invalid=Invalid::Short;
+ auto result=run({good,wrong_length,wrong_height,short_frame,good},true);
+ assert(result.history.size()==5);
+ for(unsigned i=0;i<5;++i){
+  const auto& it=result.history[i];const bool valid=i==0 || i==4;
+  assert(it.snapshot.latest.frame_valid==valid);
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+  assert(!it.snapshot.latest.row_cache_used && it.snapshot.lower_overlap_used==valid);
+#else
+  assert(it.snapshot.latest.row_cache_used==valid);
+#endif
+  assert(it.snapshot.latest.upper_overlap_used==valid && it.preview_ok==valid);
+  if(valid){
+   assert(it.preview==thumbnail(good.original));
+   for(unsigned x=0;x<160;++x)assert(it.preview[x]==0 && it.preview[119*160+x]==0);
+   assert(equal(it.snapshot.latest.right_x,203) && equal(it.snapshot.latest.left_x,202));
+  }else assert(it.snapshot.latest.right_reason==MarkerDetectionReason::NoFrame);
+ }
+ const auto& last=result.history.back().snapshot;
+ assert(last.frame_failures==3 && last.captured_frames==2 && last.upper_hits==2 && last.upper_misses==3);
+ std::cout<<"real v25 observer: native236 mapping, logical240/short rejection, zero-padded bounded preview and identity admission PASS\n";
+#endif
+}
+static void nativePreviewCadence(){
+#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
+ auto at=[](uint64_t stamp,int x){Plan p;p.force_delivered_us=stamp;p.original=image(x,x-1);return p;};
+ auto first=at(2000000,203),second=at(2050000,190),invalid=at(2100000,189);
+ invalid.invalid=Invalid::Short;
+ auto recovery=at(2150000,188),active=at(2400000,180),idle=at(2450000,178);
+ active.before.running=active.after.running=true;active.before.state_id=active.after.state_id=3;
+ const auto result=run({first,second,invalid,recovery,active,idle},true);
+ const auto& history=result.history;
+ assert(history.size()==6 && history.back().snapshot.latest.sequence==6);
+ assert(history.back().snapshot.captured_frames==5 && history.back().snapshot.frame_failures==1);
+ assert(history[0].preview_ok && history[0].info.frame.sequence==1);
+ assert(history[1].snapshot.latest.sequence==2 && equal(history[1].snapshot.latest.right_x,190));
+ assert(history[1].preview==history[0].preview && history[1].info.frame.sequence==1);
+ assert(history[1].info.right.center_x_px==history[0].info.right.center_x_px);
+ assert(!history[2].preview_ok && !history[2].snapshot.latest.frame_valid);
+ assert(history[3].preview_ok && history[3].info.frame.sequence==4 && history[3].preview==thumbnail(recovery.original));
+ assert(history[4].snapshot.latest.sequence==5 && history[4].preview==history[3].preview && history[4].info.frame.sequence==4);
+ assert(history[5].preview_ok && history[5].info.frame.sequence==6 && history[5].preview==thumbnail(idle.original));
+ for(const auto& h:history)if(h.preview_ok){
+  assert(h.info.frame.ready_us>h.info.frame.released_us);
+  assert(h.info.frame.ready_us<=h.time);
+ }
+ for(uint64_t delta:{199999ULL,200000ULL}){
+  auto boundary=at(2000000+delta,190);auto pair=run({first,boundary},true);
+  const auto& latest=pair.history.back();
+  assert(latest.snapshot.latest.sequence==2 && equal(latest.snapshot.latest.right_x,190));
+  assert(latest.info.frame.sequence==(delta<200000?1:2));
+  assert(latest.preview==thumbnail(delta<200000?first.original:boundary.original));
+ }
+ std::cout<<"native idle preview5Hz: original pixels/metadata retained, exact200ms boundary, invalid recovery, active preservation, all observations retained PASS\n";
+#endif
+}
+static void lowerOverlapAdmission(){
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+ std::vector<Plan> samples(16);
+ samples[1].lower_stamp_delta=1;samples[1].lower_image=image(280,80);
+ samples[2].lower_stages={174,190,206}; // Matching partial work finishes after delivery.
+ samples[3].lower=false;
+ samples[4].invalid=Invalid::Short;samples[5].invalid=Invalid::NullFrame;
+ samples[6].invalid=Invalid::NullBuffer;samples[7].invalid=Invalid::FutureTimestamp;
+ samples[8].invalid=Invalid::OldTimestamp;samples[9].invalid=Invalid::FullLogicalLength;
+ samples[10].invalid=Invalid::WrongHeight;
+ for(unsigned i=4;i<=10;++i)samples[i].lower_image=image(280,80);
+ samples[11].lower_abandoned_first=true; // Complete wrong frame then reset to matching partial scan.
+ samples[12].lower_invalid_view=true;
+ samples[13].lower_stages={222}; // Mailbox may coalesce all milestones into a final prefix.
+ samples[14].lower_stages={174,174,190,174,206,222}; // Repeats/regressions do not duplicate work.
+ samples[15].early=false; // Lower accepted, upper falls back to the full cache.
+ auto ordinary=samples;
+ for(auto& p:ordinary){p.lower=false;p.early=false;}
+ const auto baseline=run(ordinary,true),streamed=run(samples,true);
+ for(unsigned i=0;i<samples.size();++i){
+  const auto& a=baseline.history[i];const auto& b=streamed.history[i];
+  detectionEqual(a.snapshot.latest,b.snapshot.latest,false);
+  assert(a.preview_ok==b.preview_ok && a.preview==b.preview);
+  if(a.preview_ok){assert(a.info.left.success_count==b.info.left.success_count);
+   assert(a.info.left.fail_count==b.info.left.fail_count);}
+  const bool hit=i==0 || i==2 || i==11 || i==13 || i==14 || i==15;
+  assert(b.snapshot.lower_overlap_used==hit && (b.snapshot.lower_prepare_us>0)==hit);
+  const auto& f=b.snapshot.latest;
+  const auto early_templates=b.snapshot.lower_templates_before_delivery;
+  if(i==2)assert(early_templates>0 && early_templates<17 && f.left_templates==17 && b.reads.packed_rows>0);
+  else assert(early_templates==(hit?17:0));
+  const bool skipped=f.frame_valid && f.upper_overlap_used && hit && early_templates==17;
+  assert(f.row_cache_used==(f.frame_valid && !skipped));
+  assert(b.reads.capture_rows==(f.row_cache_used?foot_image_rows::kRequiredRows:0));
+ }
+ const auto& last=streamed.history.back().snapshot;
+ assert(last.lower_hits==6 && last.lower_misses==10);
+ assert(last.lower_attempts==59);
+ assert(sizeof(WhiteMarker1DTracker::PreparedScan)==2132);
+ std::cout<<"real v26 observer: staged/missing/repeated prefix, frame reset/admission, owned features, all-row copy skip/fallback, no speculative state commits PASS\n";
+#endif
+}
+int main(){fullPipeline();edgeCases();manualOneShot();idleReceipt();overlapAdmission();nativeGeometryAdmission();nativePreviewCadence();lowerOverlapAdmission();}
 ''')
 
 
@@ -486,6 +679,10 @@ def main():
         subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_RECEIPT_AUDIT=1'],check=True)
         subprocess.run([str(binary)],check=True)
         subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1'],check=True)
+        subprocess.run([str(binary)],check=True)
+        subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1'],check=True)
+        subprocess.run([str(binary)],check=True)
+        subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DFOOT_NATIVE_STREAM_V26=1'],check=True)
         subprocess.run([str(binary)],check=True)
 
 
