@@ -390,7 +390,7 @@ int main(int argc,char** argv){
 '''
 
 
-def compile_probe(temp, counted, fast=True, speed=False):
+def compile_probe(temp, counted, fast=True, speed=False, capture=False):
     source = temp / 'probe.cpp'
     source.write_text(CPP, encoding='utf8')
     (temp / 'legacy_tracker.h').write_text('#pragma once\n#include "white_marker_tracker.h"\n' + LEGACY_HEADER, encoding='utf8')
@@ -400,6 +400,7 @@ def compile_probe(temp, counted, fast=True, speed=False):
     subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror',
                     '-DFOOT_LOW_LATENCY_V20=' + str(int(fast)), '-DFOOT_IMAGE_ROWS_TEST_READS=' + str(int(counted)),
                     '-DFOOT_SPEED_V22=' + str(int(speed)),
+                    '-DFOOT_CAPTURE_V23=' + str(int(capture)),
                     '-I' + str(ROOT / 'tools/host_v46o'), '-I' + str(ROOT / 'src'), '-I' + str(temp),
                     str(source), str(legacy), str(ROOT / 'src/white_marker_tracker.cpp'), '-o', str(exe)], check=True)
     return exe
@@ -433,6 +434,14 @@ def main():
         output=subprocess.check_output([str(speed_binary),'bench',str(args.bench_frames)],text=True)
         print('v22:',output.strip())
         report['v22_host_benchmark']=json.loads(next(line[6:] for line in output.splitlines() if line.startswith('BENCH ')))
+        capture_counted=compile_probe(temp,True,speed=True,capture=True)
+        output=subprocess.check_output([str(capture_counted)],text=True)
+        print('v23:',output.strip())
+        report['v23_reads']=json.loads(next(line[6:] for line in output.splitlines() if line.startswith('READS ')))
+        capture_binary=compile_probe(temp,False,speed=True,capture=True)
+        output=subprocess.check_output([str(capture_binary),'bench',str(args.bench_frames)],text=True)
+        print('v23:',output.strip())
+        report['v23_host_benchmark']=json.loads(next(line[6:] for line in output.splitlines() if line.startswith('BENCH ')))
         compat = temp / 'compat.cpp'
         compat.write_text('#include "foot_image_rows.h"\nstatic_assert(foot_image_rows::kRequiredRows==66,"rows");\nint main(){return 0;}\n', encoding='utf8')
         subprocess.run(['g++', '-std=c++11', '-Wall', '-Wextra', '-Werror', '-I' + str(ROOT / 'src'),

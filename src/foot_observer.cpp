@@ -68,6 +68,14 @@ void FootObserver::recordControlObservation(uint16_t run_id, uint32_t sequence, 
   // A later camera publication can replace the last row after snapshot().
   // Never attach an observation to a different sequence; count the miss.
   portENTER_CRITICAL(&mux_);
+#if (defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23) || (defined(FOOT_RECEIPT_AUDIT) && FOOT_RECEIPT_AUDIT)
+  // Idle Core1 polling measures the same receipt boundary without starting a
+  // run. Never attach a receipt to a newer frame that replaced the snapshot.
+  auto& latest=status_.latest;
+  if(latest.run_id==run_id && latest.sequence==sequence && latest.timestamp_valid &&
+     !latest.control_observed_us && latest.ready_us && observed_us>=latest.ready_us)
+    latest.control_observed_us=observed_us;
+#endif
   if (status_.recording && run_id == recording_run_id_) {
     ++control_observation_attempts_;
     bool matched = false;
@@ -339,9 +347,16 @@ void FootObserver::appendMetadata(PsramString& json) const {
 #if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
   json+="\"target_fps\":30,\"capacity\":"+String(kCapacity);
 #if defined(FOOT_SPEED_FIX1) && FOOT_SPEED_FIX1
+#if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
+  json+=",\"sensor_speed_profile\":\"gc0308_div7_hb128_sdk_aec_v23\",\"sensor_profile_startup_readback_required\":true";
+  json+=",\"sensor_period_estimate_ms\":35.96,\"sensor_xclk_nominal_hz\":22857142";
+  json+=",\"sensor_xclk_divider\":7,\"sensor_xclk_fraction_num\":0,\"sensor_xclk_fraction_den\":0";
+  json+=",\"recognition_math\":\"integer_peak_and_bounded_int32_centroid_v23\"";
+#else
   json+=",\"sensor_speed_profile\":\"gc0308_hb128_sdk_aec_v22_fix1\",\"sensor_profile_startup_readback_required\":true";
-  json+=",\"sensor_hblank\":128,\"sensor_vblank\":12,\"sensor_max_exposure_level_rows\":480,\"sensor_flicker_step_rows\":120";
   json+=",\"sensor_period_estimate_ms\":41.1";
+#endif
+  json+=",\"sensor_hblank\":128,\"sensor_vblank\":12,\"sensor_max_exposure_level_rows\":480,\"sensor_flicker_step_rows\":120";
   json+=",\"sensor_aec_modified\":false,\"sensor_readback_timeout_ms\":100";
   const auto speed=cameraSnapshot().speed_profile;
   json+=",\"sensor_profile_applied\":"+String(speed.applied?"true":"false");

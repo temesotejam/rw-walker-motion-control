@@ -370,6 +370,11 @@ void WebUi::status() {
   json += ",\"sequence\":" + String(f.latest.sequence);
   json += ",\"frame_valid\":" + String(f.latest.frame_valid ? "true" : "false");
   json += ",\"frame_timestamp_valid\":" + String(f.latest.timestamp_valid ? "true" : "false");
+#if (defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23) || (defined(FOOT_RECEIPT_AUDIT) && FOOT_RECEIPT_AUDIT)
+  const bool received=f.latest.timestamp_valid && f.latest.control_observed_us>=f.latest.ready_us && f.latest.ready_us>=f.latest.frame_us && f.latest.frame_us;
+  json += ",\"driver_to_control_ms\":" + String(received?(f.latest.control_observed_us-f.latest.frame_us)/1000.0:-1.0,3);
+  json += ",\"ready_to_control_ms\":" + String(received?(f.latest.control_observed_us-f.latest.ready_us)/1000.0:-1.0,3);
+#endif
   json += ",\"fps\":" + num(f.fps) + ",\"frames\":" + String(f.count);
   json += ",\"captured_frames\":" + String(f.captured_frames);
   json += ",\"right_marker_failures\":" + String(f.right_marker_failures);

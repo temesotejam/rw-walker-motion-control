@@ -344,7 +344,26 @@ static void manualOneShot(){
  camera.snapshot_.sensor_powered=false;assert(!camera.acquire(200) && takes==1);
  std::cout<<"real manual one-shot receiver/XCLK stop and exactly one ownership return PASS\n";
 }
-int main(){fullPipeline();edgeCases();manualOneShot();}
+static void idleReceipt(){
+#if (defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23) || (defined(FOOT_RECEIPT_AUDIT) && FOOT_RECEIPT_AUDIT)
+ FootObserver observer;
+ auto& f=observer.status_.latest;
+ f.run_id=0;f.sequence=17;f.timestamp_valid=true;f.ready_us=1000;
+ observer.recordControlObservation(1,17,1100);
+ observer.recordControlObservation(0,18,1100);
+ observer.recordControlObservation(0,17,999);
+ assert(!f.control_observed_us);
+ f.timestamp_valid=false;observer.recordControlObservation(0,17,1100);
+ assert(!f.control_observed_us);f.timestamp_valid=true;
+ observer.recordControlObservation(0,17,1100);
+ observer.recordControlObservation(0,17,1200);
+ assert(f.control_observed_us==1100);
+ assert(!observer.status_.recording && !observer.status_.count);
+ assert(!observer.control_observation_attempts_ && !observer.control_observation_unmatched_);
+ std::cout<<"idle first receipt identity/time guards and no archive mutation PASS\n";
+#endif
+}
+int main(){fullPipeline();edgeCases();manualOneShot();idleReceipt();}
 ''')
 
 
@@ -385,6 +404,10 @@ def main():
         subprocess.run(command, check=True)
         subprocess.run([str(binary)], check=True)
         subprocess.run(command+['-DFOOT_SPEED_V22=1'],check=True)
+        subprocess.run([str(binary)],check=True)
+        subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1'],check=True)
+        subprocess.run([str(binary)],check=True)
+        subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_RECEIPT_AUDIT=1'],check=True)
         subprocess.run([str(binary)],check=True)
 
 

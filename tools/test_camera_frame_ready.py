@@ -44,7 +44,7 @@ static uint64_t clock_us=0;
 static unsigned stops=0,starts=0,sends=0,copies=0;
 static int fail_send=0; static bool fail_pop=false;
 static bool running=false;
-static uint8_t pixels[2][76800], dma[15360];
+static uint8_t pixels[2][76800], dma[30720];
 struct Done {};
 static int xQueueReceive(Queue* q, void* out, unsigned) {
  if(q==&events){
@@ -145,6 +145,13 @@ int main(){
  reset();full((1ULL<<32)+1000);run();auto fb=frames.frames.front();
  assert(uint64_t(fb->timestamp.tv_sec)*1000000+fb->timestamp.tv_usec==(1ULL<<32)+1000);
  assert(rw_camera_frame_ready_stats().last_full_age_us==40000);
+ // v23 four physical slots: verify ordered pixels through multiple ring wraps.
+ reset();storage.dma_half_buffer_cnt=4;event(CAM_VSYNC_EVENT,1000);
+ for(int i=0;i<10;++i)event(CAM_IN_SUC_EOF_EVENT,5000+i*4000,[=]{
+   memset(dma+(i%4)*7680,i+1,7680);
+ });
+ run();assert(sends==1 && copies==10 && !running);
+ for(int i=0;i<10;++i)for(int j=0;j<7680;++j)assert(pixels[0][i*7680+j]==i+1);
  std::cout<<"PASS actual HAL loop: full/partial, fallback, DMA ownership, late EOF, borrowed buffers, queue races, timestamp wrap\n";
 }
 '''

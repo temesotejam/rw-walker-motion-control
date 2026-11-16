@@ -163,20 +163,43 @@ void WhiteMarker1DTracker::evaluate(const foot_image_rows::GrayRowView& gray, in
 #endif
     }
     int rolling = 0;
+#if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
+    int strongest = 0;
+#endif
     for (int x = 0; x < kWindow; ++x) rolling += contrast[x];
     for (int x = kRadius; x < kWidth - kRadius; ++x) {
         if (x > kRadius) rolling += contrast[x + kRadius] - contrast[x - kRadius - 1];
         smooth[x] = rolling / kWindow;
+#if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
+        if(smooth[x]>strongest)strongest=smooth[x];
+#else
         if (smooth[x] > weak.peak_contrast * kScale) weak.peak_contrast = static_cast<float>(smooth[x]) / kScale;
+#endif
     }
+#if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
+    // One conversion per height rather than per pixel; the same integer maximum.
+    if(strongest>weak.peak_contrast*kScale)weak.peak_contrast=static_cast<float>(strongest)/kScale;
+#endif
     for (int x = kRadius; x < kWidth - kRadius;) {
         if (smooth[x] <= kBaseline) { ++x; continue; }
         const int lo = x;
         int peak = x, peak_value = 0, weight = 0;
+#if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
+        // Worst case: every column at maximum positive 15*255 contrast.
+        // The exact centroid sum fits int32; avoid software 64-bit multiplies.
+        static_assert(int64_t(kWidth)*(kWidth-1)/2*15*255<INT32_MAX,"Centroid accumulator fits");
+        int32_t weighted_x = 0;
+#else
         int64_t weighted_x = 0;
+#endif
         while (x < kWidth - kRadius && smooth[x] > kBaseline) {
             const int w = smooth[x] - kBaseline;
-            weight += w; weighted_x += static_cast<int64_t>(x) * w;
+            weight += w;
+#if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
+            weighted_x += x*w;
+#else
+            weighted_x += static_cast<int64_t>(x) * w;
+#endif
             if (smooth[x] > peak_value) { peak_value = smooth[x]; peak = x; }
             ++x;
         }

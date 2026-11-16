@@ -10,13 +10,22 @@ Upstream: https://github.com/espressif/esp32-camera/tree/f0bb429
 
 Local modifications publish complete GC0308 QVGA grayscale frames at the final
 DMA EOF instead of waiting for the following VSYNC. They apply only to 20MHz
-XCLK with internal DMA copying, 1-byte input/output pixels and exactly 76800
+SDK initialization with internal DMA copying, 1-byte input/output pixels and exactly 76800
 copied bytes. DMA stops before queue publication; the state remains IDLE until
 the next VSYNC. Partial frames retain the upstream size check. JPEG, other
 geometry/formats and direct-PSRAM DMA retain VSYNC publication. A shared helper
 retains the upstream latest-frame replacement and buffer ownership policy.
 Independent, atomic boot-lifetime counters report successful early/VSYNC
 publications, queue discards and the last completed frame's driver-start age.
+
+The isolated `FOOT_CAPTURE_V23` profile subsequently changes XCLK at boot to
+PLL160 divided by7 (nominal22.857MHz). Its DMA layout keeps the same internal
+allocation but halves each chunk, providing four physical slots and a queue of
+three events. Layout checks require an aligned integral division of every frame;
+they fail initialization on an unexpected layout. The production EOF loop and
+complete-frame requirement remain unchanged. This reduces queue overflow in the
+USB idle comparison; it does not eliminate all incomplete frames. See
+`docs/FOOT_CAPTURE_V23.md` for measurements and limits.
 
 Only `src/camera_frame_ready_hal.c` with `CAMERA_FRAME_READY_V21=1` includes this
 source. The full HAL supplies the existing public symbols so the static SDK

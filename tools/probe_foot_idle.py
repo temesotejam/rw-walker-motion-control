@@ -62,7 +62,7 @@ def main():
                'counter_windows': [],
                'metrics': {k: stats(k) for k in ['driver_delivery_ms', 'frame_to_ready_ms',
                    'recognition_us', 'row_copy_us', 'processing_us', 'fps', 'frame_age_ms',
-                   'ready_age_ms']}}
+                   'ready_age_ms','driver_to_control_ms','ready_to_control_ms']}}
     # Instantaneous reciprocal frame period (fps) does not measure sustained
     # throughput. Use counter deltas within each boot and an IMU time interval.
     for boot in summary['boots']:

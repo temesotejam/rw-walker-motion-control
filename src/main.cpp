@@ -325,6 +325,16 @@ static bool controlStep(void*) {
 #else
   constexpr uint32_t foot_poll_interval_ms=25;
 #endif
+#if (defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23) || (defined(FOOT_RECEIPT_AUDIT) && FOOT_RECEIPT_AUDIT)
+  // Receipt audit only: do not feed the walking controller or start a run.
+  if(!measurement && millis()-foot_observation_poll_ms>=foot_poll_interval_ms) {
+    foot_observation_poll_ms=millis();
+    const auto idle_foot=feet.snapshot();
+    const uint64_t observed_us=esp_timer_get_time();
+    if(idle_foot.latest.timestamp_valid && !idle_foot.latest.control_observed_us)
+      feet.recordControlObservation(idle_foot.latest.run_id,idle_foot.latest.sequence,observed_us);
+  }
+#endif
   if(measurement && measurement_epoch_us && millis()-foot_observation_poll_ms>=foot_poll_interval_ms) {
     foot_observation_poll_ms=millis();
     const auto fs=feet.snapshot();const uint64_t foot_observed_us=esp_timer_get_time();const auto& f=fs.latest;

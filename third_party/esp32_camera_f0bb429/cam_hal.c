@@ -19,6 +19,9 @@
 #include "ll_cam.h"
 #include "cam_hal.h"
 #include "../../src/camera_frame_ready.h"
+#if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
+#include "../../src/camera_capture_dma.h"
+#endif
 
 #if (ESP_IDF_VERSION_MAJOR == 3) && (ESP_IDF_VERSION_MINOR == 3)
 #include "rom/ets_sys.h"
@@ -287,6 +290,16 @@ static esp_err_t cam_dma_config(const camera_config_t *config)
     if (0 == ret) {
         return ESP_FAIL;
     }
+
+#if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
+    if(!cam_obj->jpeg_mode && !cam_obj->psram_mode && cam_obj->width==320 && cam_obj->height==240) {
+        const rw_capture_dma_layout_t layout=rw_capture_dma_layout(cam_obj->dma_buffer_size,
+            cam_obj->dma_half_buffer_size,cam_obj->dma_node_buffer_size,cam_obj->recv_size);
+        if(!layout.valid)return ESP_FAIL;
+        cam_obj->dma_half_buffer_size=layout.half_bytes;
+        cam_obj->dma_half_buffer_cnt=layout.slots;
+    }
+#endif
 
     cam_obj->dma_node_cnt = (cam_obj->dma_buffer_size) / cam_obj->dma_node_buffer_size; // Number of DMA nodes
     cam_obj->frame_copy_cnt = cam_obj->recv_size / cam_obj->dma_half_buffer_size; // Number of interrupted copies, ping-pong copy

@@ -4,6 +4,10 @@
 #include "runtime_diagnostics.h"
 #include "foot_fast_policy.h"
 #include "camera_speed_profile.h"
+#if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
+#include "camera_capture_clock.h"
+#include "soc/lcd_cam_struct.h"
+#endif
 
 #include <Arduino.h>
 #include "driver/gpio.h"
@@ -132,6 +136,11 @@ bool OneShotCamera::beginOnOwnerCore() {
   // Complete exactly one boot frame so cam_task is known to be out of an
   // in-progress frame, then enter the idle state. There is NO background
   // camera task in this serial-debug build.
+#if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
+  // The clock switch stopped VSYNC admission. Rearm only after sensor timing
+  // and SCCB release have completed, before waiting for the first full frame.
+  cam_start();
+#endif
   camera_fb_t* boot_frame = cam_take(pdMS_TO_TICKS(kCaptureTimeoutMs));
   cameraTaskPriorityPatchSampleStack();
   if (!boot_frame) {
@@ -405,6 +414,25 @@ bool OneShotCamera::initCameraOnTemporaryI2c0() {
     setError("camera_sensor_missing");
     return false;
   }
+
+#if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
+  // Boot only, before any image consumer exists. Do not briefly overclock the
+  // sensor through the SDK's integer-only 24MHz request path.
+  cam_stop();
+  setXclkEnabled(false);
+  const bool clock_ok=camera_capture_clock::apply(LCD_CAM.cam_ctrl);
+  setXclkEnabled(true);
+  delay(kXclkWarmupMs);
+  if(!clock_ok) {
+    cameraTaskPriorityPatchForgetTask();
+    esp_camera_deinit();
+    (void)i2c_driver_delete(I2C_NUM_0);
+    setError("camera_capture_clock_readback_failed");
+    return false;
+  }
+  sensor->xclk_freq_hz=camera_capture_clock::kTargetHz;
+  snapshot_.xclk_hz=camera_capture_clock::kTargetHz;
+#endif
 
   sensor->set_framesize(sensor, FRAMESIZE_QVGA);
   sensor->set_vflip(sensor, 1);

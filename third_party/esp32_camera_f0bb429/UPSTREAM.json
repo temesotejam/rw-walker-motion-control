@@ -7,5 +7,5 @@
     "ll_cam.h": "8dc15e0c4d008bbb838c35e5daa4500d4f4f256db0f89127d63b9ff619a8d08f",
     "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
   },
-  "modifications": "cam_hal.c: complete QVGA grayscale DMA publication, shared latest-frame queue helper, boot-lifetime diagnostics. Headers unmodified."
+  "modifications": "cam_hal.c: complete QVGA grayscale DMA publication, shared latest-frame queue helper, boot-lifetime diagnostics, conditional v23 four-slot DMA layout within the same allocation. Headers unmodified."
 }
