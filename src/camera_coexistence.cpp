@@ -4,6 +4,9 @@
 #include "runtime_diagnostics.h"
 #include "foot_fast_policy.h"
 #include "camera_speed_profile.h"
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+#include "camera_row_overlap.h"
+#endif
 #if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
 #include "camera_capture_clock.h"
 #include "soc/lcd_cam_struct.h"
@@ -490,7 +493,11 @@ bool OneShotCamera::startContinuous() {
 camera_fb_t* OneShotCamera::acquireContinuous(uint32_t timeout_ms) {
   if (!snapshot().receiver_active) return nullptr;
   const uint32_t start = micros();
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+  camera_fb_t* fb = static_cast<camera_fb_t*>(rw_camera_take_overlap(pdMS_TO_TICKS(timeout_ms)));
+#else
   camera_fb_t* fb = cam_take(pdMS_TO_TICKS(timeout_ms));
+#endif
   // LATEST bounds its driver queue. Do not probe cam_take(0) on a live
   // stream: the pinned S3 driver can reset DMA when that queue is empty.
   cameraTaskPriorityPatchSampleStack();

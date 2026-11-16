@@ -4,6 +4,9 @@
 #include "psram_string.h"
 #include "foot_zero.h"
 #include "white_marker_tracker.h"
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+#include "camera_row_overlap.h"
+#endif
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
 #include "foot_image_rows.h"
 #include "foot_fast_policy.h"
@@ -27,6 +30,10 @@ struct FootFrame {
   uint64_t ready_us=0,released_us=0;
   uint32_t capture_wait_us=0,row_copy_us=0,recognition_us=0;
   bool row_cache_used=false;
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+  uint32_t upper_prepare_us=0;
+  bool upper_overlap_used=false;
+#endif
 #endif
   uint16_t run_id = 0;
   uint8_t state_id = 0, led_state = 0, sync_event_id = 0;
@@ -66,6 +73,9 @@ struct FootSnapshot {
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
   uint32_t recognition_max_us=0,row_copy_max_us=0;
   bool row_cache_ready=false;
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+  uint32_t upper_attempts=0,upper_hits=0,upper_misses=0;
+#endif
 #endif
   float right_zero = appcfg::kFootAngleAZeroXPx, left_zero = appcfg::kFootAngleBZeroXPx;
   float fps = 0;
@@ -121,4 +131,11 @@ class FootObserver {
 #endif
   SemaphoreHandle_t preview_mutex_ = nullptr;
   FootPreviewInfo preview_info_;
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+  static void prepareUpper(const foot_image_rows::GrayRowView&,uint64_t,uint32_t,void*);
+  WhiteMarker1DTracker::PreparedFeatures upper_features_;
+  uint8_t* upper_storage_=nullptr;
+  uint64_t upper_frame_us_=0;
+  uint32_t upper_attempts_=0;
+#endif
 };

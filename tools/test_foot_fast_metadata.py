@@ -1,4 +1,4 @@
-"""Stress real v19/v20 serializers at archive capacity with host PSRAM doubles.
+"""Stress real foot/energy serializers at archive capacity with host PSRAM doubles.
 
 The complete PsramLogger and FootObserver serializers and the production runner
 metadata methods execute. Camera, acquisition and RTOS are host substitutes;
@@ -63,6 +63,10 @@ FIXTURE = r'''
 #include "camera_frame_ready.h"
 #if defined(CAMERA_FRAME_READY_V21) && CAMERA_FRAME_READY_V21
 extern "C" rw_camera_frame_ready_stats_t rw_camera_frame_ready_stats(){return {123,4,5,39000};}
+#endif
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+bool camera_row_overlap::initialize(uint8_t*,size_t,Consumer,void*){return false;}
+extern "C" rw_camera_overlap_stats_t rw_camera_overlap_stats(){return {1400,7,9,1280};}
 #endif
 #include "imu_manager.h"
 #include "roller485_manager.h"
@@ -145,6 +149,9 @@ int main(int argc,char** argv){
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
  feet.status_.row_cache_ready=true;feet.status_.recognition_max_us=9876;feet.status_.row_copy_max_us=1234;
 #endif
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+ feet.status_.upper_attempts=1280;feet.status_.upper_hits=1270;feet.status_.upper_misses=10;
+#endif
  for(unsigned i=0;i<FootObserver::kCapacity;++i){
   FootFrame f{};f.sequence=100000+i;f.run_id=1;f.state_id=3;
   f.frame_us=123456789012ULL+i*40000ULL;f.delivered_us=f.frame_us+50000;
@@ -169,6 +176,9 @@ int main(int argc,char** argv){
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
   f.released_us=f.delivered_us+1234;f.ready_us=f.delivered_us+12345;
   f.capture_wait_us=2345;f.row_copy_us=1234;f.recognition_us=9876;f.row_cache_used=true;
+#endif
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+  f.upper_prepare_us=2345;f.upper_overlap_used=true;
 #endif
   feet.frames_[i]=f;
  }
@@ -206,8 +216,14 @@ int main(int argc,char** argv){
  assert(!failed.chunk("",0,1,binary.data()));
  std::ofstream output(argv[1],std::ios::binary);output.write(json.c_str(),json.length());output.close();
  const size_t samples=Config::LOG_BUFFER_BYTES/sizeof(LogSample)*sizeof(LogSample);
+ const size_t upper_mailbox=
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+   foot_image_rows::kUpperBytes;
+#else
+   0;
+#endif
  const size_t core=samples+PsramLogger::eventStorageBytes()+sizeof(FootFrame)*FootObserver::kCapacity+
-   sizeof(ExperimentRunner::WalkingEnergyAudit)*192+PsramLogger::kMetadataJsonReserveBytes+1;
+   sizeof(ExperimentRunner::WalkingEnergyAudit)*192+PsramLogger::kMetadataJsonReserveBytes+1+upper_mailbox;
  const size_t camera=320*240*(
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
    foot_fast_policy::kCameraFrameBuffers
@@ -234,6 +250,13 @@ int main(int argc,char** argv){
 #else
    0
 #endif
+   <<",\"upper_mailbox_psram_bytes\":"<<upper_mailbox
+   <<",\"foot_task_stack_internal_bytes\":"<<
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+   12288
+#else
+   10240
+#endif
    <<",\"logger_object_bytes\":"<<sizeof(PsramLogger)<<",\"runner_object_bytes\":"<<sizeof(ExperimentRunner)<<"}\n";
 }
 '''
@@ -249,7 +272,7 @@ def flags(v20):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--report', type=Path, help='Optional JSON report destination')
-    parser.add_argument('--revisions',type=int,nargs='+',choices=[19,20,21,22,23,24],default=[19,20,21,22,23,24])
+    parser.add_argument('--revisions',type=int,nargs='+',choices=[19,20,21,22,23,24,25],default=[19,20,21,22,23,24,25])
     args = parser.parse_args()
     cpp = (ROOT / 'src/experiment_runner.cpp').read_text(encoding='utf8')
     inc = (ROOT / 'src/walking_energy_runner.inc').read_text(encoding='utf8')
@@ -261,12 +284,13 @@ def main():
     reports = []
     with tempfile.TemporaryDirectory(prefix='foot_fast_metadata_') as folder:
         temp = Path(folder); (temp / 'fixture.cpp').write_text(fixture, encoding='utf8')
-        for revision in args.revisions: # 23=v22-fix1; 24=v23 capture fixture.
+        for revision in args.revisions: # 23=v22-fix1; 24=v23 capture; 25=v24 overlap.
             v20 = revision >= 20
             additions = ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1', '-DCAMERA_FRAME_READY_V21=1'] if revision >= 21 else []
             if revision >= 22: additions += ['-DFOOT_SPEED_V22=1']
             if revision >= 23: additions += ['-DFOOT_SPEED_FIX1=1']
-            if revision == 24: additions += ['-DFOOT_CAPTURE_V23=1']
+            if revision >= 24: additions += ['-DFOOT_CAPTURE_V23=1']
+            if revision >= 25: additions += ['-DFOOT_ROW_OVERLAP_V24=1']
             exe = temp / ('v'+str(revision)+'.exe'); destination = exe.with_suffix('.json')
             subprocess.run(['g++', '-std=c++17', '-O0', '-Wall', '-Wextra', '-Werror', '-Wno-format',
                             '-DMALLOC_CAP_INTERNAL=4',
@@ -293,7 +317,7 @@ def main():
             assert size['metadata_bytes'] == len(blob) == metadata['metadata_json_final_bytes']
             assert metadata['metadata_json_reserve_bytes'] == size['metadata_reserve_bytes']
             assert size['metadata_bytes'] <= size['hard_budget_bytes']
-            assert metadata['diagnostic_build_id'] == {19:'walking-energy-admission-v19',20:'walking-foot-fast-v20',21:'walking-foot-frame-ready-v21',22:'walking-foot-speed-v22',23:'walking-foot-speed-v22-fix1',24:'walking-foot-capture-v23'}[revision]
+            assert metadata['diagnostic_build_id'] == {19:'walking-energy-admission-v19',20:'walking-foot-fast-v20',21:'walking-foot-frame-ready-v21',22:'walking-foot-speed-v22',23:'walking-foot-speed-v22-fix1',24:'walking-foot-capture-v23',25:'walking-foot-overlap-v24'}[revision]
             assert metadata['energy_model'] == 'walking_energy_admission_v19'
             assert expanded['walking_energy']['revision'] == 'walking_energy_admission_v19' and expanded['walking_energy']['branch'] == 24
             assert size['foot_rows'] == size['foot_capacity'] == (1280 if v20 else 768)
@@ -319,14 +343,28 @@ def main():
                 assert observation['sensor_hblank']==(128 if revision>=23 else 64) and observation['worker_min_period_us']==33333
                 assert observation['contrast_reuse']=='exact_integer_vertical_rolling_v22'
             if revision >= 23:
-                assert observation['sensor_speed_profile']==('gc0308_div7_hb128_sdk_aec_v23' if revision==24 else 'gc0308_hb128_sdk_aec_v22_fix1')
-                assert observation['sensor_period_estimate_ms']==(35.96 if revision==24 else 41.1)
-                if revision==24:
+                assert observation['sensor_speed_profile']==('gc0308_div7_hb128_sdk_aec_v23' if revision>=24 else 'gc0308_hb128_sdk_aec_v22_fix1')
+                assert observation['sensor_period_estimate_ms']==(35.96 if revision>=24 else 41.1)
+                if revision>=24:
                     assert observation['sensor_xclk_nominal_hz']==22857142
                     assert [observation[k] for k in ['sensor_xclk_divider','sensor_xclk_fraction_num','sensor_xclk_fraction_den']]==[7,0,0]
                 assert observation['sensor_aec_modified'] is False
                 assert observation['sensor_flicker_step_rows']==120 and observation['sensor_max_exposure_level_rows']==480
                 assert observation['sensor_profile_applied'] is False and observation['sensor_profile_stage']=='not_attempted'
+            if revision >= 25:
+                assert all(row['upper_prepare_us'] == 2345 and row['upper_overlap_used'] is True
+                           for row in expanded['foot_frames']), 'Overlap timing must round-trip for every frame'
+                assert observation['upper_overlap'] == 'image_features_before_complete_frame_tracking_after_identity_validation'
+                assert observation['recognition_us_semantics'] == 'post_delivery_only;upper_prepare_us_is_separate_overlapped_elapsed_time'
+                assert observation['upper_cache_bytes'] == size['upper_mailbox_psram_bytes'] == 8320
+                assert [observation[key] for key in ['upper_attempts','upper_hits','upper_misses']] == [1280,1270,10]
+                assert [observation[key] for key in ['upper_offered','upper_busy','upper_replaced']] == [1400,7,9]
+                assert size['foot_task_stack_internal_bytes'] == 12288
+            else:
+                assert size['upper_mailbox_psram_bytes'] == 0
+                assert size['foot_task_stack_internal_bytes'] == 10240
+                assert all('upper_prepare_us' not in row and 'upper_overlap_used' not in row
+                           for row in expanded['foot_frames'])
             csv_dir = temp / ('v'+str(revision)+'_csv'); csv_dir.mkdir()
             assert converter.write_foot_frames(expanded, csv_dir) == size['foot_rows']
             assert converter.write_walking_energy_diagnostics(expanded, csv_dir) == size['energy_rows']
@@ -343,6 +381,7 @@ def main():
                 'limits': 'Host ABI sizes and expected explicit PSRAM buffers; camera driver, allocator fragmentation and other allocations require real-board verification.',
                 'source_sha256': {s: hashlib.sha256((ROOT / s).read_bytes()).hexdigest() for s in sources +
                     ['src/psram_logger.h', 'src/foot_observer.h', 'src/foot_fast_policy.h',
+                     'src/camera_row_overlap.h', 'src/foot_upper_rows.h',
                      'src/walking_energy_runner.inc', 'src/experiment_runner.cpp']}}, indent=2) + '\n', encoding='utf8')
     print('real foot + energy metadata capacity, budgets, schema/revisions and host PSRAM estimate PASS',args.revisions)
 

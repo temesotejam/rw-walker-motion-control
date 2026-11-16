@@ -1,4 +1,4 @@
-# Pinned ESP32 camera HAL for the v21 trial
+# Pinned ESP32 camera HAL for the v21-v24 trials
 
 Upstream: https://github.com/espressif/esp32-camera/tree/f0bb429
 
@@ -26,6 +26,45 @@ they fail initialization on an unexpected layout. The production EOF loop and
 complete-frame requirement remain unchanged. This reduces queue overflow in the
 USB idle comparison; it does not eliminate all incomplete frames. See
 `docs/FOOT_CAPTURE_V23.md` for measurements and limits.
+
+The conditional `FOOT_ROW_OVERLAP_V24` path adds an independently owned,
+single-slot upper-row mailbox. After each copied DMA chunk, the HAL offers the
+available prefix only for the same internal-DMA QVGA grayscale path. Once that
+prefix includes every required upper row, the producer copies 26 rows (8320
+bytes) into a separate PSRAM buffer; it never lends an in-progress camera
+buffer to the foot task. A frame timestamp is offered at most once. Atomic
+`Free`/`Writing`/`Ready`/`Reading` ownership prevents the producer from overwriting
+a slot being read. An unread `Ready` slot can be replaced by a newer frame; a
+busy slot skips that frame without blocking the HAL. Counters distinguish
+offers, busy skips, replacements and consumed slots.
+
+`rw_camera_take_overlap` is used only by continuous acquisition. It checks the
+complete-frame queue before speculative work, calls `rw_camera_overlap_poll`
+in the consuming foot task, then checks the queue again before a one-tick wait.
+These short waits share one elapsed-tick timeout budget; they do not repeatedly
+call `cam_take` or reset DMA. At a full timeout it makes one final nonblocking
+queue check. On ESP32-S3, an empty queue then uses the legacy single DMA reset
+and one additional wait of the requested timeout. Consequently, the argument is
+not a hard wall-clock upper bound: recovery can wait a second timeout, and a
+running preparation callback is not interrupted at the deadline. Unsupported
+formats or DMA modes fall back to `cam_take`; manual and boot acquisition retain
+the original path.
+
+The mailbox callback invalidates the prior complete-frame row cache, copies the
+upper rows from the PSRAM mailbox into that cache's existing internal-RAM
+storage as scratch, and prepares upper-marker image features there. Only the
+foot task uses this scratch, and acquisition completes before the normal
+complete-frame row capture refills it. This reuses the existing 21120-byte
+internal allocation instead of allocating another upper-row buffer internally;
+the foot task retains its 12288-byte stack. The callback neither updates
+tracking history nor publishes a foot observation. The normal full
+76800-byte frame must still arrive and pass frame/timestamp validation. Only
+when its driver timestamp matches the prepared candidate does the consumer
+commit those features through the tracker. Otherwise it processes the complete
+frame's copied rows normally. The lower marker follows that normal path in both
+cases. Preparation runs in the foot task, not in the ISR or the HAL task. This
+overlaps image computation with reception; it does not change sensor readout,
+the complete-frame publication rule, or establish a measured latency reduction.
 
 Only `src/camera_frame_ready_hal.c` with `CAMERA_FRAME_READY_V21=1` includes this
 source. The full HAL supplies the existing public symbols so the static SDK

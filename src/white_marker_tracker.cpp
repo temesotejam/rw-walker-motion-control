@@ -43,6 +43,10 @@ WhiteMarkerObservation WhiteMarker1DTracker::process(const uint8_t* gray) {
 }
 WhiteMarkerObservation WhiteMarker1DTracker::process(const foot_image_rows::GrayRowView& gray) {
     const uint32_t now = micros();
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+    // Preserve the ordinary path's temporal decision clock from before scan.
+    return processPreparedAt(prepare(gray),now);
+#else
     WhiteMarkerObservation out;
     out.id = _id; out.center_y_px = nominalCenterY();
     if (gray.valid()) {
@@ -117,7 +121,111 @@ WhiteMarkerObservation WhiteMarker1DTracker::process(const foot_image_rows::Gray
     out.success_count = _success_count; out.fail_count = _fail_count;
     out.processing_us = micros() - now;
     return out;
+#endif
 }
+
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+WhiteMarker1DTracker::PreparedFeatures WhiteMarker1DTracker::prepare(const foot_image_rows::GrayRowView& gray) const {
+    const uint32_t start=micros();
+    PreparedFeatures prepared;
+    prepared.marker_id_=_id; prepared.image_valid_=gray.valid();
+    auto& out=prepared.observation_;
+    out.id=_id; out.center_y_px=nominalCenterY();
+    if(prepared.image_valid_) {
+        auto* candidates=prepared.candidates_;
+        int& count=prepared.count_; bool& overflow=prepared.overflow_;
+#if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+        int contrast_state[kWidth];
+        bool slide=false;
+#endif
+        out.reason = MarkerDetectionReason::LowContrast;
+        // Always search all heights. A nominal-row distractor must not hide a
+        // stronger displaced marker. Each distinct horizontal island is kept.
+        for (int dy = -appcfg::kWhiteSearchRadiusYPx; dy <= appcfg::kWhiteSearchRadiusYPx;
+             dy += appcfg::kWhiteSearchStepYPx) {
+#if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+            evaluate(gray, dy, candidates, count, overflow, out, contrast_state, slide);
+            slide=true;
+#else
+            evaluate(gray, dy, candidates, count, overflow, out);
+#endif
+            ++out.templates_tested;
+        }
+        out.candidate_count = count;
+    }
+    prepared.processing_us=micros()-start;
+    return prepared;
+}
+WhiteMarkerObservation WhiteMarker1DTracker::processPrepared(const PreparedFeatures& prepared) {
+    return processPreparedAt(prepared,micros());
+}
+WhiteMarkerObservation WhiteMarker1DTracker::processPreparedAt(const PreparedFeatures& prepared,uint32_t now) {
+    // A different lane/default value is a programming/admission error, not a
+    // new failed image. Refuse it without changing temporal state or counters.
+    if(prepared.marker_id_!=_id) {
+        WhiteMarkerObservation out;
+        out.id=_id; out.center_y_px=nominalCenterY();
+        out.success_count=_success_count; out.fail_count=_fail_count;
+        out.processing_us=micros()-now;
+        return out;
+    }
+    auto out=prepared.observation_;
+    if(prepared.image_valid_) {
+        const auto* candidates=prepared.candidates_;
+        const int count=prepared.count_;const bool overflow=prepared.overflow_;
+        if (count) {
+            const bool recent = _tracked && static_cast<uint32_t>(now - _last_us) <= appcfg::kWhiteTrackMemoryUs;
+            int best = -1, second = -1, global = 0;
+            float best_score = -1, second_score = -1;
+            for (int i = 0; i < count; ++i) {
+                const auto& c = candidates[i];
+                if (c.contrast > candidates[global].contrast ||
+                    (c.contrast == candidates[global].contrast && c.weight > candidates[global].weight)) global = i;
+                const float dx = fabsf(c.x - _last_x), dy = fabsf(c.y - _last_y);
+                if (recent && (dx > appcfg::kWhiteMaxTrackStepXPx || dy > appcfg::kWhiteMaxTrackStepYPx)) continue;
+                // Proximity is a modest preference; it cannot turn a weak
+                // nearby reflection into a stronger current-image detection.
+                const float distance = recent ? fmaxf(dx / appcfg::kWhiteMaxTrackStepXPx,
+                                                       dy / appcfg::kWhiteMaxTrackStepYPx) : 0;
+                const float score = c.contrast * (1.0f - 0.15f * distance);
+                if (score > best_score) {
+                    second = best; second_score = best_score; best = i; best_score = score;
+                } else if (score > second_score) { second = i; second_score = score; }
+            }
+            const auto& chosen = candidates[best < 0 ? global : best];
+            out.center_x_px = chosen.x; out.center_y_px = chosen.y;
+            out.peak_contrast = chosen.contrast; out.weight_sum = chosen.weight;
+            out.peak_x_px = chosen.peak; out.bright_width_px = chosen.width;
+            if (second >= 0) {
+                out.alternate_x_px = candidates[second].x; out.alternate_y_px = candidates[second].y;
+                out.ambiguity_ratio = second_score / best_score;
+            }
+            out.reason = overflow ? MarkerDetectionReason::Ambiguous :
+                best < 0 ? MarkerDetectionReason::TrackJump :
+                out.ambiguity_ratio >= appcfg::kWhiteAmbiguousRatio ? MarkerDetectionReason::Ambiguous :
+                MarkerDetectionReason::Detected;
+            const bool weak_displaced = recent && marker_identity::weakDisplaced(
+                _last_x, _last_y, _last_contrast, _last_weight,
+                chosen.x, chosen.y, chosen.contrast, chosen.weight);
+            if (out.reason == MarkerDetectionReason::Detected && _tracked && (!recent || weak_displaced)) {
+                if (!_pending_count || static_cast<uint32_t>(now - _pending_us) > 300000 ||
+                    fabsf(chosen.x - _pending_x) > 40 || fabsf(chosen.y - _pending_y) > 24) _pending_count = 0;
+                _pending_x = chosen.x; _pending_y = chosen.y; _pending_us = now;
+                if (++_pending_count < appcfg::kWhiteReacquireFrames) out.reason = MarkerDetectionReason::Reacquiring;
+            } else { _pending_count = 0; }
+            out.valid = out.reason == MarkerDetectionReason::Detected;
+            if (out.valid) {
+                _tracked = true; _last_x = chosen.x; _last_y = chosen.y; _last_us = now; _pending_count = 0;
+                _last_contrast = chosen.contrast; _last_weight = chosen.weight;
+            }
+        } else { _pending_count = 0; }
+    } else { _pending_count = 0; }
+    if (out.valid) ++_success_count; else ++_fail_count;
+    out.success_count = _success_count; out.fail_count = _fail_count;
+    out.processing_us = micros() - now;
+    return out;
+}
+#endif
 
 void WhiteMarker1DTracker::evaluate(const foot_image_rows::GrayRowView& gray, int dy, Candidate* candidates,
                                    int& count, bool& overflow, WhiteMarkerObservation& weak,

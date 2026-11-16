@@ -28,16 +28,41 @@ bool FootObserver::begin(OneShotCamera& camera, RunControlWorker& control) {
   if(!row_storage_ || !preview_staging_ || !preview_ || !preview_mutex_)return false;
   row_cache_=foot_image_rows::RowCache(row_storage_,foot_image_rows::kRequiredBytes);
 #endif
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+  upper_storage_=static_cast<uint8_t*>(ps_malloc(foot_image_rows::kUpperBytes));
+  if(!upper_storage_ || !camera_row_overlap::initialize(upper_storage_,foot_image_rows::kUpperBytes,prepareUpper,this))return false;
+#endif
   portENTER_CRITICAL(&mux_); status_.available = true;
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
   status_.row_cache_ready=true;
 #endif
   portEXIT_CRITICAL(&mux_);
-  if (xTaskCreatePinnedToCore(entry, "foot_observer", 10240, this, 1, &task_, 0) != pdPASS) {
+  constexpr uint32_t stack_bytes=
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+      12288; // Includes the acquisition callback's candidate-preparation stack.
+#else
+      10240;
+#endif
+  if (xTaskCreatePinnedToCore(entry, "foot_observer", stack_bytes, this, 1, &task_, 0) != pdPASS) {
     portENTER_CRITICAL(&mux_); status_.available = false; portEXIT_CRITICAL(&mux_); return false;
   }
   return true;
 }
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+void FootObserver::prepareUpper(const foot_image_rows::GrayRowView& rows,uint64_t stamp,uint32_t,void* context) {
+  auto& self=*static_cast<FootObserver*>(context);
+  const uint32_t begin=micros();
+  // Only this task uses row_storage_, and acquisition precedes normal capture.
+  // Reuse its internal RAM for computation; the HAL mailbox lives in PSRAM.
+  self.row_cache_.invalidate();
+  foot_image_rows::UpperRowCache scratch(self.row_storage_,foot_image_rows::kRequiredBytes);
+  if(!scratch.capture(rows))return;
+  self.upper_features_=self.right_.prepare(scratch.view()); // No tracking state mutation.
+  self.upper_features_.processing_us=micros()-begin; // Includes mailbox-to-scratch copy.
+  self.upper_frame_us_=stamp;
+  ++self.upper_attempts_;
+}
+#endif
 bool FootObserver::copyPreview(uint8_t* out, FootPreviewInfo& info) const {
   if (!out || !preview_ || !preview_mutex_ || xSemaphoreTake(preview_mutex_, 0) != pdTRUE) return false;
   const bool valid = preview_info_.frame.frame_valid;
@@ -134,6 +159,9 @@ void FootObserver::loop() {
       vTaskDelay(pdMS_TO_TICKS(20)); continue;
     }
     const uint64_t begin = esp_timer_get_time();
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+    upper_frame_us_=0; // A candidate belongs only to this acquisition attempt.
+#endif
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::CameraCapture);
     camera_fb_t* fb = camera_->startContinuous() ? camera_->acquireContinuous(200) : nullptr;
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::Snapshot);
@@ -170,7 +198,13 @@ void FootObserver::loop() {
     const bool had_frame=fb!=nullptr;
     camera_->releaseContinuous(fb);fb=nullptr;f.released_us=had_frame?esp_timer_get_time():0;
     const uint32_t recognition_start=micros();
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+    f.upper_overlap_used=f.frame_valid && f.timestamp_valid && upper_frame_us_ && upper_frame_us_==f.frame_us;
+    const auto a=f.upper_overlap_used?right_.processPrepared(upper_features_):right_.process(row_cache_.view());
+    f.upper_prepare_us=f.upper_overlap_used?upper_features_.processing_us:0;
+#else
     const auto a=right_.process(row_cache_.view());
+#endif
     const auto b=left_.process(row_cache_.view());
     f.recognition_us=micros()-recognition_start;
 #else
@@ -293,6 +327,10 @@ void FootObserver::loop() {
     if(f.recognition_us>status_.recognition_max_us)status_.recognition_max_us=f.recognition_us;
     if(f.row_copy_us>status_.row_copy_max_us)status_.row_copy_max_us=f.row_copy_us;
 #endif
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+    status_.upper_attempts=upper_attempts_;
+    if(f.upper_overlap_used)++status_.upper_hits;else ++status_.upper_misses;
+#endif
     if (status_.recording && f.run_id == recording_run_id_) {
       // Signed offsets retain frame-boundary cases; never label them as zero.
       f.log_time_us = f.timestamp_valid ? static_cast<int64_t>(f.frame_us) - log_epoch_us_ : -1;
@@ -377,6 +415,14 @@ void FootObserver::appendMetadata(PsramString& json) const {
   json+=",\"pixel_processing\":\"same_integer_contrast_and_full_search_row_major\",\"recognition_semantics_changed\":false";
   json+=",\"ready_us_semantics\":\"recognition_and_projection_done_before_publication_lock\",\"released_us_semantics\":\"driver_buffer_return_not_sensor_exposure_end\"";
   json+=",\"performance_validated_on_board\":false,\"all_frame_control_receipts_exported\":true";
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+  const auto overlap=rw_camera_overlap_stats();
+  json+=",\"upper_overlap\":\"image_features_before_complete_frame_tracking_after_identity_validation\"";
+  json+=",\"recognition_us_semantics\":\"post_delivery_only;upper_prepare_us_is_separate_overlapped_elapsed_time\"";
+  json+=",\"upper_cache_bytes\":"+String(foot_image_rows::kUpperBytes);
+  json+=",\"upper_attempts\":"+String(s.upper_attempts)+",\"upper_hits\":"+String(s.upper_hits)+",\"upper_misses\":"+String(s.upper_misses);
+  json+=",\"upper_offered\":"+String(overlap.offered)+",\"upper_busy\":"+String(overlap.busy)+",\"upper_replaced\":"+String(overlap.replaced);
+#endif
 #if defined(CAMERA_FRAME_READY_V21) && CAMERA_FRAME_READY_V21
   const auto dma = rw_camera_frame_ready_stats();
   json+=",\"frame_publication\":\"complete_qvga_y8_dma_before_vsync_v21\"";
@@ -427,6 +473,9 @@ void FootObserver::appendMetadata(PsramString& json) const {
         static_cast<unsigned long long>(f.control_observed_us),static_cast<unsigned long>(f.capture_wait_us),
         static_cast<unsigned long>(f.row_copy_us),static_cast<unsigned long>(f.recognition_us),f.row_cache_used?"true":"false");
     row+=timing;
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+    row+=",\"upper_prepare_us\":"+String(f.upper_prepare_us)+",\"upper_overlap_used\":"+String(f.upper_overlap_used?"true":"false");
+#endif
 #endif
     row += ",\"right_x\":" + number(f.right_x) + ",\"left_x\":" + number(f.left_x);
     row += ",\"right_deg\":" + number(f.right_deg) + ",\"left_deg\":" + number(f.left_deg);

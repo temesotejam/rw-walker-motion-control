@@ -32,7 +32,11 @@
 #if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
 #if defined(FOOT_SPEED_FIX1) && FOOT_SPEED_FIX1
 #if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-overlap-v24"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-capture-v23"
+#endif
 #elif defined(FOOT_RECEIPT_AUDIT) && FOOT_RECEIPT_AUDIT
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-speed-v22-fix1-receipt"
 #else

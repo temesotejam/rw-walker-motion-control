@@ -39,6 +39,7 @@ inline ReadCounts& readCounts(){static ReadCounts counts;return counts;}
 #endif
 
 class RowCache;
+class UpperRowCache;
 class GrayRowView {
  public:
   GrayRowView()=default;
@@ -60,6 +61,7 @@ class GrayRowView {
   }
  private:
   friend class RowCache;
+  friend class UpperRowCache;
   GrayRowView(const uint8_t* data,const uint8_t* indices):data_(data),indices_(indices){}
   const uint8_t* data_=nullptr;
   const uint8_t* indices_=nullptr;

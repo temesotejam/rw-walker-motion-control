@@ -1228,7 +1228,8 @@ def write_foot_frames(metadata: dict, out_dir: Path) -> int:
     if not isinstance(rows, list):
         return 0
     extra_columns = [key for key in ("right_control_range_ok", "left_control_range_ok", "right_extrapolation_deg", "left_extrapolation_deg",
-                                    "ready_us", "released_us", "capture_wait_us", "row_copy_us", "recognition_us", "row_cache_used")
+                                    "ready_us", "released_us", "capture_wait_us", "row_copy_us", "recognition_us", "row_cache_used",
+                                    "upper_prepare_us", "upper_overlap_used")
                      if any(key in row for row in rows)]
     columns = FOOT_COLUMNS + extra_columns
     with (out_dir / "foot_angles.csv").open("w", newline="", encoding="utf-8") as f:

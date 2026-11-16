@@ -368,6 +368,12 @@ void WebUi::status() {
   json+=",\"row_cache_ready\":"+String(f.row_cache_ready?"true":"false")+",\"control_poll_ms\":"+String(foot_fast_policy::kControlPollMs);
 #endif
   json += ",\"sequence\":" + String(f.latest.sequence);
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+  const auto overlap=rw_camera_overlap_stats();
+  json+=",\"upper_prepare_us\":"+String(f.latest.upper_prepare_us)+",\"upper_overlap_used\":"+String(f.latest.upper_overlap_used?"true":"false");
+  json+=",\"upper_attempts\":"+String(f.upper_attempts)+",\"upper_hits\":"+String(f.upper_hits)+",\"upper_misses\":"+String(f.upper_misses);
+  json+=",\"upper_offered\":"+String(overlap.offered)+",\"upper_busy\":"+String(overlap.busy)+",\"upper_replaced\":"+String(overlap.replaced);
+#endif
   json += ",\"frame_valid\":" + String(f.latest.frame_valid ? "true" : "false");
   json += ",\"frame_timestamp_valid\":" + String(f.latest.timestamp_valid ? "true" : "false");
 #if (defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23) || (defined(FOOT_RECEIPT_AUDIT) && FOOT_RECEIPT_AUDIT)

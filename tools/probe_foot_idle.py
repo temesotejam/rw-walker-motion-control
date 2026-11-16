@@ -62,7 +62,12 @@ def main():
                'counter_windows': [],
                'metrics': {k: stats(k) for k in ['driver_delivery_ms', 'frame_to_ready_ms',
                    'recognition_us', 'row_copy_us', 'processing_us', 'fps', 'frame_age_ms',
-                   'ready_age_ms','driver_to_control_ms','ready_to_control_ms']}}
+                   'ready_age_ms','driver_to_control_ms','ready_to_control_ms','upper_prepare_us']}}
+    if any('upper_overlap_used' in f for f in frames):
+        summary['overlap_sampled_used']=sum(bool(f.get('upper_overlap_used')) for f in frames)
+        total=sorted(f['recognition_us']+f.get('upper_prepare_us',0) for f in frames)
+        summary['recognition_plus_used_prepare_us']={'n':len(total),'median':statistics.median(total),
+            'p95':total[int((len(total)-1)*.95)],'max':max(total)}
     # Instantaneous reciprocal frame period (fps) does not measure sustained
     # throughput. Use counter deltas within each boot and an IMU time interval.
     for boot in summary['boots']:
@@ -74,6 +79,9 @@ def main():
                   'sustained_capture_hz': frame_delta / seconds if seconds > 0 and frame_delta >= 0 else None}
         for key in ['right_marker_failures', 'left_marker_failures', 'failures']:
             window[key + '_delta'] = last['foot'][key] - first['foot'][key]
+        for key in ['upper_attempts','upper_hits','upper_misses','upper_offered','upper_busy','upper_replaced']:
+            if key in first['foot'] and key in last['foot']:
+                window[key+'_delta']=last['foot'][key]-first['foot'][key]
         summary['counter_windows'].append(window)
     args.out.with_suffix('.summary.json').write_text(json.dumps(summary, indent=2), encoding='utf8')
     print(json.dumps(summary, indent=2))

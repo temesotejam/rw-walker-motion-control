@@ -29,17 +29,36 @@ struct WhiteMarkerObservation {
 };
 
 class WhiteMarker1DTracker {
+    struct Candidate {
+        float x = 0, y = 0, contrast = 0, weight = 0;
+        int peak = 0, width = 0, min_y = 0, max_y = 0;
+    };
 public:
     explicit WhiteMarker1DTracker(int marker_id);
 
     WhiteMarkerObservation process(const uint8_t* gray);
     WhiteMarkerObservation process(const foot_image_rows::GrayRowView& gray);
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+    // Image-only work may run before the complete frame is admitted. This
+    // value owns its candidate features and never aliases camera pixels.
+    class PreparedFeatures {
+    public:
+        uint32_t processing_us = 0;
+    private:
+        friend class WhiteMarker1DTracker;
+        Candidate candidates_[appcfg::kWhiteMaxCandidates];
+        WhiteMarkerObservation observation_;
+        int marker_id_ = -1, count_ = 0;
+        bool image_valid_ = false, overflow_ = false;
+    };
+    PreparedFeatures prepare(const foot_image_rows::GrayRowView& gray) const;
+    WhiteMarkerObservation processPrepared(const PreparedFeatures& prepared);
+#endif
 
 private:
-    struct Candidate {
-        float x = 0, y = 0, contrast = 0, weight = 0;
-        int peak = 0, width = 0, min_y = 0, max_y = 0;
-    };
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+    WhiteMarkerObservation processPreparedAt(const PreparedFeatures& prepared, uint32_t now);
+#endif
     const int* markerRows() const;
     const int* referenceRows() const;
     int nominalCenterY() const;

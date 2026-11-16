@@ -19,6 +19,9 @@
 #include "ll_cam.h"
 #include "cam_hal.h"
 #include "../../src/camera_frame_ready.h"
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+#include "../../src/camera_row_overlap.h"
+#endif
 #if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
 #include "../../src/camera_capture_dma.h"
 #endif
@@ -196,6 +199,16 @@ static void cam_task(void *arg)
                         cam_obj->state = CAM_STATE_IDLE;
                     }
                     cnt++;
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+                    if(rw_early_enabled && !cam_obj->jpeg_mode && !cam_obj->psram_mode &&
+                       cam_obj->width==320 && cam_obj->height==240 && cam_obj->fb_size==76800 &&
+                       cam_obj->in_bytes_per_pixel==1 && cam_obj->fb_bytes_per_pixel==1 &&
+                       frame_buffer_event->len<=cam_obj->fb_size) {
+                        const uint64_t frame_us=(uint64_t)frame_buffer_event->timestamp.tv_sec*1000000ULL+
+                            frame_buffer_event->timestamp.tv_usec;
+                        rw_camera_overlap_offer(frame_buffer_event->buf,frame_buffer_event->len,frame_us);
+                    }
+#endif
                     if (rw_early_enabled && !cam_obj->jpeg_mode && !cam_obj->psram_mode &&
                         cam_obj->width == 320 && cam_obj->height == 240 &&
                         cam_obj->in_bytes_per_pixel == 1 && cam_obj->fb_bytes_per_pixel == 1 &&
@@ -561,6 +574,36 @@ camera_fb_t *cam_take(TickType_t timeout)
     }
     return NULL;
 }
+
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+void* rw_camera_take_overlap(uint32_t timeout_ticks)
+{
+    if(!cam_obj)return NULL;
+    // Used only by the continuous grayscale consumer. Keep manual/boot cam_take.
+    if(!rw_early_enabled || cam_obj->jpeg_mode || cam_obj->psram_mode ||
+       cam_obj->width!=320 || cam_obj->height!=240 || cam_obj->in_bytes_per_pixel!=1 ||
+       cam_obj->fb_bytes_per_pixel!=1)return cam_take((TickType_t)timeout_ticks);
+    camera_fb_t* fb=NULL;
+    const TickType_t start=xTaskGetTickCount();
+    for(;;) {
+        // A completed frame takes precedence over speculative preparation.
+        if(xQueueReceive(cam_obj->frame_buffer_queue,&fb,0)==pdTRUE)return fb;
+        const TickType_t elapsed=xTaskGetTickCount()-start;
+        if(elapsed>=(TickType_t)timeout_ticks)break;
+        rw_camera_overlap_poll();
+        if(xQueueReceive(cam_obj->frame_buffer_queue,&fb,0)==pdTRUE)return fb;
+        if(xTaskGetTickCount()-start>=(TickType_t)timeout_ticks)break;
+        if(xQueueReceive(cam_obj->frame_buffer_queue,&fb,1)==pdTRUE)return fb;
+    }
+    if(xQueueReceive(cam_obj->frame_buffer_queue,&fb,0)==pdTRUE)return fb;
+#if CONFIG_IDF_TARGET_ESP32S3
+    // Match the legacy single recovery at a FULL timeout, never per short poll.
+    ll_cam_dma_reset(cam_obj);
+    if(xQueueReceive(cam_obj->frame_buffer_queue,&fb,(TickType_t)timeout_ticks)==pdTRUE)return fb;
+#endif
+    return NULL;
+}
+#endif
 
 void cam_give(camera_fb_t *dma_buffer)
 {

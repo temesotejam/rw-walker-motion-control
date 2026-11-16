@@ -68,6 +68,20 @@ def fixture():
 #include "foot_phase_prediction.h"
 #include "foot_local_prediction.h"
 #include "foot_control_range.h"
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+#include "camera_row_overlap.h"
+namespace camera_row_overlap {
+static Consumer mock_consumer=nullptr;
+static void* mock_context=nullptr;
+static uint8_t* mock_storage=nullptr;
+static size_t mock_capacity=0;
+bool initialize(uint8_t* storage,size_t capacity,Consumer consumer,void* context){
+ assert(storage && capacity==foot_image_rows::kUpperBytes && consumer && context);
+ // Each test observer represents a separate device lifetime.
+ mock_storage=storage;mock_capacity=capacity;mock_consumer=consumer;mock_context=context;return true;
+}
+}
+#endif
 using TickType_t=uint32_t;
 using TaskHandle_t=void*;
 using SemaphoreHandle_t=void*;
@@ -84,7 +98,12 @@ static SemaphoreHandle_t xSemaphoreCreateMutex(){return reinterpret_cast<void*>(
 static int xSemaphoreTake(SemaphoreHandle_t s,TickType_t){return s?pdTRUE:0;}
 static void xSemaphoreGive(SemaphoreHandle_t s){assert(s);}
 static int xTaskCreatePinnedToCore(void(*)(void*),const char* name,uint32_t stack,void*,int priority,TaskHandle_t* task,int core){
- assert(std::string(name)=="foot_observer" && stack==10240 && priority==1 && core==0);
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+ constexpr uint32_t expected_stack=12288;
+#else
+ constexpr uint32_t expected_stack=10240;
+#endif
+ assert(std::string(name)=="foot_observer" && stack==expected_stack && priority==1 && core==0);
  *task=reinterpret_cast<void*>(1);return pdPASS;
 }
 static int xPortGetCoreID(){return 0;}
@@ -118,6 +137,8 @@ static void cameraTaskPriorityPatchSampleStack(){}
         'void FootObserver::recordControlObservation(', 'void FootObserver::beginRun(',
         'void FootObserver::finishRun()', 'void FootObserver::clearRun()',
         'void FootObserver::loop()'])
+    methods += '\n#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24\n' + function(
+        observer, 'void FootObserver::prepareUpper(') + '\n#endif\n'
     camera_methods = '\n'.join(function(camera, signature) for signature in [
         'void OneShotCamera::setError(', 'void OneShotCamera::flushQueuedFrames()',
         'camera_fb_t* OneShotCamera::acquire(', 'void OneShotCamera::release(',
@@ -145,6 +166,7 @@ enum class Invalid {None,NullFrame,Short,NullBuffer,FutureTimestamp,OldTimestamp
 struct Plan {
  Image original=image();ControlSnapshot before,after;
  Invalid invalid=Invalid::None;uint32_t wait_us=2000;bool stop=false;
+ bool early=true;int64_t early_stamp_delta=0;Image early_image;
 };
 struct Iteration {FootSnapshot snapshot;FootPreviewInfo info;Image preview;bool preview_ok=false;
  uint64_t time=0;uint32_t delay=0;foot_image_rows::ReadCounts reads;};
@@ -155,6 +177,10 @@ static bool live=true,borrowed=false,poison=false,enforce_rows=true;
 static Image buffer;
 static camera_fb_t frame;
 static FootObserver* current=nullptr;
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+static bool override_stamp=false;
+static uint64_t full_stamp=0;
+#endif
 ControlSnapshot RunControlWorker::snapshot()const {
  const auto& p=plans.at(plan_index);return context_calls++==0?p.before:p.after;
 }
@@ -169,9 +195,31 @@ static camera_fb_t* cam_take(TickType_t timeout){
  uint64_t stamp=host_clock-50000;
  if(p.invalid==Invalid::FutureTimestamp)stamp=host_clock+5000;
  if(p.invalid==Invalid::OldTimestamp)stamp=host_clock-600000;
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+ if(override_stamp)stamp=full_stamp;
+#endif
  frame.timestamp.tv_sec=stamp/1000000;frame.timestamp.tv_usec=stamp%1000000;
  borrowed=true;return &frame;
 }
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+extern "C" void* rw_camera_take_overlap(uint32_t timeout){
+ const auto& p=plans.at(plan_index);
+ full_stamp=host_clock+p.wait_us-50000;
+ if(p.invalid==Invalid::FutureTimestamp)full_stamp=host_clock+p.wait_us+5000;
+ if(p.invalid==Invalid::OldTimestamp)full_stamp=host_clock+p.wait_us-600000;
+ if(p.early){
+  const auto& pixels=p.early_image.empty()?p.original:p.early_image;
+  foot_image_rows::UpperRowCache upper(camera_row_overlap::mock_storage,camera_row_overlap::mock_capacity);
+  assert(upper.capture(pixels.data(),foot_image_rows::kUpperPrefixBytes));
+  const auto before=foot_image_rows::readCounts().packed_rows;
+  camera_row_overlap::mock_consumer(upper.view(),full_stamp+p.early_stamp_delta,1,camera_row_overlap::mock_context);
+  assert(foot_image_rows::readCounts().packed_rows>before);
+  // Original early pixels may be released before the full image arrives.
+  std::memset(camera_row_overlap::mock_storage,0,camera_row_overlap::mock_capacity);
+ }
+ override_stamp=true;auto* result=cam_take(timeout);override_stamp=false;return result;
+}
+#endif
 static void cam_give(camera_fb_t* fb){
  assert(borrowed && fb==&frame);borrowed=false;++gives;
  if(enforce_rows){
@@ -260,6 +308,9 @@ static Result run(std::vector<Plan> input,bool poison_image,bool archive_full=fa
  observer.clearRun();assert(observer.snapshot().count==0 && !observer.snapshot().overflow);
  Result out{iterations,takes,gives,flush_takes,stops};
  std::free(observer.frames_);std::free(observer.preview_);std::free(observer.row_storage_);std::free(observer.preview_staging_);
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+ std::free(observer.upper_storage_);
+#endif
  current=nullptr;return out;
 }
 static std::vector<Plan> scenario(){
@@ -363,7 +414,32 @@ static void idleReceipt(){
  std::cout<<"idle first receipt identity/time guards and no archive mutation PASS\n";
 #endif
 }
-int main(){fullPipeline();edgeCases();manualOneShot();idleReceipt();}
+static void overlapAdmission(){
+#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+ std::vector<Plan> plans(9);
+ plans[1].early_stamp_delta=1;plans[1].early_image=image(280,80);
+ plans[2].invalid=Invalid::Short;plans[3].invalid=Invalid::NullFrame;
+ plans[4].invalid=Invalid::NullBuffer;plans[5].invalid=Invalid::FutureTimestamp;
+ plans[6].invalid=Invalid::OldTimestamp;plans[7].early=false;
+ for(unsigned i=2;i<=6;++i)plans[i].early_image=image(280,80);
+ auto ordinary=plans;for(auto& p:ordinary)p.early=false;
+ auto baseline=run(ordinary,true),overlapped=run(plans,true);
+ assert(overlapped.history.size()==plans.size());
+ for(unsigned i=0;i<plans.size();++i){
+  const auto& a=baseline.history[i];const auto& b=overlapped.history[i];
+  detectionEqual(a.snapshot.latest,b.snapshot.latest,false);
+  assert(a.preview==b.preview && a.preview_ok==b.preview_ok);
+  assert(a.info.right.success_count==b.info.right.success_count && a.info.right.fail_count==b.info.right.fail_count);
+  const bool hit=i==0 || i==8;
+  assert(b.snapshot.latest.upper_overlap_used==hit);
+  assert((b.snapshot.latest.upper_prepare_us>0)==hit);
+ }
+ const auto& last=overlapped.history.back().snapshot;
+ assert(last.upper_attempts==8 && last.upper_hits==2 && last.upper_misses==7);
+ std::cout<<"real v24 observer: matching frame reuse, wrong/invalid/timeout fallback, no speculative state commit PASS\n";
+#endif
+}
+int main(){fullPipeline();edgeCases();manualOneShot();idleReceipt();overlapAdmission();}
 ''')
 
 
@@ -408,6 +484,8 @@ def main():
         subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1'],check=True)
         subprocess.run([str(binary)],check=True)
         subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_RECEIPT_AUDIT=1'],check=True)
+        subprocess.run([str(binary)],check=True)
+        subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1'],check=True)
         subprocess.run([str(binary)],check=True)
 
 

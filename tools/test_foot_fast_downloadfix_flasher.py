@@ -14,6 +14,7 @@ import prepare_foot_frame_ready_flasher as ready
 import prepare_foot_speed_flasher as speed
 import prepare_foot_speed_fix_flasher as speed_fix
 import prepare_foot_capture_flasher as capture
+import prepare_foot_overlap_flasher as overlap
 import prepare_foot_fast_flasher as base
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,6 +79,7 @@ def main():
     check(speed, ready, ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1', '-DCAMERA_FRAME_READY_V21=1', '-DFOOT_SPEED_V22=1'], ['行間待ち時間', '短縮時間は未確認'])
     check(speed_fix, speed, ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1', '-DCAMERA_FRAME_READY_V21=1', '-DFOOT_SPEED_V22=1', '-DFOOT_SPEED_FIX1=1'], ['カメラ初期化', 'まず測定を開始せず'])
     check(capture, speed_fix, ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1', '-DCAMERA_FRAME_READY_V21=1', '-DFOOT_SPEED_V22=1', '-DFOOT_SPEED_FIX1=1', '-DFOOT_CAPTURE_V23=1'], ['カメラ取得', 'まず測定を開始せず'])
+    check(overlap, capture, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1'], ['画像の受信中', 'まず測定を開始せず'])
 
 
 if __name__=='__main__':
