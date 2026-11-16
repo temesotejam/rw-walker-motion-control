@@ -4,6 +4,10 @@
 
 ## 現在の状態
 
+- **2026-11-16 v20実機試行40505704を解析。画像更新は高速化、歩行は起動後に減衰。** ユーザーは自立で歩行を試したと確認。ID `walking-foot-fast-v20` / branch24 / format56 / CRC正常、9713samples、足787/測定中context587、overflowなし。画像周期中央値100→49.992ms（平均換算19.57Hz）、processing12.65〜12.84→9.899ms、driver timestamp→制御受取68.65〜69.25→62.090ms。旧試行と運動条件は異なる。新tracker8.408ms/copy1.022ms/ready→control1.425ms。driver→画像受取50.069msは残る。約100ms間隔3回/150ms5回、原因段階は未特定。詳しくは `docs/FOOT_FAST_V20_TRIAL_40505704.md`。
+- 足は587/587両検出/範囲内/zero/cache使用だが、右−0.032〜+0.099度/左−0.343〜+0.090度と動きが小さい。動画なし、動く足の精度や誤認識は未検証。起動300mA/100ms1回後、左右角−2.343595度→最接近−0.43度で0を跨がず、−4.12度へ戻って約−2.3度へ減衰。peak判定101ms1件、実ZERO0、walking_energy/support判断0、追加入力0、30秒FINISHED/error空。現救済の両足検出時3度差条件に対し最大差0.35475度で未成立。次課題は足がほぼ揃った起動から最初のZEROまでの不足J評価。今回制御変更/書込みなし。
+- 制御監査12091件でcontrol-ready平均0.475ms/最大2.195、done平均0.853ms/最大2.843、2.5ms超4件、I/O失敗0。旧done平均約0.59msと条件が異なりカメラ変更だけの因果とはしない。原本SHA256 `1c9abcd1351ccc847837b4f2d2dcbf3f34626180ccac4b544dede9964dd2b569`、ローカル `analysis/2026-11-16-walking/40505704/` に変換・比較・グラフ・review保存。以下は準備時の記録で、「実機速度未確認」は今回の測定前の状態。
+
 - v20の表示遅延も分離して改善：従来browser pollは応答後800ms間隔。v20 READY待機中・接続正常・転送/preview/commandなし時は100msへ短縮し、測定/転送/不通/旧版は800msを維持。認識・control poll2msとbrowser pollは別で、画面の実周期にはHTTP応答時間も加わる。新UI条件と旧例外再試行/埋込み一致を実JSで確認済み。
 
 - **2026-11-16 足角度認識の低遅延版v20を準備。実機速度/精度は未確認。** `walking-foot-fast-v20` / env `atoms3cam-foot-fast` / page `http://127.0.0.1:8767/foot-fast/`。エネルギー制御はv19 revision/branch24を継承。2fb＋LATEST、必要66行/21120bytesを内部RAMへ退避して認識前にfb返却、整数行方向加算、worker最短40ms/poll2ms。全17高さ・閾値・曖昧/再捕捉/校正/5度許容は維持。初回は測定開始を押さず、手で足を動かして角度/画像/fps/認識msを確認する。今回実機書込み/モータ動作は未実施。詳細 `docs/FOOT_LOW_LATENCY_V20.md`。
