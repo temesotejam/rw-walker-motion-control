@@ -4,6 +4,8 @@
 
 ## 現在の状態
 
+- **2026-11-17 webfix1実機run1/117625571のログ取得成功を確認。反復取得の再発防止は未確認。** 診断(8)/動画12_30_08受領。buildwalking-foot-native-stream-v26-webfix1、FINISHED30秒/9960samples/2427893bytes/CRC2227517055一致、転送retry0、診断時の最終状態受信から392ms。manifest内部RAM空き26044/min9904/largest17396。足840画像/両足831/左曖昧9/範囲拒否0、初回受取839件median27.771ms/p9532.694/max40.059、更新27.987Hz、最長間隔366.653ms。最終ZERO15.291秒、最終補助15.663〜15.704秒41ms、枠39ms残るが同じ半周期の再補助禁止。胴体はZEROへ届かず最終約+1.68°、足観測29.976秒まで継続し静止へ。動画抽出約23〜35秒でも自立静止に見える（未LED同期、ユーザーの状態申告は未取得）。詳細docs/TRIAL_117625571.md、local analysis/2026-11-17-walking/117625571/。今回は解析のみ、ファームウェア・機体操作なし。次は同一起動で2回目以降の取得確認と、ZERO到達までの再計画を含む歩行停止対策を別に扱う。
+
 - **2026-11-17 ログ取得改善webfix1をビルド・配信照合済み。書込みはユーザーがブラウザで行う。** 環境atoms3cam-foot-export-webfix / build ID walking-foot-native-stream-v26-webfix1、ページ http://127.0.0.1:8767/foot-export-webfix/ 。最終app1947392bytes/SHA256 `1f1df6ed50d296d1c1f3ec98c004a96d49f45b31e075d66df95d30ca9f8df315`、最終ビルドSUCCESS39.425秒。旧v26バイナリ保持。CompactJsonTableの列/値の一時String廃止・出力失敗検出、足ログ行8KiB PSRAM再利用、状態JSON16KiB PSRAM再利用、停止キュー清掃でDMA reset回避、manifestメモリ診断・ブラウザ最終受信時刻追加。歩行v19制御/再補助制限・v26センサー/タスク配置は変更なし。故障注入、全容量/反復生成、HAL、ブラウザ再試行、配信10構成等PASS。実機再発防止未検証。詳細docs/FOOT_EXPORT_WEBFIX.md。機体書込み/操作なし。ユーザーはバッテリーとUSBの同時接続を望まないので、バッテリー給電を切り離してUSB書込み、USB中はモータ禁止。local server PID19976、localhostのみ。最初のビルドの埋込みWeb更新漏れは配信照合で検出し、再生成・再ビルドした上記最終版のみを案内する。
 
 - **2026-11-17 再測定run1は取得成功、run2で再びHTTP応答なし。USB追加接続はユーザーが希望しないため行わない。** 診断(6)/(7)は同じboot3427627879、BROWNOUTは共通の起動理由でありrun2失敗中のリセット証拠ではない。run1 RWLOG38091117は2435809bytes/9996samples/CRC483075946一致/転送再試行0。run2はFINISHED/10076samplesを受信後、最後のmanifestはbuilding/metadata519786bytes、/export/manifestが5回失敗して転送0bytes。診断は最後の受信状態の保存で、online/freshは現在疎通の証拠ではない。両方memory.sampled=false。詳細 docs/LOG_EXPORT_FAILURE_20261117.md。直接原因未確定、機体変更/モータ/再起動/書込みなし。
