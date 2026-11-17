@@ -131,6 +131,11 @@ FootSnapshot FootObserver::snapshot() const {
   portENTER_CRITICAL(&mux_); const auto copy = status_; portEXIT_CRITICAL(&mux_);
   return copy;
 }
+#if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
+FootLatencyHistogram FootObserver::latencySnapshot() const {
+  portENTER_CRITICAL(&mux_);const auto copy=latency_;portEXIT_CRITICAL(&mux_);return copy;
+}
+#endif
 void FootObserver::recordControlObservation(uint16_t run_id, uint32_t sequence, uint64_t observed_us) {
   // A later camera publication can replace the last row after snapshot().
   // Never attach an observation to a different sequence; count the miss.
@@ -140,8 +145,14 @@ void FootObserver::recordControlObservation(uint16_t run_id, uint32_t sequence, 
   // run. Never attach a receipt to a newer frame that replaced the snapshot.
   auto& latest=status_.latest;
   if(latest.run_id==run_id && latest.sequence==sequence && latest.timestamp_valid &&
-     !latest.control_observed_us && latest.ready_us && observed_us>=latest.ready_us)
+     !latest.control_observed_us && latest.ready_us && observed_us>=latest.ready_us) {
     latest.control_observed_us=observed_us;
+#if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
+    latency_.record(latest.frame_us,observed_us,
+        latest.frame_valid && latest.right_reason==MarkerDetectionReason::Detected &&
+        latest.left_reason==MarkerDetectionReason::Detected);
+#endif
+  }
 #endif
   if (status_.recording && run_id == recording_run_id_) {
     ++control_observation_attempts_;
@@ -517,7 +528,11 @@ void FootObserver::appendMetadata(PsramString& json) const {
 #endif
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
 #if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+#if defined(FOOT_WORKER26_V34) && FOOT_WORKER26_V34
+  json+="\"target_fps\":"+String(1000000.f/foot_fast_policy::kWorkerPeriodUs,4)+",\"capacity\":"+String(kCapacity);
+#else
   json+="\"target_fps\":30,\"capacity\":"+String(kCapacity);
+#endif
 #if defined(FOOT_SPEED_FIX1) && FOOT_SPEED_FIX1
 #if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
 #if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25

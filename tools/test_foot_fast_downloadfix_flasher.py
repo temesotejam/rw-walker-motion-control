@@ -22,6 +22,9 @@ import prepare_foot_copy_delta_flasher as copy_delta
 import prepare_foot_template_prune_flasher as template_prune
 import prepare_foot_receive_diag_flasher as receive_diag
 import prepare_foot_receive_core1_flasher as receive_core1
+import prepare_foot_histogram_flasher as histogram
+import prepare_foot_hblank80_flasher as hblank80
+import prepare_foot_worker26_flasher as worker26
 import prepare_foot_overlap_always_flasher as overlap_always
 import prepare_foot_fast_flasher as base
 
@@ -89,6 +92,10 @@ def check(profile, parent, additions, page_terms):
 
 
 def main():
+    inherited=['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96','-DFOOT_NATIVE_STREAM_V26=1','-DFOOT_EXPORT_WEBFIX=1','-DFOOT_COPY_DELTA_V27=1','-DFOOT_TEMPLATE_PRUNE_V28=1','-DFOOT_OVERLAP_ALWAYS_V29=1','-DFOOT_RECEIVE_DIAG_V30=1']
+    check(histogram,receive_diag,inherited+['-DFOOT_HISTOGRAM_V32=1'],['webfix1','USB'])
+    check(hblank80,histogram,inherited+['-DFOOT_HISTOGRAM_V32=1','-DFOOT_NATIVE_HB80_V33=1'],['webfix1','USB'])
+    check(worker26,histogram,inherited+['-DFOOT_HISTOGRAM_V32=1','-DFOOT_WORKER26_V34=1'],['webfix1','USB'])
     check(receive_core1, receive_diag, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96','-DFOOT_NATIVE_STREAM_V26=1','-DFOOT_EXPORT_WEBFIX=1','-DFOOT_COPY_DELTA_V27=1','-DFOOT_TEMPLATE_PRUNE_V28=1','-DFOOT_OVERLAP_ALWAYS_V29=1','-DFOOT_RECEIVE_DIAG_V30=1','-DFOOT_RECEIVE_CORE1_V31=1'], ['webfix1','USB'])
     check(receive_diag, overlap_always, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96','-DFOOT_NATIVE_STREAM_V26=1','-DFOOT_EXPORT_WEBFIX=1','-DFOOT_COPY_DELTA_V27=1','-DFOOT_TEMPLATE_PRUNE_V28=1','-DFOOT_OVERLAP_ALWAYS_V29=1','-DFOOT_RECEIVE_DIAG_V30=1'], ['webfix1','USB'])
     check(fix, base, ['-DEXPORT_RETRY_FIX=1'], ['通信再試行', '先に「RWLOGを取得・再開」で保存'])

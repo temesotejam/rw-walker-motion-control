@@ -339,7 +339,16 @@ def main():
     parser.add_argument('--always', action='store_true', help='Test v29 continuous overlap; requires --prune')
     parser.add_argument('--receive', action='store_true', help='Test v30 receive diagnostics; requires --always')
     parser.add_argument('--receive-core1', action='store_true', help='Test v31 separate receive core; requires --receive')
+    parser.add_argument('--histogram', action='store_true', help='Test v32 receipt aggregation; requires --receive, core0')
+    parser.add_argument('--hb80', action='store_true', help='Test v33 HB80; requires --histogram')
+    parser.add_argument('--worker26', action='store_true', help='Test v34 26ms/full archive; requires --histogram, HB96')
     args = parser.parse_args()
+    if args.worker26 and (not args.histogram or args.hb80):
+        parser.error('--worker26 requires --histogram and excludes --hb80')
+    if args.histogram and (not args.receive or args.receive_core1):
+        parser.error('--histogram requires --receive and excludes --receive-core1')
+    if args.hb80 and not args.histogram:
+        parser.error('--hb80 requires --histogram')
     if args.receive_core1 and not args.receive:
         parser.error('--receive-core1 requires --receive')
     if args.receive and not args.always:
@@ -390,6 +399,9 @@ def main():
                 if args.always: definitions += ['-DFOOT_OVERLAP_ALWAYS_V29=1']
                 if args.receive: definitions += ['-DFOOT_RECEIVE_DIAG_V30=1']
                 if args.receive_core1: definitions += ['-DFOOT_RECEIVE_CORE1_V31=1']
+                if args.histogram: definitions += ['-DFOOT_HISTOGRAM_V32=1']
+                if args.hb80: definitions += ['-DFOOT_NATIVE_HB80_V33=1']
+                if args.worker26: definitions += ['-DFOOT_WORKER26_V34=1']
             case_name = 'v'+str(revision)+('_native' if native else '')+('_stream' if stream else '')
             exe = temp / (case_name+'.exe'); destination = exe.with_suffix('.json')
             subprocess.run(['g++', '-std=c++17', '-O0', '-Wall', '-Wextra', '-Werror', '-Wno-format',
@@ -406,7 +418,8 @@ def main():
             observation = expanded['foot_observation']
             assert observation['worker_core'] == 0
             assert observation['worker_priority'] == 1
-            size.update(version=31 if stream and args.receive_core1 else 30 if stream and args.receive else 29 if stream and args.always else 28 if stream and args.prune else 27 if stream and args.delta else revision, native_sensor=native, native_stream=stream, hard_budget_bytes=metadata['metadata_json_budget_bytes'],
+            faster_worker=stream and args.worker26
+            size.update(version=34 if faster_worker else 33 if stream and args.hb80 else 32 if stream and args.histogram else 31 if stream and args.receive_core1 else 30 if stream and args.receive else 29 if stream and args.always else 28 if stream and args.prune else 27 if stream and args.delta else revision, native_sensor=native, native_stream=stream, hard_budget_bytes=metadata['metadata_json_budget_bytes'],
                         worker_core=observation['worker_core'], worker_priority=observation['worker_priority'],
                         foot_rows=len(expanded['foot_frames']), energy_rows=len(expanded['walking_energy']['records']))
             size['non_driver_psram_remaining_estimate_bytes'] = (8*1024*1024 - size['core_psram_estimate_bytes'] -
@@ -433,22 +446,27 @@ def main():
             if stream and args.always: identity = 'walking-foot-overlap-always-v29'
             if stream and args.receive: identity = 'walking-foot-receive-diag-v30'
             if stream and args.receive_core1: identity = 'walking-foot-receive-core1-v31'
+            if stream and args.histogram: identity = 'walking-foot-histogram-v32'
+            if stream and args.hb80: identity = 'walking-foot-hblank80-v33'
+            if faster_worker: identity = 'walking-foot-worker26-v34'
             assert metadata['diagnostic_build_id'] == identity
             assert metadata['energy_model'] == 'walking_energy_admission_v19'
             assert expanded['walking_energy']['revision'] == 'walking_energy_admission_v19' and expanded['walking_energy']['branch'] == 24
-            assert size['foot_rows'] == size['foot_capacity'] == (1280 if v20 else 768)
-            assert size['hard_budget_bytes'] == (1024*1024 if v20 else 640*1024)
-            assert size['metadata_reserve_bytes'] == (1152*1024 if v20 else 768*1024)
+            expected_capacity=1600 if faster_worker else 1280 if v20 else 768
+            assert size['foot_rows'] == size['foot_capacity'] == expected_capacity
+            assert size['hard_budget_bytes'] == (1280*1024 if faster_worker else 1024*1024 if v20 else 640*1024)
+            assert size['metadata_reserve_bytes'] == (1408*1024 if faster_worker else 1152*1024 if v20 else 768*1024)
             if v20:
                 assert size['energy_rows'] == 192, 'V20 foot export must leave room for all energy rows'
                 assert expanded['foot_support_assist']['stored'] == 96, 'V20 must retain support audit capacity'
                 for key in ['ready_us', 'released_us', 'capture_wait_us', 'row_copy_us', 'recognition_us', 'row_cache_used']:
                     assert key in expanded['foot_frames'][0], key
-                assert expanded['foot_frames'][-1]['sequence'] == 101279
-                assert expanded['foot_frames'][-1]['control_observed_us'] == 123456789012 + 1279*40000 + 50000 + 123456
+                assert expanded['foot_frames'][-1]['sequence'] == 100000+expected_capacity-1
+                assert expanded['foot_frames'][-1]['control_observed_us'] == 123456789012 + (expected_capacity-1)*40000 + 50000 + 123456
                 assert expanded['foot_frames'][-1]['row_cache_used'] is True
                 observation = expanded['foot_observation']
-                assert observation['target_fps'] == (30 if revision >= 22 else 25) and observation['capacity'] == 1280
+                assert abs(observation['target_fps']-(1000000/26000 if faster_worker else 30 if revision>=22 else 25))<.001
+                assert observation['capacity']==expected_capacity
                 assert observation['row_cache_ready'] is True and observation['row_cache_internal_bytes'] == 21120
                 assert observation['performance_validated_on_board'] is False and observation['all_frame_control_receipts_exported'] is True
                 assert size['non_driver_psram_remaining_estimate_bytes'] > 0
@@ -456,7 +474,8 @@ def main():
                 assert observation['frame_publication'] == ('complete_native_320x236_y8_dma_before_vsync_v25' if native else 'complete_qvga_y8_dma_before_vsync_v21')
                 assert [observation[k] for k in ['dma_early_frames','dma_vsync_frames','dma_queue_drops','dma_last_full_age_us']] == [123,4,5,39000]
             if revision >= 22:
-                assert observation['sensor_hblank']==(96 if native else (128 if revision>=23 else 64)) and observation['worker_min_period_us']==33333
+                assert observation['sensor_hblank']==(80 if stream and args.hb80 else 96 if native else (128 if revision>=23 else 64))
+                assert observation['worker_min_period_us']==(26000 if faster_worker else 33333)
                 assert observation['contrast_reuse']=='exact_integer_vertical_rolling_v22'
             if revision >= 23:
                 assert observation['sensor_speed_profile']==('gc0308_native_skip_v25' if native else ('gc0308_div7_hb128_sdk_aec_v23' if revision>=24 else 'gc0308_hb128_sdk_aec_v22_fix1'))
@@ -505,11 +524,11 @@ def main():
             if stream:
                 assert native_frame_layout is not None
                 assert (size['frame_bytes'], list(expanded['foot_frames'][0])) == native_frame_layout, 'V26 must not enlarge or change the FootFrame archive'
-                assert size['metadata_bytes'] < 1024*1024
+                assert size['metadata_bytes'] < size['hard_budget_bytes']
                 assert observation['lower_overlap'] == 'incremental_image_features_before_complete_frame_tracking_after_identity_validation'
                 assert observation['lower_cache_bytes'] == size['lower_mailbox_psram_bytes'] == 12800
                 assert observation['lower_scan_bytes'] == size['lower_scan_member_internal_bytes'] == 2132
-                assert size['core_psram_estimate_bytes'] == native_core_psram + 12800
+                assert size['core_psram_estimate_bytes'] == native_core_psram + 12800 + (320*size['frame_bytes']+256*1024 if faster_worker else 0)
                 assert [observation[key] for key in ['lower_attempts','lower_hits','lower_misses']] == [5120,1268,12]
                 assert observation['lower_attempts_semantics'] == 'callback_milestones_not_frames'
                 assert observation['lower_timing_scope'] == 'status_latest_only_not_frame_archive'
@@ -531,7 +550,7 @@ def main():
             assert len(foot_csv) == size['foot_rows']
             assert ('ready_us' in foot_csv[0]) == v20
             if v20:
-                assert int(foot_csv[-1]['ready_us']) == 123456789012 + 1279*40000 + 50000 + 12345
+                assert int(foot_csv[-1]['ready_us']) == 123456789012 + (expected_capacity-1)*40000 + 50000 + 12345
                 assert foot_csv[-1]['row_cache_used'] == 'True'
         if args.report:
             args.report.parent.mkdir(parents=True, exist_ok=True)

@@ -46,6 +46,9 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
     server_->send_P(200, "text/html; charset=utf-8", RUNTIME_HTML);
   });
   s.on("/status.json", HTTP_GET, [this]() { status(); });
+#if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
+  s.on("/camera/latency.json", HTTP_GET, [this]() { cameraLatency(); });
+#endif
   s.on("/vision/capture", HTTP_POST, [this]() { previewCapture(); });
   s.on("/vision/chunk", HTTP_GET, [this]() { previewChunk(); });
   s.on("/start-energy-control-autonomous", HTTP_POST, [this]() { command(RunControlWorker::Command::Start); });
@@ -243,7 +246,30 @@ void WebUi::command(RunControlWorker::Command cmd) {
     server_->send(ok ? 202 : 409, "text/plain", ok ? "command_queued" : "command_busy");
   }
 }
+#if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
+void WebUi::cameraLatency() {
+  if(quietResponse())return;
+  RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http,RuntimeDiag::Phase::HttpStatus);
+  const auto latency=feet_->latencySnapshot();
+  const auto foot=feet_->snapshot();const auto control=control_->snapshot();
+  const auto command=control_->commandState();const auto rx=rw_camera_receive_stats();
+  auto& json=status_json_;json.clear();
+  if(!json.ok()){server_->send(503,"text/plain","status_buffer_unavailable");return;}
+  json+="{\"build\":\"" RUNTIME_DIAGNOSTIC_BUILD_ID "\",\"boot_id\":"+String(boot_id_);
+  json+=",\"running\":"+String(control.running?"true":"false")+",\"motor_mA\":"+String(control.motor_cmd_mA);
+  json+=",\"command_submitted\":"+String(command.submitted)+",\"command_pending\":"+String(command.pending?"true":"false");
+  json+=",\"captured_frames\":"+String(foot.captured_frames)+",\"short_frames\":"+String(rx.short_frames);
+  json+=",\"event_drops\":"+String(rx.event_drops)+",\"scope\":\"first_control_receipts_boot_lifetime\",\"latency\":";
+  latency.appendJson(json);
+  json+=",\"status_requests\":"+String(latency_status_requests_)+",\"preview_requests\":"+String(latency_preview_requests_)+"}";
+  if(!json.ok()){server_->send(503,"text/plain","status_buffer_overflow");return;}
+  server_->sendHeader("Cache-Control","no-store");server_->send(200,"application/json",json.c_str());
+}
+#endif
 void WebUi::status() {
+#if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
+  ++latency_status_requests_;
+#endif
   if (quietResponse()) return;
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpStatus);
   const auto s = control_->snapshot(); const auto f = feet_->snapshot();
@@ -374,7 +400,9 @@ void WebUi::status() {
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
   const uint64_t foot_clock=esp_timer_get_time();
   json+=",\"pipeline_revision\":\"sparse_cached_rows_double_buffer_v20\"";
-#if defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
+#if defined(FOOT_WORKER26_V34) && FOOT_WORKER26_V34
+  json+=",\"target_fps\":"+String(1000000.f/foot_fast_policy::kWorkerPeriodUs,4);
+#elif defined(FOOT_SPEED_V22) && FOOT_SPEED_V22
   json+=",\"target_fps\":30";
 #else
   json+=",\"target_fps\":25";
@@ -521,6 +549,9 @@ static String previewMarkerJson(const WhiteMarkerObservation& m) {
   return s;
 }
 void WebUi::previewCapture() {
+#if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
+  ++latency_preview_requests_;
+#endif
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpManifest);
   if (!previewAllowed()) { server_->send(409, "text/plain", "preview_requires_idle"); return; }
   FootPreviewInfo p;

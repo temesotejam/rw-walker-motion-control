@@ -190,12 +190,12 @@ def main():
     with tempfile.TemporaryDirectory(prefix='native_skip_profile_') as folder:
         folder = Path(folder)
         source = folder / 'fixture.cpp'
-        source.write_text(FIXTURE, encoding='utf-8')
-        for hb in [None, 64, 80, 96, 128]:
+        source.write_text(FIXTURE+'\n#if FOOT_NATIVE_HB80_V33\nstatic_assert(camera_native_skip_profile::kHorizontalBlank==80,"v33 must override inherited HB96");\n#endif\n', encoding='utf-8')
+        for hb in [None, 64, 80, 96, 128, 'v33']:
             exe = folder / f'profile_{hb}.exe'
             subprocess.run(['g++', '-std=c++17', '-Wall', '-Wextra', '-Werror',
                             '-I' + str(ROOT / 'src')] +
-                           ([] if hb is None else [f'-DCAMERA_NATIVE_HB={hb}']) +
+                           ([] if hb is None else ['-DCAMERA_NATIVE_HB=96','-DFOOT_NATIVE_HB80_V33=1'] if hb=='v33' else [f'-DCAMERA_NATIVE_HB={hb}']) +
                            [str(source), '-o', str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
         for hb in [0, 63, 129, 256]:

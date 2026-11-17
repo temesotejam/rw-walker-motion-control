@@ -20,6 +20,9 @@ class WebUi {
   void transportReady();
   bool quietResponse();
   void status();
+#if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
+  void cameraLatency();
+#endif
   void command(RunControlWorker::Command);
   void manifest();
   void chunk();
@@ -31,6 +34,9 @@ class WebUi {
   FootObserver* feet_ = nullptr;
   ImmutableExport* export_ = nullptr;
   PsramString status_json_;
+#if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
+  uint32_t latency_status_requests_=0,latency_preview_requests_=0;
+#endif
   uint8_t chunk_buffer_[export_protocol::kChunkBytes + 16] = {};
   uint8_t* preview_buffer_ = nullptr;
   uint32_t preview_token_ = 0;

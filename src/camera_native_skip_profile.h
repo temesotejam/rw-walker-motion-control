@@ -1,6 +1,11 @@
 #pragma once
 #include <stdint.h>
 
+#if defined(FOOT_NATIVE_HB80_V33) && FOOT_NATIVE_HB80_V33
+#undef CAMERA_NATIVE_HB
+#define CAMERA_NATIVE_HB 80
+#endif
+
 #ifndef CAMERA_NATIVE_HB
 #define CAMERA_NATIVE_HB 96
 #endif
