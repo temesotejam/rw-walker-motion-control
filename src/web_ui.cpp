@@ -272,6 +272,11 @@ void WebUi::status() {
 #endif
   if (quietResponse()) return;
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpStatus);
+#if defined(FOOT_LIVE_STATUS_V35) && FOOT_LIVE_STATUS_V35
+  const bool live=server_->arg("view")=="live";
+#else
+  constexpr bool live=false;
+#endif
   const auto s = control_->snapshot(); const auto f = feet_->snapshot();
   const auto c = control_->commandState(); const auto e = export_->status();
   const auto h = control_->healthSnapshot();
@@ -285,7 +290,11 @@ void WebUi::status() {
   json += ",\"diagnostic_build_id\":\"" RUNTIME_DIAGNOSTIC_BUILD_ID "\"";
 #endif
   json += ",\"boot_id\":" + String(boot_id_);
+#if defined(FOOT_LIVE_STATUS_V35) && FOOT_LIVE_STATUS_V35
+  json += ",\"live_status_supported\":true,\"status_view\":\"" + String(live?"live":"full") + "\"";
+#endif
 #if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+  if(!live) {
   const auto rx = rw_camera_receive_stats();
   const auto rx_frames = rw_camera_frame_ready_stats();
   json += ",\"camera_receive\":{\"scope\":\"boot_lifetime_independent_counters\",\"console_per_error\":false";
@@ -299,6 +308,7 @@ void WebUi::status() {
 #undef RW_RX_JSON
   json += ",\"early_frames\":" + String(rx_frames.early_frames);
   json += ",\"last_full_age_us\":" + String(rx_frames.last_full_age_us) + "}";
+  }
 #endif
   const auto reset = RuntimeDiag::resetSnapshot();
   json += ",\"reset\":{\"reason\":" + String(reset.reason) + ",\"name\":\"" + String(reset.name);
@@ -366,8 +376,8 @@ void WebUi::status() {
   json += ",\"foot\":{\"available\":" + String(f.available ? "true" : "false");
   json += ",\"detector\":\"" + String(appcfg::kWhiteDetectorRevision) + "\"";
   json += ",\"worker_core\":" + String(FootObserver::kTaskCore) + ",\"worker_priority\":" + String(FootObserver::kTaskPriority);
-  json += ",\"range\":" + footRangeDiagnosticsJson();
-  json += ",\"calibration\":" + footCalibrationDiagnosticsJson();
+  json += ",\"range\":" + footRangeDiagnosticsJson(live);
+  if(!live) json += ",\"calibration\":" + footCalibrationDiagnosticsJson();
   json += ",\"zero_ready\":" + String(f.zero_ready ? "true" : "false") + ",\"zero_samples\":" + String(f.zero_samples);
   json += ",\"zero_reason\":\"" + String(footZeroReasonName(f.zero_reason)) + "\"";
   json += ",\"preview_available\":" + String(f.preview_available && preview_buffer_ ? "true" : "false");
@@ -418,6 +428,7 @@ void WebUi::status() {
 #endif
   json += ",\"sequence\":" + String(f.latest.sequence);
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
+  if(!live) {
   const auto overlap=rw_camera_overlap_stats();
   json+=",\"upper_prepare_us\":"+String(f.latest.upper_prepare_us)+",\"upper_overlap_used\":"+String(f.latest.upper_overlap_used?"true":"false");
   json+=",\"upper_attempts\":"+String(f.upper_attempts)+",\"upper_hits\":"+String(f.upper_hits)+",\"upper_misses\":"+String(f.upper_misses);
@@ -429,6 +440,7 @@ void WebUi::status() {
   json+=",\"lower_offered\":"+String(lower_overlap.offered)+",\"lower_busy\":"+String(lower_overlap.busy)+",\"lower_replaced\":"+String(lower_overlap.replaced);
 #endif
   json+=",\"upper_offered\":"+String(overlap.offered)+",\"upper_busy\":"+String(overlap.busy)+",\"upper_replaced\":"+String(overlap.replaced);
+  }
 #endif
   json += ",\"frame_valid\":" + String(f.latest.frame_valid ? "true" : "false");
   json += ",\"frame_timestamp_valid\":" + String(f.latest.timestamp_valid ? "true" : "false");
@@ -446,6 +458,7 @@ void WebUi::status() {
   json += ",\"error_deg\":" + num(s.upright_error_deg) + ",\"accel_g\":" + num(s.accel_norm_g);
   json += ",\"pitch_error_deg\":" + num(s.upright_pitch_error_deg);
   json += ",\"gyro_dps\":" + num(s.gyro_norm_dps) + "}";
+  if(!live) {
   json += ",\"camera\":{\"initialized\":" + String(camera.camera_ok ? "true" : "false");
   json += ",\"error\":\"" + String(camera.error) + "\"";
   json += ",\"sensor_pid\":" + String(camera.sensor_pid);
@@ -486,7 +499,9 @@ void WebUi::status() {
   json += ",\"control\":{\"steps\":" + String(h.steps);
   json += ",\"sample_deadline_over\":" + String(h.sample_deadline_over);
   json += ",\"sample_deadline_max_us\":" + String(h.sample_deadline_max_us);
-  json += ",\"runner_deadline_over\":" + String(h.runner_deadline_over) + "}}";
+  json += ",\"runner_deadline_over\":" + String(h.runner_deadline_over) + "}";
+  }
+  json += "}";
   if (!json.ok()) { server_->send(503,"text/plain","status_buffer_overflow"); return; }
   server_->sendHeader("Cache-Control", "no-store");
   server_->send_P(200, "application/json", json.c_str(), json.length());

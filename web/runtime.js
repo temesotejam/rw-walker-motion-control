@@ -3,6 +3,7 @@ const $ = id => document.getElementById(id);
 let previewRunning = false, previewEvidence = null;
 let poseRunning = false, poseCancelled = false, poseSession = null, poseSaved = false;
 let latest = null, lastSeen = 0, refreshInFlight = false, commandInFlight = false;
+let diagnosticInFlight = false;
 let transferRunning = false, cancelTransfer = false, completedFile = null, completedName = '', completedFoot = null;
 let transferAbort = null, transferDiagnostic = null;
 const exportPolicy = {requestTimeoutMs:8000, maxAttempts:5, buildWaitMs:120000, pollMs:500};
@@ -126,7 +127,7 @@ function footStartBlockReason(s) {
 }
 function controls() {
   const fresh = !offlineMode && latest && Date.now() - lastSeen < 3500;
-  const busy = commandInFlight || previewRunning || poseRunning || !!latest?.command?.pending;
+  const busy = commandInFlight || previewRunning || poseRunning || diagnosticInFlight || !!latest?.command?.pending;
   const building = latest?.export_phase === 'building';
   $('start').disabled = !fresh || busy || transferRunning || !latest.ready || !latest.upright_reference?.valid || latest.running || latest.export_phase !== 'empty';
   $('inverse-start').disabled = $('start').disabled;
@@ -413,12 +414,12 @@ function render(s) {
 }
 async function refresh(force = false) {
   if (offlineMode && Date.now() < offlineUntil && !force) { renderOffline(); return; }
-  if (refreshInFlight) return;
+  if (refreshInFlight || diagnosticInFlight) return;
   refreshInFlight = true;
   const generation = offlineGeneration;
   let received = false;
   try {
-    const s = await request('/status.json', {timeout: 2500}); received = true;
+    const s = await request(statusRequestPath(force), {timeout: 2500}); received = true;
     // A pre-START poll can arrive after START entered quiet mode. Do not let
     // that old READY response restart automatic polling during the run.
     if (generation !== offlineGeneration) { if (offlineMode) renderOffline(); return; }
@@ -438,6 +439,9 @@ async function refresh(force = false) {
       : '装置から応答がありません（自動再試行）';
     controls();
   } finally { refreshInFlight = false; }
+}
+function statusRequestPath(full = false) {
+  return !full && latest?.live_status_supported === true ? '/status.json?view=live' : '/status.json';
 }
 function adoptStatus(s) {
   if (!s || typeof s.state !== 'string' || typeof s.export_phase !== 'string' ||
@@ -657,6 +661,23 @@ function diagnosticSnapshot() {
   return {...latest, browser_status:{last_received_at:lastSeen ? new Date(lastSeen).toISOString() : null,
     age_ms:lastSeen ? Math.max(0, now-lastSeen) : null, snapshot_is_cached:true},
     browser_transfer:transferDiagnostic, browser_saved_at:new Date(now).toISOString()};
+}
+async function diagnosticSnapshotWithDetails() {
+  const snapshot = diagnosticSnapshot();
+  if (latest?.live_status_supported !== true || offlineMode || transferRunning || diagnosticInFlight)
+    return snapshot;
+  diagnosticInFlight = true; controls();
+  try {
+    const detail = await request('/status.json', {timeout:2500});
+    // Preserve the cached snapshot and its original age; never mix a later
+    // full response (possibly another boot/run) into its dynamic fields.
+    snapshot.device_detail = detail;
+    snapshot.detail_fetch = {ok:true, at:new Date().toISOString(),
+      same_boot:detail.boot_id === snapshot.boot_id, same_run:detail.run_id === snapshot.run_id};
+  } catch (error) {
+    snapshot.detail_fetch = {ok:false, at:new Date().toISOString(), message:error.message};
+  } finally { diagnosticInFlight = false; controls(); }
+  return snapshot;
 }
 async function exportRequest(path, options, label, validate = value => value) {
   for (let attempt = 1; attempt <= exportPolicy.maxAttempts; ++attempt) {
@@ -926,7 +947,7 @@ $('work-kinematics').onclick = () => saveWheelWorkCsv('kinematics');
 $('csv').onclick = () => saveBlob(new Blob(['\ufeff', footCsv(completedFoot)], {type: 'text/csv;charset=utf-8'}), completedName.replace(/\.rwlog$/, '_foot.csv'));
 $('preview').onclick = capturePreview;
 $('preview-save').onclick = () => saveBlob(new Blob([JSON.stringify(previewEvidence, null, 2)], {type:'application/json'}), `freefoot-vision-diagnostics-${previewEvidence.sequence}.json`);
-$('diagnostics').onclick = () => saveBlob(new Blob([JSON.stringify(diagnosticSnapshot(), null, 2)], {type: 'application/json'}), 'freefoot-diagnostics.json');
+$('diagnostics').onclick = async () => saveBlob(new Blob([JSON.stringify(await diagnosticSnapshotWithDetails(), null, 2)], {type: 'application/json'}), 'freefoot-diagnostics.json');
 $('pose-base').onclick = () => capturePose(true);
 $('pose-add').onclick = () => capturePose(false);
 $('pose-cancel').onclick = () => { poseCancelled = true; };

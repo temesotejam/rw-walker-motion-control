@@ -4,9 +4,10 @@
 #include "foot_control_range.h"
 
 // One source for API, image diagnostics and RWLOG range metadata.
-inline String footRangeDiagnosticsJson() {
+inline String footRangeDiagnosticsJson(bool live=false) {
   const auto pair = [](float lo, float hi) { return "[" + String(lo, 4) + "," + String(hi, 4) + "]"; };
   String json; json.reserve(700);
+  if(live)return "{\"right_support_x\":"+pair(appcfg::kFootAngleAMinCalXPx,appcfg::kFootAngleAMaxCalXPx)+",\"left_support_x\":"+pair(appcfg::kFootAngleBMinCalXPx,appcfg::kFootAngleBMaxCalXPx)+"}";
   json = "{\"revision\":\"fixed_leg_five_pose_repeat_20261101\"";
   json += ",\"basis\":\"five_fixed_leg_poses_with_repeat_endpoint\"";
   json += ",\"right_support_x\":" + pair(appcfg::kFootAngleAMinCalXPx, appcfg::kFootAngleAMaxCalXPx);

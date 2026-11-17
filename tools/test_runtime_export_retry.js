@@ -87,7 +87,7 @@ function harness(scenario={}) {
   assert.equal(d.browser_transfer.manifest.phase,'ready');assert.equal(d.state,'FINISHED');
   assert.equal(vm.runInContext('transferRunning',h.context),false);
   assert.equal(h.saves.length,1);assert.match(h.element('transfer').textContent,/CRC検証完了/);
-  h.element('diagnostics').onclick();
+  await h.element('diagnostics').onclick();
   const savedDiagnostic=JSON.parse(await h.saves[1].url.text());
   assert.equal(savedDiagnostic.browser_transfer.phase,'complete');
 
