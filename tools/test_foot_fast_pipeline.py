@@ -688,6 +688,8 @@ def main():
         subprocess.run([str(binary)],check=True)
         subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DFOOT_NATIVE_STREAM_V26=1','-DFOOT_EXPORT_WEBFIX=1','-DFOOT_COPY_DELTA_V27=1'],check=True)
         subprocess.run([str(binary)],check=True)
+        subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DFOOT_NATIVE_STREAM_V26=1','-DFOOT_EXPORT_WEBFIX=1','-DFOOT_COPY_DELTA_V27=1','-DFOOT_TEMPLATE_PRUNE_V28=1'],check=True)
+        subprocess.run([str(binary)],check=True)
 
 
 if __name__ == '__main__':

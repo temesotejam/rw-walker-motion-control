@@ -335,6 +335,7 @@ def main():
     parser.add_argument('--stream', action='store_true', help='Also test native incremental recognition v26; requires --native')
     parser.add_argument('--webfix', action='store_true', help='Use webfix1 identity for the v26 stream case')
     parser.add_argument('--delta', action='store_true', help='Test v27 copy delta; requires --webfix')
+    parser.add_argument('--prune', action='store_true', help='Test v28 exact pruning; requires --delta')
     args = parser.parse_args()
     if args.stream and not args.native:
         parser.error('--stream requires --native')
@@ -342,6 +343,8 @@ def main():
         parser.error('--webfix requires --stream')
     if args.delta and not args.webfix:
         parser.error('--delta requires --webfix')
+    if args.prune and not args.delta:
+        parser.error('--prune requires --delta')
     cpp = (ROOT / 'src/experiment_runner.cpp').read_text(encoding='utf8')
     inc = (ROOT / 'src/walking_energy_runner.inc').read_text(encoding='utf8')
     fixture = FIXTURE.replace('__WALKING_SERIALIZER__', function(inc, 'void ExperimentRunner::appendWalkingEnergyMetadata('))
@@ -374,6 +377,7 @@ def main():
                 definitions = flags(v20, native=True, stream=True)
                 if args.webfix: definitions += ['-DFOOT_EXPORT_WEBFIX=1']
                 if args.delta: definitions += ['-DFOOT_COPY_DELTA_V27=1']
+                if args.prune: definitions += ['-DFOOT_TEMPLATE_PRUNE_V28=1']
             case_name = 'v'+str(revision)+('_native' if native else '')+('_stream' if stream else '')
             exe = temp / (case_name+'.exe'); destination = exe.with_suffix('.json')
             subprocess.run(['g++', '-std=c++17', '-O0', '-Wall', '-Wextra', '-Werror', '-Wno-format',
@@ -390,7 +394,7 @@ def main():
             observation = expanded['foot_observation']
             assert observation['worker_core'] == 0
             assert observation['worker_priority'] == 1
-            size.update(version=27 if stream and args.delta else revision, native_sensor=native, native_stream=stream, hard_budget_bytes=metadata['metadata_json_budget_bytes'],
+            size.update(version=28 if stream and args.prune else 27 if stream and args.delta else revision, native_sensor=native, native_stream=stream, hard_budget_bytes=metadata['metadata_json_budget_bytes'],
                         worker_core=observation['worker_core'], worker_priority=observation['worker_priority'],
                         foot_rows=len(expanded['foot_frames']), energy_rows=len(expanded['walking_energy']['records']))
             size['non_driver_psram_remaining_estimate_bytes'] = (8*1024*1024 - size['core_psram_estimate_bytes'] -
@@ -411,6 +415,9 @@ def main():
                 identity = 'walking-foot-native-stream-v27'
                 assert observation['row_copy_policy'] == 'same_frame_new_rows_v27'
                 assert observation['overlap_demand_gated'] is True
+            if stream and args.prune:
+                identity = 'walking-foot-template-prune-v28'
+                assert observation['template_pruning'] == 'integer_max_below_peak_min_v28'
             assert metadata['diagnostic_build_id'] == identity
             assert metadata['energy_model'] == 'walking_energy_admission_v19'
             assert expanded['walking_energy']['revision'] == 'walking_energy_admission_v19' and expanded['walking_energy']['branch'] == 24

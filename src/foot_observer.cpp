@@ -563,6 +563,9 @@ void FootObserver::appendMetadata(PsramString& json) const {
 #if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
   json+=",\"row_copy_policy\":\"same_frame_new_rows_v27\",\"overlap_demand_gated\":true";
 #endif
+#if defined(FOOT_TEMPLATE_PRUNE_V28) && FOOT_TEMPLATE_PRUNE_V28
+  json+=",\"template_pruning\":\"integer_max_below_peak_min_v28\"";
+#endif
   json+=",\"worker_min_period_us\":"+String(foot_fast_policy::kWorkerPeriodUs)+",\"control_poll_ms\":"+String(foot_fast_policy::kControlPollMs);
   json+=",\"row_cache_ready\":"+String(s.row_cache_ready?"true":"false")+",\"row_cache_internal_bytes\":"+String(foot_image_rows::kRequiredBytes);
   json+=",\"pixel_processing\":\"same_integer_contrast_and_full_search_row_major\",\"recognition_semantics_changed\":false";

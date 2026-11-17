@@ -4,6 +4,9 @@
 
 ## 現在の状態
 
+- **2026-11-17 足認識v28を追加準備。成立しない候補行の後段探索だけを削減、実機未測定。** 最大平滑化コントラストが検出最低値未満の場合は領域探索を省略し、等号は保持。閾値/17高さ/探索範囲/追跡状態は同じ。v27コピー削減とwebfix1を継承。凍結従来器17682比較一致、段階認識4500特徴量対/9888観測対/301230追加/211307拒否PASS、実observer9構成・最大容量metadata・installer12構成・embed/HAL検証PASS。合成画像contrast230は34候補中22の後段を省略（実機時間の削減率ではない）。詳細docs/FOOT_TEMPLATE_PRUNE_V28.md。
+- env `atoms3cam-foot-template-prune` / ID `walking-foot-template-prune-v28` / page http://127.0.0.1:8767/foot-template-prune/ 。buildSUCCESS183.263秒、app1948000bytes/SHA256 `48ee27ef794412ea5b3996c7803da4e7d25c645b880c7b9fdcf285f556c8d584`、配信8files全一致、旧v27/webfix1保持。local analysis/2026-11-17-template-prune/。機体通信/書込み/再起動/モータ操作なし、ユーザーがブラウザ書込み。USB中モータ禁止・電池との同時給電を避ける指示を継続。v27/v28の実機短縮量は不明、最新実測は117625571のmedian27.771ms、20ms未達。次は手動足追従と実験ログで受取遅延/更新間隔/認識時間/検出率/反復取得を比較する。
+
 - **2026-11-17 足認識のコピー削減版v27を検証・配信準備。実機の短縮量は未測定。** ユーザーの高速化継続依頼に対し、下側の段階コピーを同一フレームの新着行だけへ変更し、取得中だけHAL準備を有効化。4段階の下側コピーは1経路40320→12800bytes（68.25%減、この処理のみ）。所有権・時刻一致・共有RAM上書き時の無効化・完全画像確認後の追跡反映を維持。HB96/クロック/校正/探索範囲/周期/制御v19は同じ、webfix1を継承。基準117625571は制御初回受取median27.771ms、20ms目標未達。v27の実機遅延/欠落/精度/反復取得は未確認。詳細docs/FOOT_COPY_DELTA_V27.md。
 - env `atoms3cam-foot-copy-delta` / ID `walking-foot-native-stream-v27` / page http://127.0.0.1:8767/foot-copy-delta/ 。ホストの新規コピーC++11/17、旧lower4構成、実observer8構成、最大容量metadata、installer11構成、embed/HALリンクPASS。build224.511秒、app1947920bytes/SHA256 `3a3300d6f9f34b30b4ae1621e8e2903f7465c4467245d5491538bfbb845ddd64`。配信8ファイル全一致、旧webfix1/v26 app保持。localhost server停止を確認し非表示PID10712で再開。書込み・実験はユーザー、機体への通信/書込み/モータ操作なし。バッテリー給電を切り離してUSB書込み、USB中はモータ禁止を継続。次はv27ログで遅延分布/更新間隔/検出率/準備再利用率を比較し、同一起動の複数ログ取得も確認。local analysis/2026-11-17-camera-copy-delta/ に検証結果。
 

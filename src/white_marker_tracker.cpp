@@ -3,6 +3,9 @@
 #include <math.h>
 #include "foot_tracking_config.h"
 #include "marker_identity_policy.h"
+#if defined(FOOT_TEMPLATE_PRUNE_V28) && FOOT_TEMPLATE_PRUNE_V28 && (!defined(FOOT_CAPTURE_V23) || !FOOT_CAPTURE_V23)
+#error "Template pruning requires the exact integer maximum from v23"
+#endif
 
 namespace {
 constexpr int kWidth = appcfg::kFrameWidth;
@@ -357,6 +360,12 @@ void WhiteMarker1DTracker::evaluate(const foot_image_rows::GrayRowView& gray, in
 #if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
     // One conversion per height rather than per pixel; the same integer maximum.
     if(strongest>weak.peak_contrast*kScale)weak.peak_contrast=static_cast<float>(strongest)/kScale;
+#endif
+#if defined(FOOT_TEMPLATE_PRUNE_V28) && FOOT_TEMPLATE_PRUNE_V28
+    // Every island peak is bounded by this template's integer maximum.
+    // The legacy loop continues before changing reason/candidates when its
+    // peak is below kPeakMin. Keep equality, rolling contrast and weak maximum.
+    if(strongest<kPeakMin)return;
 #endif
     for (int x = kRadius; x < kWidth - kRadius;) {
         if (smooth[x] <= kBaseline) { ++x; continue; }
