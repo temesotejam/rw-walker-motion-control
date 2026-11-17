@@ -366,8 +366,8 @@ def main():
             validate_tables(metadata)
             expanded = converter.expand_tables(metadata)
             observation = expanded['foot_observation']
-            assert observation['worker_core'] == (1 if stream else 0)
-            assert observation['worker_priority'] == (3 if stream else 1)
+            assert observation['worker_core'] == 0
+            assert observation['worker_priority'] == 1
             size.update(version=revision, native_sensor=native, native_stream=stream, hard_budget_bytes=metadata['metadata_json_budget_bytes'],
                         worker_core=observation['worker_core'], worker_priority=observation['worker_priority'],
                         foot_rows=len(expanded['foot_frames']), energy_rows=len(expanded['walking_energy']['records']))
