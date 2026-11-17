@@ -118,11 +118,7 @@ static int xTaskCreatePinnedToCore(void(*)(void*),const char* name,uint32_t stac
 #else
  constexpr uint32_t expected_stack=10240;
 #endif
-#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
- constexpr int expected_core=1,expected_priority=3;
-#else
  constexpr int expected_core=0,expected_priority=1;
-#endif
  assert(std::string(name)=="foot_observer" && stack==expected_stack && priority==expected_priority && core==expected_core);
  created_foot_core=core;created_foot_priority=priority;
  *task=reinterpret_cast<void*>(1);return pdPASS;

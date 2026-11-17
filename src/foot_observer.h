@@ -101,11 +101,9 @@ struct FootPreviewInfo {
 };
 class FootObserver {
  public:
-#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
-  static constexpr int kTaskCore=1,kTaskPriority=3;
-#else
+  // Core1/priority3 did not reduce measured receipt latency (2026-11-17).
+  // Retain the measured Core0 worker placement for the walking trial.
   static constexpr int kTaskCore=0,kTaskPriority=1;
-#endif
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
   static constexpr uint32_t kCapacity = foot_fast_policy::kArchiveCapacity;
 #else
