@@ -11,6 +11,12 @@ struct FootLatencyHistogram {
   uint32_t count=0,both_detected=0,invalid_time=0,max_us=0,min_us=UINT32_MAX;
   uint32_t max_gap_us=0;
   uint64_t sum_us=0,last_receipt_us=0;
+#if defined(FOOT_STABLE40_V36) && FOOT_STABLE40_V36
+  struct Window {uint32_t epoch=0,receipts=0,detected=0;};
+  Window windows[16]; // Last 80 seconds, five seconds per bucket.
+  uint32_t valid_gap_bins[128]={},valid_gaps=0,valid_gaps_over_50ms=0;
+  uint64_t last_valid_receipt_us=0;
+#endif
   void record(uint64_t frame_us,uint64_t receipt_us,bool detected) {
     if(!frame_us || receipt_us<frame_us || receipt_us-frame_us>UINT32_MAX) {
       ++invalid_time; return;
@@ -24,6 +30,22 @@ struct FootLatencyHistogram {
       if(gap>max_gap_us)max_gap_us=gap;
     }
     last_receipt_us=receipt_us;
+#if defined(FOOT_STABLE40_V36) && FOOT_STABLE40_V36
+    const uint32_t epoch=static_cast<uint32_t>(receipt_us/5000000ULL);
+    auto& window=windows[epoch%16];
+    if(window.epoch!=epoch){window=Window{};window.epoch=epoch;}
+    ++window.receipts;
+    if(detected) {
+      ++window.detected;
+      if(last_valid_receipt_us && receipt_us>=last_valid_receipt_us) {
+        const uint64_t gap=receipt_us-last_valid_receipt_us;
+        const uint64_t index=gap/500;
+        ++valid_gap_bins[index<128?static_cast<unsigned>(index):127];
+        ++valid_gaps;if(gap>50000)++valid_gaps_over_50ms;
+      }
+      last_valid_receipt_us=receipt_us;
+    }
+#endif
   }
   template<class Text> void appendJson(Text& out) const {
     char text[384];
@@ -33,6 +55,16 @@ struct FootLatencyHistogram {
       static_cast<unsigned long>(max_us),static_cast<unsigned long>(max_gap_us));
     out+=text;
     for(unsigned i=0;i<kBins;++i){snprintf(text,sizeof(text),"%s%lu",i?",":"",static_cast<unsigned long>(bins[i]));out+=text;}
-    out+="]}";
+    out+="]";
+#if defined(FOOT_STABLE40_V36) && FOOT_STABLE40_V36
+    snprintf(text,sizeof(text),",\"last_receipt_us\":%llu,\"last_valid_receipt_us\":%llu,\"valid_gaps\":%lu,\"valid_gaps_over_50ms\":%lu,\"valid_gap_bin_us\":500,\"valid_gap_overflow_from_us\":63500,\"valid_gap_bins\":[",
+      static_cast<unsigned long long>(last_receipt_us),static_cast<unsigned long long>(last_valid_receipt_us),static_cast<unsigned long>(valid_gaps),static_cast<unsigned long>(valid_gaps_over_50ms));
+    out+=text;
+    for(unsigned i=0;i<128;++i){snprintf(text,sizeof(text),"%s%lu",i?",":"",static_cast<unsigned long>(valid_gap_bins[i]));out+=text;}
+    out+="],\"window_us\":5000000,\"windows\":[";
+    for(unsigned i=0;i<16;++i){const auto& w=windows[i];snprintf(text,sizeof(text),"%s[%lu,%lu,%lu]",i?",":"",static_cast<unsigned long>(w.epoch),static_cast<unsigned long>(w.receipts),static_cast<unsigned long>(w.detected));out+=text;}
+    out+="]";
+#endif
+    out+="}";
   }
 };

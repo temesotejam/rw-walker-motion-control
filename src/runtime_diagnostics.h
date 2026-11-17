@@ -41,6 +41,10 @@
 #if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
 #if defined(FOOT_RECEIVE_CORE1_V31) && FOOT_RECEIVE_CORE1_V31
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-receive-core1-v31"
+#elif defined(FOOT_CADENCE20_V37) && FOOT_CADENCE20_V37
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-cadence20-v37"
+#elif defined(FOOT_STABLE40_V36) && FOOT_STABLE40_V36
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-stable40-v36"
 #elif defined(FOOT_LIVE_STATUS_V35) && FOOT_LIVE_STATUS_V35
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-live-status-v35"
 #elif defined(FOOT_WORKER26_V34) && FOOT_WORKER26_V34

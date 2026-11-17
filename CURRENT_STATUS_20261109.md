@@ -4,6 +4,17 @@
 
 ## 現在の状態
 
+- **2026-11-17 ユーザー要望の安定40 Hz以上に向けv36/v37を実装・比較。現機体はv37。** v35の26 ms上限を、v36で23 ms、v37で20 msへ短縮。v37は通信なし60 sで両足検出2903/2903、有効48.345 Hz、全完全5秒区間の最低47.8 Hz、50 ms超の有効更新空白0回。更新間隔p9525.0–25.5 ms/p9937.0–37.5 ms。一定20/25 msの保証ではない。受取り遅延は中央値24.5–24.75 msで20 ms未達。詳細 `docs/FOOT_STABLE40_V36.md`。
+- 新たに有効受取り間隔の0.5 msビン、50 ms超回数、最後の有効受取り、5秒ごとの全/両足検出数を80秒リングに集計し、平均だけで安定性を判断しない。v36は通信なし42.583 Hz/最低42.2、通常Web相当41.134 Hz/最低40.4だがp99間隔42/54.5 msや50 ms超3/40回があり、v37で改善を比較。HB96/全画像検証/全17候補/エネルギー方式/モータ入力上限は維持。
+- 高速化テストで予測器の25 ms下限が新画像をGapにする問題を発見。v36/v37のみ15 msへ対応し、3予測器の14/15/20/23/25/40 ms、重複・逆時刻・stale・jump拒否を検証。旧版の25 ms条件を維持。足容量v36=1760/v37=2048、metadata hard1408 KiB/reserve1536 KiBで同期込み40 s保存。実serializer/RWLOG/CSVでv37全2048foot/192energy/96support行1279564/1441792bytes。PSRAM余裕モデル312915 bytesは実断片化保証ではない。
+- COM7/MAC F0:9E:9E:32:53:0C、v37 boot3376924953、USBのみ、左右検出/zero ready、motor0/submitted0/pendingfalse。env `atoms3cam-foot-cadence20` / ID `walking-foot-cadence20-v37` / page http://127.0.0.1:8767/foot-cadence20/ 。build176.549s SUCCESS/app1957584bytes/SHA256 `138a238e3b77511fc963241fea7ad70717ae918b2d2b7d9fad3085d44c4fe76b`。旧v36/v35保管。実observer新旧周期、予測器、間隔・リング境界・最大JSON、全容量、21installer、HALリンク/embed/各8配信ファイル一致PASS。証拠 `analysis/2026-11-17-camera-stable40/`。モータ・測定開始なし、歩行中の動的精度/制御deadline/反復RWLOG取得は未検証。
+
+v37の通常Web相当（800 ms指定、75要求/約60 s）でも有効2801/2803、46.490 Hz、完全5秒区間最低45.8 Hz。間隔p9531.0–31.5 ms/p9946.5–47.0 ms、50 ms超22回、short99/drop11、HTTP失敗0。更新数の40 Hz目標は超えたが、固定25 ms間隔・欠落ゼロの保証ではない。v37を選択し、通信なしの最終再測定も記録する。
+
+v37最終通信なし60 sも2903/2903両検出、48.333 Hz、全5秒区間最低47.4 Hz、間隔p9524.5–25.0/p9937.0–37.5 ms、50 ms超2回、short31/drop0、status/preview0。通信なし計約120 sでは5806/5806両検出・50 ms超2回。40 Hz以上の更新数基準を満たしv37を最終選択。一定25 msごとの必達保証とは区別する。
+
+以下はv35以前の状態。
+
 - **2026-11-17 Web通信軽量化v35を実装・書込み。現在の選択版は `walking-foot-live-status-v35`。20 ms目標は未達。** v34のカメラ設定/26 ms周期/足1600件/エネルギー制御を維持し、対応画面の通常pollだけ `/status.json?view=live` にする。実送信6866→3818 bytes（44.39%削減）。姿勢・足の最新値・実校正範囲・開始ゲートは保持し、古い値を合成しない。詳細statusは従来URL/強制更新/診断保存時に取得。診断JSONの `device_detail` と `detail_fetch` はキャッシュと別に保存し、別boot/runや失敗を区別する。詳細 `docs/FOOT_LIVE_STATUS_V35.md`。
 - 同一起動で通信なし45 sは1707/1707両検出、37.880 Hz、中央値[24.75,25.00) ms/p95[29.75,30.00)。約5 Hz負荷では詳細1が32.476 Hz/p9547.75–48.00 ms、軽量2区間が33.975/34.084 Hz、p9544.00–44.25/43.00–43.25 ms。中央値は各26.00–26.25 msで同じ。実要求221/213/210回の差があるため全効果を送信量だけに帰さない。外部要求/preview0、HTTP失敗0。歩行中は既存Web休止仕様なので、今回の改善を歩行中の遅延短縮と混同しない。
 - COM7/MAC F0:9E:9E:32:53:0C、boot2671814620、USBのみ/モータ停止・submitted0/pendingfalse。実ID・左右検出・ゼロ点・詳細/軽量JSON互換・実JSONを製品JSで描画する試験PASS。env `atoms3cam-foot-live-status`、page http://127.0.0.1:8767/foot-live-status/ 、build202.524 s SUCCESS、app1956784bytes/SHA256 `caa02acacf3b6e579b672b93dd52d577332241f12a41f5bee59c81851c5ed482`。19installer/配信8files一致、HALリンク、UI/オフライン/診断鮮度/診断別boot・失敗/ログ再開・CRC・キャンセル/足範囲/embed PASS。旧v34保持。ローカル証拠 `analysis/2026-11-17-camera-live-status/`。次は画像受信自体の短縮を検討する。

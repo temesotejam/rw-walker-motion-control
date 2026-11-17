@@ -251,11 +251,17 @@ void WebUi::cameraLatency() {
   if(quietResponse())return;
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http,RuntimeDiag::Phase::HttpStatus);
   const auto latency=feet_->latencySnapshot();
+#if defined(FOOT_STABLE40_V36) && FOOT_STABLE40_V36
+  const uint64_t latency_snapshot_us=esp_timer_get_time();
+#endif
   const auto foot=feet_->snapshot();const auto control=control_->snapshot();
   const auto command=control_->commandState();const auto rx=rw_camera_receive_stats();
   auto& json=status_json_;json.clear();
   if(!json.ok()){server_->send(503,"text/plain","status_buffer_unavailable");return;}
   json+="{\"build\":\"" RUNTIME_DIAGNOSTIC_BUILD_ID "\",\"boot_id\":"+String(boot_id_);
+#if defined(FOOT_STABLE40_V36) && FOOT_STABLE40_V36
+  char snapshot_time[48];snprintf(snapshot_time,sizeof(snapshot_time),",\"snapshot_us\":%llu",static_cast<unsigned long long>(latency_snapshot_us));json+=snapshot_time;
+#endif
   json+=",\"running\":"+String(control.running?"true":"false")+",\"motor_mA\":"+String(control.motor_cmd_mA);
   json+=",\"command_submitted\":"+String(command.submitted)+",\"command_pending\":"+String(command.pending?"true":"false");
   json+=",\"captured_frames\":"+String(foot.captured_frames)+",\"short_frames\":"+String(rx.short_frames);
