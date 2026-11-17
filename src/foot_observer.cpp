@@ -561,7 +561,12 @@ void FootObserver::appendMetadata(PsramString& json) const {
 #endif
   json+=",\"pipeline_revision\":\"sparse_cached_rows_double_buffer_v20\",\"camera_buffers\":2,\"grab_latest\":true,\"active_cam_take_zero_drain\":false";
 #if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
-  json+=",\"row_copy_policy\":\"same_frame_new_rows_v27\",\"overlap_demand_gated\":true";
+  json+=",\"row_copy_policy\":\"same_frame_new_rows_v27\",\"overlap_demand_gated\":";
+#if defined(FOOT_OVERLAP_ALWAYS_V29) && FOOT_OVERLAP_ALWAYS_V29
+  json+="false";
+#else
+  json+="true";
+#endif
 #endif
 #if defined(FOOT_TEMPLATE_PRUNE_V28) && FOOT_TEMPLATE_PRUNE_V28
   json+=",\"template_pruning\":\"integer_max_below_peak_min_v28\"";

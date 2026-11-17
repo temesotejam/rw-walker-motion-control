@@ -4,6 +4,11 @@
 
 ## 現在の状態
 
+- **2026-11-17 ユーザーが助手による書込み・改善反復を承認し、USBのみ/バッテリー切離しを確認。COM7へv28→v29→v28比較→最終v29を書込み、モータは動かしていない。** 現在の推奨比較版は `walking-foot-overlap-always-v29`。v27差分コピーとv28不要探索削減を残し、取得待ち以外もHAL準備を継続。最終HTTP実ID、左右検出、ゼロ点、停止状態を確認済み。給電状態のこの確認を将来の接続へ無条件に流用しない。詳細docs/FOOT_OVERLAP_ALWAYS_V29.md。
+- USB静止・HTTP抽出ベンチ：webfix1 median27.766ms/p9539.330、v28の3区間median26.685〜27.002/p9535.041〜45.408、v29の2区間median26.200/26.303,p9533.897/41.359,max41.178/54.015、26.04〜26.89Hz。v29左右検出/角度有効386/386sample、zero ready、HTTP失敗0、全取得時motor0/runningfalse/pendingfalse。約1.5msの中央値短縮だが20ms未達、p95の安定改善未証明。全画像ログ/歩行/動的精度ではない。基準はzero未確定など起動条件も異なる。
+- **受信問題は未解決。** 45s USB監視でv29 FB-SIZE423/EOF-OVF30、v28 FB-SIZE411/EOF-OVF13、両者panic0。両版で再現するがv29側のOVFは多く、同等安定性の保証はしない。不完全画像は拒否。次の改善はHAL受信・待ち行列・実行遅延の内訳計測。センサー到着自体median22ms前後であり、認識後段だけで20msを達成したとは言わない。
+- v29 env `atoms3cam-foot-overlap-always` / page http://127.0.0.1:8767/foot-overlap-always/ / app1948016bytes SHA256 `3e4556e40917ba0620c19d6c0842bda0d8ffe40d438c5bf5bfa26d5ac22db4ea`。build231.935s、copy C++11/17両ゲート/observer10構成/metadata1001548bytes/installer13構成/embed/HAL PASS、配信8files全一致、旧v28/v27/webfix1保持。no-stub app0x10000書込Hash verified後、DTRfalse/RTSパルスとHTTPで通常起動を確認。初回v28はesptool Hard resetting表示だけではROMに残った。local analysis/2026-11-17-camera-bench/ に全ベンチ/プレビュー/書込み/診断/比較。PCはIntelのインターネット接続を維持しTP-Linkを機体Wi-Fiへ接続。
+
 - **2026-11-17 足認識v28を追加準備。成立しない候補行の後段探索だけを削減、実機未測定。** 最大平滑化コントラストが検出最低値未満の場合は領域探索を省略し、等号は保持。閾値/17高さ/探索範囲/追跡状態は同じ。v27コピー削減とwebfix1を継承。凍結従来器17682比較一致、段階認識4500特徴量対/9888観測対/301230追加/211307拒否PASS、実observer9構成・最大容量metadata・installer12構成・embed/HAL検証PASS。合成画像contrast230は34候補中22の後段を省略（実機時間の削減率ではない）。詳細docs/FOOT_TEMPLATE_PRUNE_V28.md。
 - env `atoms3cam-foot-template-prune` / ID `walking-foot-template-prune-v28` / page http://127.0.0.1:8767/foot-template-prune/ 。buildSUCCESS183.263秒、app1948000bytes/SHA256 `48ee27ef794412ea5b3996c7803da4e7d25c645b880c7b9fdcf285f556c8d584`、配信8files全一致、旧v27/webfix1保持。local analysis/2026-11-17-template-prune/。機体通信/書込み/再起動/モータ操作なし、ユーザーがブラウザ書込み。USB中モータ禁止・電池との同時給電を避ける指示を継続。v27/v28の実機短縮量は不明、最新実測は117625571のmedian27.771ms、20ms未達。次は手動足追従と実験ログで受取遅延/更新間隔/認識時間/検出率/反復取得を比較する。
 

@@ -20,6 +20,7 @@ import prepare_foot_native_stream_flasher as native_stream
 import prepare_foot_export_webfix_flasher as export_fix
 import prepare_foot_copy_delta_flasher as copy_delta
 import prepare_foot_template_prune_flasher as template_prune
+import prepare_foot_overlap_always_flasher as overlap_always
 import prepare_foot_fast_flasher as base
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -98,6 +99,7 @@ def main():
     check(export_fix, native_stream, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96','-DFOOT_NATIVE_STREAM_V26=1','-DFOOT_EXPORT_WEBFIX=1'], ['webfix1', 'USB'])
     check(copy_delta, export_fix, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96','-DFOOT_NATIVE_STREAM_V26=1','-DFOOT_EXPORT_WEBFIX=1','-DFOOT_COPY_DELTA_V27=1'], ['webfix1', 'USB'])
     check(template_prune, copy_delta, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96','-DFOOT_NATIVE_STREAM_V26=1','-DFOOT_EXPORT_WEBFIX=1','-DFOOT_COPY_DELTA_V27=1','-DFOOT_TEMPLATE_PRUNE_V28=1'], ['webfix1', 'USB'])
+    check(overlap_always, template_prune, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96','-DFOOT_NATIVE_STREAM_V26=1','-DFOOT_EXPORT_WEBFIX=1','-DFOOT_COPY_DELTA_V27=1','-DFOOT_TEMPLATE_PRUNE_V28=1','-DFOOT_OVERLAP_ALWAYS_V29=1'], ['webfix1','USB'])
 
 
 if __name__=='__main__':

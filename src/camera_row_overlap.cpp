@@ -77,7 +77,9 @@ bool camera_row_overlap::initializeLower(uint8_t* storage,size_t capacity,LowerC
 #endif
 extern "C" void rw_camera_overlap_offer(const uint8_t* gray,size_t prefix_bytes,uint64_t frame_us) {
 #if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+#if !defined(FOOT_OVERLAP_ALWAYS_V29) || !FOOT_OVERLAP_ALWAYS_V29
   if(!__atomic_load_n(&requested,__ATOMIC_ACQUIRE))return;
+#endif
 #endif
 #if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
   // Every DMA chunk can advance the lower stage, even after this frame's

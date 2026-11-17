@@ -52,8 +52,10 @@ int main(){
  std::vector<uint8_t> upper(kUpperBytes),lower(kLowerBytes);
  assert(camera_row_overlap::initialize(upper.data(),upper.size(),consumeUpper,nullptr));
  assert(camera_row_overlap::initializeLower(lower.data(),lower.size(),consumeLower,nullptr));
+#if !defined(FOOT_OVERLAP_ALWAYS_V29) || !FOOT_OVERLAP_ALWAYS_V29
  rw_camera_overlap_offer(raw.data(),raw.size(),stamp);rw_camera_overlap_poll();
  assert(lower_calls==0 && upper_calls==0);
+#endif
  rw_camera_overlap_request(true);expected_stamp=stamp;expected_seed=11;
  for(int stage:kLowerMilestones){expected_y=stage;
    rw_camera_overlap_offer(raw.data(),lowerPrefixThrough(stage),stamp);rw_camera_overlap_poll();
@@ -61,8 +63,16 @@ int main(){
  assert(lower_calls==4 && upper_calls==1);
  rw_camera_overlap_request(false);
  const auto before=rw_camera_lower_overlap_stats().offered;
+#if defined(FOOT_OVERLAP_ALWAYS_V29) && FOOT_OVERLAP_ALWAYS_V29
+ expected_stamp=stamp+1;expected_seed=29;expected_y=222;
+#endif
  rw_camera_overlap_offer(next.data(),next.size(),stamp+1);rw_camera_overlap_poll();
+#if defined(FOOT_OVERLAP_ALWAYS_V29) && FOOT_OVERLAP_ALWAYS_V29
+ assert(rw_camera_lower_overlap_stats().offered==before+1 && lower_calls==5);
+#else
  assert(rw_camera_lower_overlap_stats().offered==before);
+#endif
+ const auto calls_before_retry=lower_calls;
  rw_camera_overlap_request(true);expected_stamp=stamp+2;expected_seed=29;expected_y=174;
  rw_camera_overlap_offer(next.data(),lowerPrefixThrough(174),stamp+2);
  while_reading=[&](){
@@ -72,7 +82,7 @@ int main(){
  };
  rw_camera_overlap_poll();assert(rw_camera_lower_overlap_stats().busy>0);
  expected_y=190;rw_camera_overlap_offer(next.data(),lowerPrefixThrough(190),stamp+2);
- rw_camera_overlap_poll();assert(lower_calls==6);
+ rw_camera_overlap_poll();assert(lower_calls==calls_before_retry+2);
  rw_camera_overlap_request(false);
  std::cout<<"PASS v27 copies per lower lane: "<<old_copied<<" -> "<<copied
           <<" bytes at four stages; same-frame/new-frame/scratch-reset/ownership/demand gates\n";
@@ -81,10 +91,12 @@ int main(){
 with tempfile.TemporaryDirectory(prefix='copy_delta_') as tmp:
     path=Path(tmp);(path/'esp_timer.h').write_text('#pragma once\n#include <stdint.h>\nextern "C" int64_t esp_timer_get_time();\n')
     (path/'test.cpp').write_text(prefix+CASES)
-    for standard in ['c++11','c++17']:
+    for standard,always in [('c++11',0),('c++17',0),('c++11',1),('c++17',1)]:
         exe=path/(standard+'.exe')
         subprocess.run(['g++','-std='+standard,'-O2','-Wall','-Wextra','-Werror','-Wno-unused-function',
                         '-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DFOOT_NATIVE_STREAM_V26=1',
                         '-DFOOT_COPY_DELTA_V27=1','-I'+str(path),'-I'+str(ROOT/'src'),
+                        '-DFOOT_OVERLAP_ALWAYS_V29='+str(always),
                         str(path/'test.cpp'),str(ROOT/'src/camera_row_overlap.cpp'),'-o',str(exe)],check=True)
         subprocess.run([str(exe)],check=True)
+        print('Continuous preparation:',bool(always),flush=True)

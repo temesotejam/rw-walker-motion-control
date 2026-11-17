@@ -37,7 +37,11 @@
 #if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
 #if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
 #if defined(FOOT_TEMPLATE_PRUNE_V28) && FOOT_TEMPLATE_PRUNE_V28
+#if defined(FOOT_OVERLAP_ALWAYS_V29) && FOOT_OVERLAP_ALWAYS_V29
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-overlap-always-v29"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-template-prune-v28"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-native-stream-v27"
 #endif
