@@ -20,6 +20,8 @@ import prepare_foot_native_stream_flasher as native_stream
 import prepare_foot_export_webfix_flasher as export_fix
 import prepare_foot_copy_delta_flasher as copy_delta
 import prepare_foot_template_prune_flasher as template_prune
+import prepare_foot_receive_diag_flasher as receive_diag
+import prepare_foot_receive_core1_flasher as receive_core1
 import prepare_foot_overlap_always_flasher as overlap_always
 import prepare_foot_fast_flasher as base
 
@@ -87,6 +89,8 @@ def check(profile, parent, additions, page_terms):
 
 
 def main():
+    check(receive_core1, receive_diag, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96','-DFOOT_NATIVE_STREAM_V26=1','-DFOOT_EXPORT_WEBFIX=1','-DFOOT_COPY_DELTA_V27=1','-DFOOT_TEMPLATE_PRUNE_V28=1','-DFOOT_OVERLAP_ALWAYS_V29=1','-DFOOT_RECEIVE_DIAG_V30=1','-DFOOT_RECEIVE_CORE1_V31=1'], ['webfix1','USB'])
+    check(receive_diag, overlap_always, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96','-DFOOT_NATIVE_STREAM_V26=1','-DFOOT_EXPORT_WEBFIX=1','-DFOOT_COPY_DELTA_V27=1','-DFOOT_TEMPLATE_PRUNE_V28=1','-DFOOT_OVERLAP_ALWAYS_V29=1','-DFOOT_RECEIVE_DIAG_V30=1'], ['webfix1','USB'])
     check(fix, base, ['-DEXPORT_RETRY_FIX=1'], ['通信再試行', '先に「RWLOGを取得・再開」で保存'])
     check(fix2, fix, ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1'], ['小分けに実行', '再起動理由'])
     check(ready, fix2, ['-DEXPORT_RETRY_FIX=1', '-DEXPORT_COOPERATIVE_FIX=1', '-DCAMERA_FRAME_READY_V21=1'], ['全画素', '実機では未確認'])

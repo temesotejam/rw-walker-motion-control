@@ -4,6 +4,11 @@
 
 ## 現在の状態
 
+- **2026-11-17 カメラ受信v30/v31をUSB停止状態で比較。最終実機はv30、20ms目標未達。** ユーザーは安全のため数分にわたり姿勢を変えて横置きにしたと確認。姿勢変更中のv31初回の検出低下をコード不具合と断定しない。横置きで取り直し、v31は中央値25.329ms/p9529.681/max31.847、両足207/214、short721/drop8。v30安定後は26.737ms/p9547.849/max62.676、両足202/203、short304/drop43、認識カウンタ26.795Hz。異なるboot/露光履歴・HTTP最新値サンプルなので厳密な同条件全画像比較ではない。v31は短いが検出率・欠落との交換条件があり採用せず、v30を残す。v29からの追加短縮を実証したとは言えない。詳細 `docs/FOOT_RECEIVE_V30_V31.md`。
+- v30は受信ISR→タスク待ち・画像サイズ不足・キューあふれを `/status.json.camera_receive` に全件計数し、受信経路のエラー毎の文字出力を削除。不完全画像の拒否は維持。v31はHALだけCore1/優先度3（IMU6/制御4より低い）、足認識Core0/優先度1。v30はHALもCore0。センサーHB96/22.857MHz/320x236・エネルギーv19・モータ制御は変更なし。未解決は画像受信約22〜23msと待ち時間の長い裾。独立した画素時刻・DMA整合性を追加計測するのが次。キューだけの無制限拡張や部分画像採用はしない。
+- 最終COM7/MAC F0:9E:9E:32:53:0C、boot1797503538、`walking-foot-receive-diag-v30`、READY_TO_MEASURE、motor0/command submitted0/pendingfalse。バッテリー切離しUSBのみ・モータ禁止を継続。横置き再起動のためzero_ready=false/body_movingで角度有効0だが、マーカー検出は上記の通り。ゼロ点ゲートは変更していない。停止測定を歩行・歩行中制御deadline・反復ログ取得の検証と混同しない。
+- 選択版 `atoms3cam-foot-receive-diag`、ページ http://127.0.0.1:8767/foot-receive-diag/ 、app1951600bytes/SHA256 `8f985243245817653a6f180c77a81c11b53d4d80dfce5adf2a02a1489e94d141`、build168.911s SUCCESS。比較版v31のapp1951600bytes/SHA256 `ab785f234b5b383a8a5eb7e308cc66493e1e933159b534507e481326162289cd`、build186.578s SUCCESS、専用page `/foot-receive-core1/`。旧v29保持。実HAL・ISR時刻wrap/部分画像/所有権、実タスク作成フックcore0/1、15installer、最大metadata1001546/1048576、HALリンク・embed・配信一致PASS。旧 `test_camera_coexistence.py` は今回未変更のexperiment_runnerの過去固定ハッシュで停止（詳細doc）、PASS扱いしない。生データ/バイナリはlocal `analysis/2026-11-17-camera-bench/` とflasherのみ。
+
 - **2026-11-17 ユーザーが助手による書込み・改善反復を承認し、USBのみ/バッテリー切離しを確認。COM7へv28→v29→v28比較→最終v29を書込み、モータは動かしていない。** 現在の推奨比較版は `walking-foot-overlap-always-v29`。v27差分コピーとv28不要探索削減を残し、取得待ち以外もHAL準備を継続。最終HTTP実ID、左右検出、ゼロ点、停止状態を確認済み。給電状態のこの確認を将来の接続へ無条件に流用しない。詳細docs/FOOT_OVERLAP_ALWAYS_V29.md。
 - USB静止・HTTP抽出ベンチ：webfix1 median27.766ms/p9539.330、v28の3区間median26.685〜27.002/p9535.041〜45.408、v29の2区間median26.200/26.303,p9533.897/41.359,max41.178/54.015、26.04〜26.89Hz。v29左右検出/角度有効386/386sample、zero ready、HTTP失敗0、全取得時motor0/runningfalse/pendingfalse。約1.5msの中央値短縮だが20ms未達、p95の安定改善未証明。全画像ログ/歩行/動的精度ではない。基準はzero未確定など起動条件も異なる。
 - **受信問題は未解決。** 45s USB監視でv29 FB-SIZE423/EOF-OVF30、v28 FB-SIZE411/EOF-OVF13、両者panic0。両版で再現するがv29側のOVFは多く、同等安定性の保証はしない。不完全画像は拒否。次の改善はHAL受信・待ち行列・実行遅延の内訳計測。センサー到着自体median22ms前後であり、認識後段だけで20msを達成したとは言わない。

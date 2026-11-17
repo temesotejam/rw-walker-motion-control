@@ -259,6 +259,21 @@ void WebUi::status() {
   json += ",\"diagnostic_build_id\":\"" RUNTIME_DIAGNOSTIC_BUILD_ID "\"";
 #endif
   json += ",\"boot_id\":" + String(boot_id_);
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+  const auto rx = rw_camera_receive_stats();
+  const auto rx_frames = rw_camera_frame_ready_stats();
+  json += ",\"camera_receive\":{\"scope\":\"boot_lifetime_independent_counters\",\"console_per_error\":false";
+#define RW_RX_JSON(field) json += ",\"" #field "\":" + String(rx.field)
+  RW_RX_JSON(events); RW_RX_JSON(eof_events); RW_RX_JSON(vsync_events);
+  RW_RX_JSON(event_drops); RW_RX_JSON(short_frames); RW_RX_JSON(last_short_bytes);
+  RW_RX_JSON(last_vsync_delay_us); RW_RX_JSON(max_vsync_delay_us);
+  RW_RX_JSON(max_eof_delay_us); RW_RX_JSON(events_over_1ms); RW_RX_JSON(events_over_4ms);
+  RW_RX_JSON(short_start_delay_us); RW_RX_JSON(full_start_delay_us);
+  RW_RX_JSON(max_copy_us); RW_RX_JSON(max_offer_us);
+#undef RW_RX_JSON
+  json += ",\"early_frames\":" + String(rx_frames.early_frames);
+  json += ",\"last_full_age_us\":" + String(rx_frames.last_full_age_us) + "}";
+#endif
   const auto reset = RuntimeDiag::resetSnapshot();
   json += ",\"reset\":{\"reason\":" + String(reset.reason) + ",\"name\":\"" + String(reset.name);
   json += "\",\"previous_export_valid\":" + String(reset.previous_export_valid ? "true" : "false");

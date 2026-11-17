@@ -225,7 +225,8 @@ int main() {
 
 def main():
     source = (ROOT/'third_party/esp32_camera_f0bb429/cam_hal.c').read_text(encoding='utf8')
-    tag = source[source.index('typedef struct {cam_event_t type;'):source.index('#endif', source.index('typedef struct {cam_event_t type;'))]
+    tag_start = source.index('typedef struct {cam_event_t type; uint64_t isr_us;} rw_probe_event_t;')
+    tag = source[tag_start:source.index('#endif', tag_start)]
     helpers = source[source.index('static bool rw_early_enabled'):source.index('//Copy fram')]
     code = PREAMBLE + tag + DOUBLES
     code += function(source, 'void IRAM_ATTR ll_cam_send_event(') + '\n'

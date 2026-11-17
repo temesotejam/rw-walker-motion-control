@@ -49,7 +49,12 @@ extern "C" BaseType_t __wrap_xTaskCreatePinnedToCore(
 
   if (camera_task) {
     effective_priority = kCameraInternalTaskPriority;
+#if defined(FOOT_RECEIVE_CORE1_V31) && FOOT_RECEIVE_CORE1_V31
+    // Keep below IMU (6) and control (4); avoid sharing the Wi-Fi task's core.
+    effective_core = 1;
+#else
     effective_core = 0;
+#endif
     if (effective_stack < kCameraInternalTaskStackBytes)
       effective_stack = kCameraInternalTaskStackBytes;
     portENTER_CRITICAL(&g_patch_mux);

@@ -38,7 +38,15 @@
 #if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
 #if defined(FOOT_TEMPLATE_PRUNE_V28) && FOOT_TEMPLATE_PRUNE_V28
 #if defined(FOOT_OVERLAP_ALWAYS_V29) && FOOT_OVERLAP_ALWAYS_V29
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+#if defined(FOOT_RECEIVE_CORE1_V31) && FOOT_RECEIVE_CORE1_V31
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-receive-core1-v31"
+#else
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-receive-diag-v30"
+#endif
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-overlap-always-v29"
+#endif
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-template-prune-v28"
 #endif

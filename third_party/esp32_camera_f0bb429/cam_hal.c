@@ -51,6 +51,28 @@
 
 static const char *TAG = "cam_hal";
 static cam_obj_t *cam_obj = NULL;
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+typedef struct {cam_event_t type; uint32_t isr_us;} rw_receive_event_t;
+static rw_camera_receive_stats_t rw_receive;
+static uint32_t rw_receive_start_delay_us;
+// Each field has one writer (ISR drops, otherwise camera task).
+static void rw_receive_max(uint32_t *value, uint32_t sample) {
+    if (sample > __atomic_load_n(value, __ATOMIC_RELAXED))
+        __atomic_store_n(value, sample, __ATOMIC_RELAXED);
+}
+rw_camera_receive_stats_t rw_camera_receive_stats(void) {
+    rw_camera_receive_stats_t s;
+#define RW_RX_LOAD(field) s.field = __atomic_load_n(&rw_receive.field, __ATOMIC_RELAXED)
+    RW_RX_LOAD(events); RW_RX_LOAD(eof_events); RW_RX_LOAD(vsync_events);
+    RW_RX_LOAD(event_drops); RW_RX_LOAD(short_frames); RW_RX_LOAD(last_short_bytes);
+    RW_RX_LOAD(last_vsync_delay_us); RW_RX_LOAD(max_vsync_delay_us);
+    RW_RX_LOAD(max_eof_delay_us); RW_RX_LOAD(events_over_1ms); RW_RX_LOAD(events_over_4ms);
+    RW_RX_LOAD(short_start_delay_us); RW_RX_LOAD(full_start_delay_us);
+    RW_RX_LOAD(max_copy_us); RW_RX_LOAD(max_offer_us);
+#undef RW_RX_LOAD
+    return s;
+}
+#endif
 #if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
 typedef struct {cam_event_t type; uint64_t isr_us;} rw_probe_event_t;
 static uint32_t rw_probe_event_queue_drops;
@@ -118,7 +140,10 @@ static bool cam_start_frame(int * frame_pos)
 
 void IRAM_ATTR ll_cam_send_event(cam_obj_t *cam, cam_event_t cam_event, BaseType_t * HPTaskAwoken)
 {
-#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+    const rw_receive_event_t tagged_event = {cam_event, (uint32_t)esp_timer_get_time()};
+    void *event_data = (void *)&tagged_event;
+#elif defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
     const rw_probe_event_t tagged_event = {cam_event, (uint64_t)esp_timer_get_time()};
     void *event_data = (void *)&tagged_event;
 #else
@@ -130,7 +155,12 @@ void IRAM_ATTR ll_cam_send_event(cam_obj_t *cam, cam_event_t cam_event, BaseType
 #endif
         ll_cam_stop(cam);
         cam->state = CAM_STATE_IDLE;
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+        // Never format/write console text in the camera ISR. Keep every drop.
+        __atomic_fetch_add(&rw_receive.event_drops, 1, __ATOMIC_RELAXED);
+#else
         ESP_CAMERA_ETS_PRINTF(DRAM_STR("cam_hal: EV-%s-OVF\r\n"), cam_event==CAM_IN_SUC_EOF_EVENT ? DRAM_STR("EOF") : DRAM_STR("VSYNC"));
+#endif
     }
 }
 
@@ -264,6 +294,9 @@ static void cam_task(void *arg)
     int frame_pos = 0;
     cam_obj->state = CAM_STATE_IDLE;
     cam_event_t cam_event = 0;
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+    rw_receive_event_t receive_event = {0, 0};
+#endif
 #if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
     rw_probe_event_t tagged_event = {0, 0};
     uint64_t probe_start_event_us = 0, probe_eof_event_us = 0;
@@ -273,7 +306,22 @@ static void cam_task(void *arg)
     xQueueReset(cam_obj->event_queue);
 
     while (1) {
-#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+        xQueueReceive(cam_obj->event_queue, (void *)&receive_event, portMAX_DELAY);
+        cam_event = receive_event.type;
+        const uint32_t delay_us = (uint32_t)esp_timer_get_time() - receive_event.isr_us;
+        __atomic_fetch_add(&rw_receive.events, 1, __ATOMIC_RELAXED);
+        if (delay_us >= 1000) __atomic_fetch_add(&rw_receive.events_over_1ms, 1, __ATOMIC_RELAXED);
+        if (delay_us >= 4000) __atomic_fetch_add(&rw_receive.events_over_4ms, 1, __ATOMIC_RELAXED);
+        if (cam_event == CAM_VSYNC_EVENT) {
+            __atomic_fetch_add(&rw_receive.vsync_events, 1, __ATOMIC_RELAXED);
+            __atomic_store_n(&rw_receive.last_vsync_delay_us, delay_us, __ATOMIC_RELAXED);
+            rw_receive_max(&rw_receive.max_vsync_delay_us, delay_us);
+        } else {
+            __atomic_fetch_add(&rw_receive.eof_events, 1, __ATOMIC_RELAXED);
+            rw_receive_max(&rw_receive.max_eof_delay_us, delay_us);
+        }
+#elif defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
         xQueueReceive(cam_obj->event_queue, (void *)&tagged_event, portMAX_DELAY);
         cam_event = tagged_event.type;
 #else
@@ -286,6 +334,9 @@ static void cam_task(void *arg)
                 if (cam_event == CAM_VSYNC_EVENT) {
                     //DBG_PIN_SET(1);
                     if(cam_start_frame(&frame_pos)){
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+                        rw_receive_start_delay_us = delay_us;
+#endif
                         cam_obj->frames[frame_pos].fb.len = 0;
                         cam_obj->state = CAM_STATE_READ_BUF;
 #if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
@@ -316,10 +367,16 @@ static void cam_task(void *arg)
                             DBG_PIN_SET(0);
                             continue;
                         }
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+                        const uint32_t copy_start_us = (uint32_t)esp_timer_get_time();
+#endif
                         frame_buffer_event->len += ll_cam_memcpy(cam_obj,
                             &frame_buffer_event->buf[frame_buffer_event->len],
                             &cam_obj->dma_buffer[(cnt % cam_obj->dma_half_buffer_cnt) * cam_obj->dma_half_buffer_size],
                             cam_obj->dma_half_buffer_size);
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+                        rw_receive_max(&rw_receive.max_copy_us, (uint32_t)esp_timer_get_time() - copy_start_us);
+#endif
 #if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
                         if (rw_probe_enabled) probe_eof_event_us = tagged_event.isr_us;
 #endif
@@ -335,10 +392,19 @@ static void cam_task(void *arg)
                        frame_buffer_event->len<=cam_obj->fb_size) {
                         const uint64_t frame_us=(uint64_t)frame_buffer_event->timestamp.tv_sec*1000000ULL+
                             frame_buffer_event->timestamp.tv_usec;
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+                        const uint32_t offer_start_us = (uint32_t)esp_timer_get_time();
+#endif
                         rw_camera_overlap_offer(frame_buffer_event->buf,frame_buffer_event->len,frame_us);
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+                        rw_receive_max(&rw_receive.max_offer_us, (uint32_t)esp_timer_get_time() - offer_start_us);
+#endif
                     }
 #endif
                     if (rw_early_y8_geometry() && frame_buffer_event->len == cam_obj->fb_size) {
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+                        __atomic_store_n(&rw_receive.full_start_delay_us, rw_receive_start_delay_us, __ATOMIC_RELAXED);
+#endif
                         // Stop DMA before giving ownership to the consumer. VSYNC remains
                         // enabled; start the next frame only at its physical boundary.
                         ll_cam_stop(cam_obj);
@@ -391,7 +457,14 @@ static void cam_task(void *arg)
 #endif
                             if (frame_buffer_event->len != cam_obj->fb_size) {
                                 cam_obj->frames[frame_pos].en = 1;
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+                                __atomic_fetch_add(&rw_receive.short_frames, 1, __ATOMIC_RELAXED);
+                                __atomic_store_n(&rw_receive.last_short_bytes, frame_buffer_event->len, __ATOMIC_RELAXED);
+                                // Start delay belongs to the preceding frame, not this VSYNC.
+                                __atomic_store_n(&rw_receive.short_start_delay_us, rw_receive_start_delay_us, __ATOMIC_RELAXED);
+#else
                                 ESP_LOGE(TAG, "FB-SIZE: %u != %u", frame_buffer_event->len, (unsigned) cam_obj->fb_size);
+#endif
                             }
                         }
                         // Same latest-frame queue ownership policy for the fallback path.
@@ -411,6 +484,9 @@ static void cam_task(void *arg)
                         cam_obj->state = CAM_STATE_IDLE;
                     } else {
                         cam_obj->frames[frame_pos].fb.len = 0;
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+                        rw_receive_start_delay_us = delay_us;
+#endif
 #if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
                         probe_start_event_us = tagged_event.isr_us;
                         probe_eof_event_us = 0; probe_overflow = false;
@@ -616,7 +692,9 @@ esp_err_t cam_config(const camera_config_t *config, framesize_t frame_size, uint
         queue_size = 1;
     }
     cam_obj->event_queue = xQueueCreate(queue_size,
-#if defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
+#if defined(FOOT_RECEIVE_DIAG_V30) && FOOT_RECEIVE_DIAG_V30
+        sizeof(rw_receive_event_t)
+#elif defined(CAMERA_GEOMETRY_PROBE_V25) && CAMERA_GEOMETRY_PROBE_V25
         sizeof(rw_probe_event_t)
 #else
         sizeof(cam_event_t)
