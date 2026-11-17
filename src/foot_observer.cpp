@@ -27,6 +27,9 @@ bool FootObserver::begin(OneShotCamera& camera, RunControlWorker& control) {
   preview_staging_=static_cast<uint8_t*>(ps_malloc(kPreviewBytes));
   if(!row_storage_ || !preview_staging_ || !preview_ || !preview_mutex_)return false;
   row_cache_=foot_image_rows::RowCache(row_storage_,foot_image_rows::kRequiredBytes);
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+  lower_scratch_=foot_image_rows::LowerRowCache(row_storage_,foot_image_rows::kRequiredBytes);
+#endif
 #endif
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
   upper_storage_=static_cast<uint8_t*>(ps_malloc(foot_image_rows::kUpperBytes));
@@ -59,6 +62,9 @@ void FootObserver::prepareUpper(const foot_image_rows::GrayRowView& rows,uint64_
   // Only this task uses row_storage_, and acquisition precedes normal capture.
   // Reuse its internal RAM for computation; the HAL mailbox lives in PSRAM.
   self.row_cache_.invalidate();
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+  self.lower_scratch_.invalidate(); // Upper copy overwrites shared scratch.
+#endif
   foot_image_rows::UpperRowCache scratch(self.row_storage_,foot_image_rows::kRequiredBytes);
   if(!scratch.capture(rows))return;
   self.upper_features_=self.right_.prepare(scratch.view()); // No tracking state mutation.
@@ -81,8 +87,14 @@ void FootObserver::prepareLower(const foot_image_rows::GrayRowView& rows,uint64_
   // All earlier required rows from this same immutable frame remain available.
   // Recopy the available set into internal RAM; neither scan nor features alias it.
   self.row_cache_.invalidate();
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+  auto& scratch=self.lower_scratch_;
+  const bool copied=scratch.extend(rows,max_logical_y,stamp);
+#else
   foot_image_rows::LowerRowCache scratch(self.row_storage_,foot_image_rows::kRequiredBytes);
-  if(!scratch.capture(rows,max_logical_y) ||
+  const bool copied=scratch.capture(rows,max_logical_y);
+#endif
+  if(!copied ||
       !self.left_.appendAvailable(self.lower_scan_,scratch.view(),scratch.maxLogicalY())) {
     self.lower_frame_us_=0; // Failed speculative work cannot be admitted.
   }
@@ -202,7 +214,14 @@ void FootObserver::loop() {
     lower_prepare_us_=0;
 #endif
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::CameraCapture);
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+    rw_camera_overlap_request(true);
+#endif
     camera_fb_t* fb = camera_->startContinuous() ? camera_->acquireContinuous(200) : nullptr;
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+    rw_camera_overlap_request(false);
+    lower_scratch_.invalidate(); // Full-cache/thumbnail processing may reuse RAM.
+#endif
     RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::Snapshot);
     const auto run = control_->snapshot();
     FootFrame f{};
@@ -541,6 +560,9 @@ void FootObserver::appendMetadata(PsramString& json) const {
   json+="\"target_fps\":25,\"capacity\":"+String(kCapacity);
 #endif
   json+=",\"pipeline_revision\":\"sparse_cached_rows_double_buffer_v20\",\"camera_buffers\":2,\"grab_latest\":true,\"active_cam_take_zero_drain\":false";
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+  json+=",\"row_copy_policy\":\"same_frame_new_rows_v27\",\"overlap_demand_gated\":true";
+#endif
   json+=",\"worker_min_period_us\":"+String(foot_fast_policy::kWorkerPeriodUs)+",\"control_poll_ms\":"+String(foot_fast_policy::kControlPollMs);
   json+=",\"row_cache_ready\":"+String(s.row_cache_ready?"true":"false")+",\"row_cache_internal_bytes\":"+String(foot_image_rows::kRequiredBytes);
   json+=",\"pixel_processing\":\"same_integer_contrast_and_full_search_row_major\",\"recognition_semantics_changed\":false";

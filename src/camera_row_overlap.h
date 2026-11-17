@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -8,6 +9,10 @@ extern "C" {
 void rw_camera_overlap_offer(const uint8_t* gray,size_t prefix_bytes,uint64_t frame_us);
 // Runs image feature preparation in the calling consumer task, never the ISR.
 void rw_camera_overlap_poll(void);
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+// Single foot owner brackets acquisition. Producer skips unused preparation.
+void rw_camera_overlap_request(bool requested);
+#endif
 void* rw_camera_take_overlap(uint32_t timeout_ticks);
 typedef struct {
   uint32_t offered,busy,replaced,consumed;

@@ -75,6 +75,9 @@ extern "C" uint32_t rw_camera_native_stale_discard_count(){return 29;}
 bool camera_row_overlap::initializeLower(uint8_t*,size_t,LowerConsumer,void*){return false;}
 extern "C" rw_camera_overlap_stats_t rw_camera_lower_overlap_stats(){return {5200,11,13,5120};}
 #endif
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+extern "C" void rw_camera_overlap_request(bool){}
+#endif
 #include "imu_manager.h"
 #include "roller485_manager.h"
 ImuManager imu;Roller485Manager roller;RunControlWorker run_control;FootObserver feet;ExperimentRunner runner;
@@ -331,11 +334,14 @@ def main():
     parser.add_argument('--native', action='store_true', help='Also test the native sensor variant of fixture revision25')
     parser.add_argument('--stream', action='store_true', help='Also test native incremental recognition v26; requires --native')
     parser.add_argument('--webfix', action='store_true', help='Use webfix1 identity for the v26 stream case')
+    parser.add_argument('--delta', action='store_true', help='Test v27 copy delta; requires --webfix')
     args = parser.parse_args()
     if args.stream and not args.native:
         parser.error('--stream requires --native')
     if args.webfix and not args.stream:
         parser.error('--webfix requires --stream')
+    if args.delta and not args.webfix:
+        parser.error('--delta requires --webfix')
     cpp = (ROOT / 'src/experiment_runner.cpp').read_text(encoding='utf8')
     inc = (ROOT / 'src/walking_energy_runner.inc').read_text(encoding='utf8')
     fixture = FIXTURE.replace('__WALKING_SERIALIZER__', function(inc, 'void ExperimentRunner::appendWalkingEnergyMetadata('))
@@ -367,6 +373,7 @@ def main():
                 assert flags(v20, native=True, stream=True) == definitions + ['-DFOOT_NATIVE_STREAM_V26=1']
                 definitions = flags(v20, native=True, stream=True)
                 if args.webfix: definitions += ['-DFOOT_EXPORT_WEBFIX=1']
+                if args.delta: definitions += ['-DFOOT_COPY_DELTA_V27=1']
             case_name = 'v'+str(revision)+('_native' if native else '')+('_stream' if stream else '')
             exe = temp / (case_name+'.exe'); destination = exe.with_suffix('.json')
             subprocess.run(['g++', '-std=c++17', '-O0', '-Wall', '-Wextra', '-Werror', '-Wno-format',
@@ -383,7 +390,7 @@ def main():
             observation = expanded['foot_observation']
             assert observation['worker_core'] == 0
             assert observation['worker_priority'] == 1
-            size.update(version=revision, native_sensor=native, native_stream=stream, hard_budget_bytes=metadata['metadata_json_budget_bytes'],
+            size.update(version=27 if stream and args.delta else revision, native_sensor=native, native_stream=stream, hard_budget_bytes=metadata['metadata_json_budget_bytes'],
                         worker_core=observation['worker_core'], worker_priority=observation['worker_priority'],
                         foot_rows=len(expanded['foot_frames']), energy_rows=len(expanded['walking_energy']['records']))
             size['non_driver_psram_remaining_estimate_bytes'] = (8*1024*1024 - size['core_psram_estimate_bytes'] -
@@ -400,6 +407,10 @@ def main():
             assert size['metadata_bytes'] <= size['hard_budget_bytes']
             identity = ('walking-foot-native-stream-v26' if stream else 'walking-foot-native-v25') if native else {19:'walking-energy-admission-v19',20:'walking-foot-fast-v20',21:'walking-foot-frame-ready-v21',22:'walking-foot-speed-v22',23:'walking-foot-speed-v22-fix1',24:'walking-foot-capture-v23',25:'walking-foot-overlap-v24'}[revision]
             if stream and args.webfix: identity += '-webfix1'
+            if stream and args.delta:
+                identity = 'walking-foot-native-stream-v27'
+                assert observation['row_copy_policy'] == 'same_frame_new_rows_v27'
+                assert observation['overlap_demand_gated'] is True
             assert metadata['diagnostic_build_id'] == identity
             assert metadata['energy_model'] == 'walking_energy_admission_v19'
             assert expanded['walking_energy']['revision'] == 'walking_energy_admission_v19' and expanded['walking_energy']['branch'] == 24

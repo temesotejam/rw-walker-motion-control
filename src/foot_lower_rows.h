@@ -95,12 +95,67 @@ class LowerRowCache {
     ready_=true;return true;
   }
   GrayRowView view()const{return ready_?GrayRowView(storage_,indices_):GrayRowView{};}
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+  // Only a stable, immutable prefix of the SAME stamped frame may be extended.
+  // New stamps or scratch invalidation force every required row to be copied.
+  bool extend(const uint8_t* raw,size_t prefix_bytes,uint64_t stamp) {
+    if(!raw || !storage_ || capacity_<kLowerBytes || !stamp || prefix_bytes>kRawFrameBytes) {
+      invalidate();return false;
+    }
+    const size_t complete=prefix_bytes/kRawFrameWidth;
+    unsigned count=0;
+    while(count<kLowerRows && size_t(rawYForLogical(kLowerLogicalPlan.logical[count]))<complete)++count;
+    if(!admitExtension(stamp,count))return false;
+    for(unsigned i=copied_rows_;i<count;++i) {
+      const int y=kLowerLogicalPlan.logical[i];
+      memcpy(storage_+size_t(i)*appcfg::kFrameWidth,
+             raw+size_t(rawYForLogical(y))*kRawFrameWidth,appcfg::kFrameWidth);
+      indices_[y]=static_cast<uint8_t>(i);
+    }
+    finishExtension(count);return true;
+  }
+  bool extend(const GrayRowView& rows,int maximum,uint64_t stamp) {
+    if(!rows.valid() || !storage_ || capacity_<kLowerBytes || !stamp ||
+       maximum<0 || maximum>=appcfg::kFrameHeight) {invalidate();return false;}
+    unsigned count=0;
+    while(count<kLowerRows && kLowerLogicalPlan.logical[count]<=maximum) {
+      // Validate the entire advertised prefix before retaining prior pixels.
+      if(!rows.row(kLowerLogicalPlan.logical[count])){invalidate();return false;}
+      ++count;
+    }
+    if(!admitExtension(stamp,count))return false;
+    for(unsigned i=copied_rows_;i<count;++i) {
+      const int y=kLowerLogicalPlan.logical[i];
+      memcpy(storage_+size_t(i)*appcfg::kFrameWidth,rows.row(y),appcfg::kFrameWidth);
+      indices_[y]=static_cast<uint8_t>(i);
+    }
+    finishExtension(count);return true;
+  }
+  unsigned lastCopiedBytes()const{return copied_bytes_;}
+#endif
   int maxLogicalY()const{return ready_?max_y_:-1;}
   void invalidate() {
     ready_=false;max_y_=-1;
     memset(indices_,255,sizeof(indices_));
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+    frame_stamp_=0;copied_rows_=0;copied_bytes_=0;
+#endif
   }
  private:
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+  bool admitExtension(uint64_t stamp,unsigned count) {
+    if(!count || (frame_stamp_ && stamp<frame_stamp_)) {invalidate();return false;}
+    if(stamp!=frame_stamp_){invalidate();frame_stamp_=stamp;}
+    if(count<copied_rows_){invalidate();return false;}
+    copied_bytes_=(count-copied_rows_)*appcfg::kFrameWidth;
+    return true;
+  }
+  void finishExtension(unsigned count) {
+    copied_rows_=count;max_y_=kLowerLogicalPlan.logical[count-1];ready_=true;
+  }
+  uint64_t frame_stamp_=0;
+  unsigned copied_rows_=0,copied_bytes_=0;
+#endif
   uint8_t* storage_=nullptr;
   size_t capacity_=0;
   uint8_t indices_[appcfg::kFrameHeight];

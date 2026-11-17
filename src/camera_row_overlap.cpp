@@ -4,6 +4,9 @@
 namespace {
 enum : uint32_t {Free,Writing,Ready,Reading};
 uint32_t state=Free,initialized=0;
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+uint32_t requested=0;
+#endif
 foot_image_rows::UpperRowCache rows;
 camera_row_overlap::Consumer consumer=nullptr;
 void* context=nullptr;
@@ -33,7 +36,13 @@ void offerLower(const uint8_t* gray,size_t prefix_bytes,uint64_t frame_us) {
     __atomic_fetch_add(&lower_busy,1,__ATOMIC_RELAXED);return;
   }
   const uint64_t begin=esp_timer_get_time();
-  if(!lower_rows.capture(gray,foot_image_rows::lowerPrefixThrough(milestone))) {
+  if(!
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+     lower_rows.extend(gray,foot_image_rows::lowerPrefixThrough(milestone),frame_us)
+#else
+     lower_rows.capture(gray,foot_image_rows::lowerPrefixThrough(milestone))
+#endif
+    ) {
     __atomic_store_n(&lower_state,Free,__ATOMIC_RELEASE);return;
   }
   lower_stamp=frame_us;lower_max_y=lower_rows.maxLogicalY();
@@ -67,6 +76,9 @@ bool camera_row_overlap::initializeLower(uint8_t* storage,size_t capacity,LowerC
 }
 #endif
 extern "C" void rw_camera_overlap_offer(const uint8_t* gray,size_t prefix_bytes,uint64_t frame_us) {
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+  if(!__atomic_load_n(&requested,__ATOMIC_ACQUIRE))return;
+#endif
 #if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
   // Every DMA chunk can advance the lower stage, even after this frame's
   // one upper offer. This is called by the HAL task, never its ISR.
@@ -114,6 +126,13 @@ extern "C" void rw_camera_overlap_poll(void) {
   __atomic_store_n(&polling,0,__ATOMIC_RELEASE);
 #endif
 }
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+extern "C" void rw_camera_overlap_request(bool value) {
+  // Does not revoke a slot already owned by producer/consumer. Frame stamps
+  // still gate every prepared result; no raw camera buffer ownership changes.
+  __atomic_store_n(&requested,value?1U:0U,__ATOMIC_RELEASE);
+}
+#endif
 extern "C" rw_camera_overlap_stats_t rw_camera_overlap_stats(void) {
   return {__atomic_load_n(&offered,__ATOMIC_RELAXED),__atomic_load_n(&busy,__ATOMIC_RELAXED),
           __atomic_load_n(&replaced,__ATOMIC_RELAXED),__atomic_load_n(&consumed,__ATOMIC_RELAXED)};

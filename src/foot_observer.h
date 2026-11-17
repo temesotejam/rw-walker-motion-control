@@ -164,5 +164,8 @@ class FootObserver {
   uint8_t* lower_storage_=nullptr;
   uint64_t lower_frame_us_=0;
   uint32_t lower_attempts_=0,lower_prepare_us_=0;
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+  foot_image_rows::LowerRowCache lower_scratch_;
+#endif
 #endif
 };

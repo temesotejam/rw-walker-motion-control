@@ -73,6 +73,12 @@ def fixture():
 #include "foot_control_range.h"
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
 #include "camera_row_overlap.h"
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+static bool mock_overlap_requested=false;
+extern "C" void rw_camera_overlap_request(bool requested){
+ assert(requested!=mock_overlap_requested);mock_overlap_requested=requested;
+}
+#endif
 namespace camera_row_overlap {
 static Consumer mock_consumer=nullptr;
 static void* mock_context=nullptr;
@@ -679,6 +685,8 @@ def main():
         subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1'],check=True)
         subprocess.run([str(binary)],check=True)
         subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DFOOT_NATIVE_STREAM_V26=1'],check=True)
+        subprocess.run([str(binary)],check=True)
+        subprocess.run(command+['-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DFOOT_NATIVE_STREAM_V26=1','-DFOOT_EXPORT_WEBFIX=1','-DFOOT_COPY_DELTA_V27=1'],check=True)
         subprocess.run([str(binary)],check=True)
 
 
