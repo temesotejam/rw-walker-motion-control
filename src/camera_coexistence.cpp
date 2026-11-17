@@ -24,6 +24,7 @@ extern "C" void cam_stop(void);
 extern "C" void cam_start(void);
 extern "C" camera_fb_t* cam_take(TickType_t timeout);
 extern "C" void cam_give(camera_fb_t* fb);
+extern "C" void rw_camera_discard_queued(void);
 
 namespace {
 
@@ -91,11 +92,15 @@ void OneShotCamera::setXclkEnabled(bool enabled) {
 }
 
 void OneShotCamera::flushQueuedFrames() {
+#if defined(CAMERA_FRAME_READY_V21) && CAMERA_FRAME_READY_V21
+  rw_camera_discard_queued();
+#else
   for (;;) {
     camera_fb_t* stale = cam_take(0);
     if (!stale) break;
     cam_give(stale);
   }
+#endif
 }
 
 bool OneShotCamera::begin() {

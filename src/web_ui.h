@@ -30,6 +30,7 @@ class WebUi {
   RunControlWorker* control_ = nullptr;
   FootObserver* feet_ = nullptr;
   ImmutableExport* export_ = nullptr;
+  PsramString status_json_;
   uint8_t chunk_buffer_[export_protocol::kChunkBytes + 16] = {};
   uint8_t* preview_buffer_ = nullptr;
   uint32_t preview_token_ = 0;

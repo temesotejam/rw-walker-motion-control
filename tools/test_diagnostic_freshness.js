@@ -1,0 +1,16 @@
+'use strict';
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync('web/runtime.js','utf8');
+const begin=source.indexOf('function diagnosticSnapshot() {');
+const end=source.indexOf('\nasync function exportRequest',begin);
+const context=vm.createContext({Date:class extends Date {static now(){return 80000;}}});
+vm.runInContext('let latest={network:{phase:"online"}},lastSeen=10000,transferDiagnostic={phase:"error"};'+source.slice(begin,end),context);
+let d=JSON.parse(vm.runInContext('JSON.stringify(diagnosticSnapshot())',context));
+assert.equal(d.browser_status.age_ms,70000);
+assert.equal(d.browser_status.last_received_at,new Date(10000).toISOString());
+assert.equal(d.browser_status.snapshot_is_cached,true);
+assert.equal(d.browser_transfer.phase,'error');
+vm.runInContext('lastSeen=0',context);
+d=JSON.parse(vm.runInContext('JSON.stringify(diagnosticSnapshot())',context));
+assert.equal(d.browser_status.age_ms,null);assert.equal(d.browser_status.last_received_at,null);
+console.log('Production diagnostic snapshot: stale and never-received status distinguishable PASS');

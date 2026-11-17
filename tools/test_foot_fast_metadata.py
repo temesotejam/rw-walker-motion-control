@@ -233,6 +233,17 @@ int main(int argc,char** argv){
    assert(export_job.chunk(exported.token,offset,n,binary.data()+offset));offset+=n;
  }
  assert(export_protocol::crc32(0,binary.data(),binary.size()-4)==exported.crc);
+ // Repeat clear/build on the same worker/buffer. Old token must stop working;
+ // deterministic sealed input must retain exactly the same bytes and CRC.
+ for(unsigned repeat=0;repeat<3;++repeat){
+   const auto previous=export_job.status();
+   assert(export_job.reset());assert(export_job.status().phase==ImmutableExport::Phase::Empty);
+   export_job.build();const auto next=export_job.status();
+   assert(next.phase==ImmutableExport::Phase::Ready && next.bytes==previous.bytes && next.crc==previous.crc);
+   assert(strcmp(next.token,previous.token));
+   uint8_t probe[16];assert(!export_job.chunk(previous.token,0,sizeof(probe),probe));
+   assert(export_job.chunk(next.token,0,sizeof(probe),probe));
+ }
  ImmutableExport failed;failed.logger_=&logger;assert(failed.metadata_.reserve(128));failed.build();
  assert(failed.status().phase==ImmutableExport::Phase::Error && failed.metadata_.progress_==nullptr);
  assert(!failed.chunk("",0,1,binary.data()));
@@ -319,9 +330,12 @@ def main():
     parser.add_argument('--revisions',type=int,nargs='+',choices=[19,20,21,22,23,24,25],default=[19,20,21,22,23,24,25])
     parser.add_argument('--native', action='store_true', help='Also test the native sensor variant of fixture revision25')
     parser.add_argument('--stream', action='store_true', help='Also test native incremental recognition v26; requires --native')
+    parser.add_argument('--webfix', action='store_true', help='Use webfix1 identity for the v26 stream case')
     args = parser.parse_args()
     if args.stream and not args.native:
         parser.error('--stream requires --native')
+    if args.webfix and not args.stream:
+        parser.error('--webfix requires --stream')
     cpp = (ROOT / 'src/experiment_runner.cpp').read_text(encoding='utf8')
     inc = (ROOT / 'src/walking_energy_runner.inc').read_text(encoding='utf8')
     fixture = FIXTURE.replace('__WALKING_SERIALIZER__', function(inc, 'void ExperimentRunner::appendWalkingEnergyMetadata('))
@@ -352,6 +366,7 @@ def main():
             if stream:
                 assert flags(v20, native=True, stream=True) == definitions + ['-DFOOT_NATIVE_STREAM_V26=1']
                 definitions = flags(v20, native=True, stream=True)
+                if args.webfix: definitions += ['-DFOOT_EXPORT_WEBFIX=1']
             case_name = 'v'+str(revision)+('_native' if native else '')+('_stream' if stream else '')
             exe = temp / (case_name+'.exe'); destination = exe.with_suffix('.json')
             subprocess.run(['g++', '-std=c++17', '-O0', '-Wall', '-Wextra', '-Werror', '-Wno-format',
@@ -384,6 +399,7 @@ def main():
             assert metadata['metadata_json_reserve_bytes'] == size['metadata_reserve_bytes']
             assert size['metadata_bytes'] <= size['hard_budget_bytes']
             identity = ('walking-foot-native-stream-v26' if stream else 'walking-foot-native-v25') if native else {19:'walking-energy-admission-v19',20:'walking-foot-fast-v20',21:'walking-foot-frame-ready-v21',22:'walking-foot-speed-v22',23:'walking-foot-speed-v22-fix1',24:'walking-foot-capture-v23',25:'walking-foot-overlap-v24'}[revision]
+            if stream and args.webfix: identity += '-webfix1'
             assert metadata['diagnostic_build_id'] == identity
             assert metadata['energy_model'] == 'walking_energy_admission_v19'
             assert expanded['walking_energy']['revision'] == 'walking_energy_admission_v19' and expanded['walking_energy']['branch'] == 24

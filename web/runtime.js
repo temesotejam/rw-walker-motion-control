@@ -653,7 +653,10 @@ function transferNote(values) {
   if (transferDiagnostic) Object.assign(transferDiagnostic, values, {updated_at:new Date().toISOString()});
 }
 function diagnosticSnapshot() {
-  return {...latest, browser_transfer:transferDiagnostic, browser_saved_at:new Date().toISOString()};
+  const now = Date.now();
+  return {...latest, browser_status:{last_received_at:lastSeen ? new Date(lastSeen).toISOString() : null,
+    age_ms:lastSeen ? Math.max(0, now-lastSeen) : null, snapshot_is_cached:true},
+    browser_transfer:transferDiagnostic, browser_saved_at:new Date(now).toISOString()};
 }
 async function exportRequest(path, options, label, validate = value => value) {
   for (let attempt = 1; attempt <= exportPolicy.maxAttempts; ++attempt) {

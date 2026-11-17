@@ -470,6 +470,8 @@ void FootObserver::loop() {
 
 static String number(float v) { return isfinite(v) ? String(v, 5) : String("null"); }
 void FootObserver::appendMetadata(PsramString& json) const {
+  PsramString row;
+  if (!row.reserve(8192)) { json.fail(); return; }
   const auto s = snapshot();
   json += "\"foot_observation\":{\"revision\":\"freefoot_runtime_v2_0477\",\"observation_only\":false,\"balance_control_scope\":\"work_mode_target8_calibrated_phase_pair_positive_energy_cap_v1\",";
   json += "\"detector\":\"" + String(appcfg::kWhiteDetectorRevision) + "\",";
@@ -593,7 +595,7 @@ void FootObserver::appendMetadata(PsramString& json) const {
   for (uint32_t i = 0; i < s.count; ++i) {
     // Recording is sealed before export begins and clear/start are excluded.
     const auto& f = frames_[i];
-    String row;
+    row.clear();
     char buf[480];
     snprintf(buf, sizeof(buf),
         "{\"sequence\":%lu,\"run_id\":%u,\"frame_us\":%llu,\"delivered_us\":%llu,"
@@ -636,7 +638,7 @@ void FootObserver::appendMetadata(PsramString& json) const {
     row += ",\"right_candidates\":" + String(f.right_candidates) + ",\"left_candidates\":" + String(f.left_candidates);
     row += ",\"right_ambiguity\":" + number(f.right_ambiguity) + ",\"left_ambiguity\":" + number(f.left_ambiguity);
     row += ",\"zero_reason\":\"" + String(footZeroReasonName(f.zero_reason)) + "\"}";
-    if (!table.append(row)) { json.fail(); return; }
+    if (!row.ok() || !table.appendObject(row)) { json.fail(); return; }
   }
   if (!table.finish()) { json.fail(); return; }
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
@@ -651,14 +653,14 @@ void FootObserver::appendMetadata(PsramString& json) const {
     if(json.length()+16384U>=prediction_soft_end)break;
     const auto& f=frames_[i];const auto& p=f.pose_projection;
     const auto q=p.predict(p.received_ms,30);
-    String row="{\"sequence\":"+String(f.sequence)+",\"ready_ms\":"+String(p.received_ms);
+    row.clear(); row += "{\"sequence\":"+String(f.sequence)+",\"ready_ms\":"+String(p.received_ms);
     row+=",\"reason\":"+String(static_cast<unsigned>(q.reason))+",\"confidence\":"+number(q.confidence);
     row+=",\"predicted_left_deg\":"+number(q.left)+",\"predicted_right_deg\":"+number(q.right);
     row+=",\"left_uncertainty_deg\":"+number(q.left_uncertainty)+",\"right_uncertainty_deg\":"+number(q.right_uncertainty);
     row+=",\"left_phase\":"+String(static_cast<unsigned>(q.phase_left))+",\"right_phase\":"+String(static_cast<unsigned>(q.phase_right));
     row+=",\"age_ms\":"+String(q.age_ms)+",\"horizon_ms\":"+String(q.horizon_ms);
     row+=",\"compute_us\":"+String(f.pose_compute_us)+"}";
-    if(!pose_table.append(row)){json.fail();return;}++pose_stored;
+    if(!row.ok() || !pose_table.appendObject(row)){json.fail();return;}++pose_stored;
   }
   if(!pose_table.finish()){json.fail();return;}
   json+=",\"stored\":"+String(pose_stored)+",\"total\":"+String(s.count)+",\"truncated\":"+String(pose_stored<s.count?"true":"false")+"}";
@@ -668,13 +670,13 @@ void FootObserver::appendMetadata(PsramString& json) const {
   for(uint32_t i=0;i<s.count;++i){
     if(json.length()+16384U>=prediction_soft_end)break;
     const auto& f=frames_[i];const auto& p=f.local_projection;const auto q=p.predict(p.received_ms,0);
-    String row="{\"sequence\":"+String(f.sequence)+",\"ready_ms\":"+String(p.received_ms);
+    row.clear(); row += "{\"sequence\":"+String(f.sequence)+",\"ready_ms\":"+String(p.received_ms);
     row+=",\"reason\":"+String(static_cast<unsigned>(q.reason))+",\"local_evidence\":"+number(q.confidence);
     row+=",\"predicted_left_deg\":"+number(q.left)+",\"predicted_right_deg\":"+number(q.right);
     row+=",\"left_uncertainty_deg\":"+number(q.left_uncertainty)+",\"right_uncertainty_deg\":"+number(q.right_uncertainty);
     row+=",\"left_phase\":"+String(static_cast<unsigned>(q.phase_left))+",\"right_phase\":"+String(static_cast<unsigned>(q.phase_right));
     row+=",\"age_ms\":"+String(q.age_ms)+",\"compute_us\":"+String(f.local_compute_us)+"}";
-    if(!local_table.append(row)){json.fail();return;}++local_stored;
+    if(!row.ok() || !local_table.appendObject(row)){json.fail();return;}++local_stored;
   }
   if(!local_table.finish()){json.fail();return;}
   json+=",\"stored\":"+String(local_stored)+",\"total\":"+String(s.count)+",\"truncated\":"+String(local_stored<s.count?"true":"false")+"}";
@@ -699,7 +701,7 @@ void FootObserver::appendMetadata(PsramString& json) const {
 #endif
         )break;
     const auto& f=frames_[i];const auto& p=f.cad_prediction;
-    String row="{\"sequence\":"+String(f.sequence)+",\"reason\":"+String(static_cast<unsigned>(p.reason));
+    row.clear(); row += "{\"sequence\":"+String(f.sequence)+",\"reason\":"+String(static_cast<unsigned>(p.reason));
     row+=",\"age_ms\":"+String(p.age_ms)+",\"horizon_ms\":"+String(p.horizon_ms);
     row+=",\"left_rate_dps\":"+number(p.left_rate)+",\"right_rate_dps\":"+number(p.right_rate);
     row+=",\"predicted_left_deg\":"+number(p.left)+",\"predicted_right_deg\":"+number(p.right);
@@ -707,7 +709,7 @@ void FootObserver::appendMetadata(PsramString& json) const {
     row+=",\"body_fore_aft_raw_deg\":"+number(f.cad_body_fore_aft_raw);
     row+=",\"geometry_valid\":"+String(f.cad_geometry_valid ? "true" : "false");
     row+=",\"compute_us\":"+String(f.cad_compute_us)+"}";
-    if(!cad_table.append(row)){json.fail();return;}
+    if(!row.ok() || !cad_table.appendObject(row)){json.fail();return;}
     ++cad_stored;
   }
   if(!cad_table.finish()){json.fail();return;}

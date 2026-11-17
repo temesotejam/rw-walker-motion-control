@@ -17,6 +17,7 @@ import prepare_foot_capture_flasher as capture
 import prepare_foot_overlap_flasher as overlap
 import prepare_foot_native_flasher as native
 import prepare_foot_native_stream_flasher as native_stream
+import prepare_foot_export_webfix_flasher as export_fix
 import prepare_foot_fast_flasher as base
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -92,6 +93,7 @@ def main():
     check(overlap, capture, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1'], ['画像の受信中', 'まず測定を開始せず'])
     check(native, overlap, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96'], ['生画像236行', '測定を始めず'])
     check(native_stream, native, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96','-DFOOT_NATIVE_STREAM_V26=1'], ['全画像の到着', '測定を始めず'])
+    check(export_fix, native_stream, ['-DEXPORT_RETRY_FIX=1','-DEXPORT_COOPERATIVE_FIX=1','-DCAMERA_FRAME_READY_V21=1','-DFOOT_SPEED_V22=1','-DFOOT_SPEED_FIX1=1','-DFOOT_CAPTURE_V23=1','-DFOOT_ROW_OVERLAP_V24=1','-DFOOT_NATIVE_SKIP_V25=1','-DCAMERA_NATIVE_HB=96','-DFOOT_NATIVE_STREAM_V26=1','-DFOOT_EXPORT_WEBFIX=1'], ['webfix1', 'USB'])
 
 
 if __name__=='__main__':

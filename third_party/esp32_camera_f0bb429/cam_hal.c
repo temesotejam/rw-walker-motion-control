@@ -702,6 +702,17 @@ void cam_start(void)
     ll_cam_vsync_intr_enable(cam_obj, true);
 }
 
+// Queue cleanup only: an empty queue must not reset DMA. Capture owner only,
+// with reception stopped and no borrowed frame.
+void rw_camera_discard_queued(void)
+{
+    if (!cam_obj || !cam_obj->frame_buffer_queue) return;
+    camera_fb_t *frame = NULL;
+    while (xQueueReceive(cam_obj->frame_buffer_queue, &frame, 0) == pdTRUE) {
+        if (frame) cam_give(frame);
+    }
+}
+
 camera_fb_t *cam_take(TickType_t timeout)
 {
     camera_fb_t *dma_buffer = NULL;

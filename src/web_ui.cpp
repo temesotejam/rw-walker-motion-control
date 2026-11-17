@@ -28,6 +28,7 @@ static const char* phase(ImmutableExport::Phase p) {
 }
 void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObserver& feet, ImmutableExport& exporter) {
   server_ = &s; control_ = &control; feet_ = &feet; export_ = &exporter;
+  status_json_.reserve(16384); // HTTP owner reuses fixed PSRAM storage.
   preview_buffer_ = static_cast<uint8_t*>(ps_malloc(FootObserver::kPreviewBytes));
   WiFi.onEvent([this](arduino_event_id_t event, arduino_event_info_t) {
     RuntimeDiag::wifiEvent(static_cast<uint32_t>(event),
@@ -251,8 +252,9 @@ void WebUi::status() {
   const auto camera = feet_->cameraSnapshot();
   const bool fresh = s.heartbeat_us && static_cast<uint32_t>(micros() - s.heartbeat_us) < 500000;
   RuntimeDiag::phase(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpJson);
-  String json; json.reserve(6100);
-  json = "{\"revision\":\"" RUNTIME_VERSION "\",\"state\":\"" + String(s.state_name) + "\"";
+  auto& json=status_json_; json.clear();
+  if (!json.ok()) { server_->send(503,"text/plain","status_buffer_unavailable"); return; }
+  json += "{\"revision\":\"" RUNTIME_VERSION "\",\"state\":\"" + String(s.state_name) + "\"";
 #if defined(FOOT_EARLY_TRIAL) && FOOT_EARLY_TRIAL
   json += ",\"diagnostic_build_id\":\"" RUNTIME_DIAGNOSTIC_BUILD_ID "\"";
 #endif
@@ -442,18 +444,25 @@ void WebUi::status() {
   json += ",\"sample_deadline_over\":" + String(h.sample_deadline_over);
   json += ",\"sample_deadline_max_us\":" + String(h.sample_deadline_max_us);
   json += ",\"runner_deadline_over\":" + String(h.runner_deadline_over) + "}}";
-  server_->sendHeader("Cache-Control", "no-store"); server_->send(200, "application/json", json);
+  if (!json.ok()) { server_->send(503,"text/plain","status_buffer_overflow"); return; }
+  server_->sendHeader("Cache-Control", "no-store");
+  server_->send_P(200, "application/json", json.c_str(), json.length());
 }
 void WebUi::manifest() {
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpManifest);
   const auto s = export_->status();
-  char body[540];
+  char body[800];
   snprintf(body, sizeof(body),
       "{\"phase\":\"%s\",\"token\":\"%s\",\"bytes\":%lu,\"hashed_bytes\":%lu,\"crc32\":%lu,"
-      "\"chunk_bytes\":4096,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"metadata_bytes\":%lu}",
+      "\"chunk_bytes\":4096,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"metadata_bytes\":%lu,"
+      "\"export_memory\":{\"sampled_ms\":%lu,\"internal_free\":%lu,\"internal_min_free\":%lu,\"internal_largest\":%lu}}",
       phase(s.phase), s.token, static_cast<unsigned long>(s.bytes), static_cast<unsigned long>(s.hashed_bytes),
       static_cast<unsigned long>(s.crc), s.filename, s.error,
-      static_cast<unsigned long>(boot_id_), static_cast<unsigned long>(s.metadata_bytes));
+      static_cast<unsigned long>(boot_id_), static_cast<unsigned long>(s.metadata_bytes),
+      static_cast<unsigned long>(millis()),
+      static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+      static_cast<unsigned long>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
+      static_cast<unsigned long>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
   server_->sendHeader("Cache-Control", "no-store"); server_->send(200, "application/json", body);
 }
 static bool unsignedArg(const String& text, uint32_t& value) {
