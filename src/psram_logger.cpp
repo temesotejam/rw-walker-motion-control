@@ -1,6 +1,7 @@
 #include "compact_json_table.h"
 #include "gyro_steering.h"
 #include "psram_logger.h"
+#include "periodic_foot_stream.h"
 #include "negative_probe_batch.h"
 #include "negative_probe_extended_batch.h"
 #include "positive_current_batch.h"
@@ -2037,6 +2038,9 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
   json += "\"beta_model_vbat_mV\":\"mV used after fallback or clamp\"},";
   json += "\"columns\":{\"timeseries\":[\"time_s\",\"log_time_s\",\"t_test_ms\",\"state_id\",\"pulse_id\",\"pulse_active\",\"pulse_direction\",\"motor_cmd_mA\",\"pulse_width_ms_setting\",\"gyro_bias_x_dps\",\"gyro_bias_y_dps\",\"gyro_bias_z_dps\",\"ax_g\",\"ay_g\",\"az_g\",\"gx_dps\",\"gy_dps\",\"gz_dps\",\"acc_norm_g\",\"roller_actual_current_mA\",\"roller_battery_mV\",\"led_state\",\"sync_event_id\",\"physical_roll_abs_deg\",\"roller_current_sample_time_us\",\"roller_current_sequence\",\"roller_q_meas_observed_mA_s\",\"pulse_q_target_mA_s\",\"pulse_q_pred_mA_s\",\"roller_current_valid\",\"roller_q_meas_observed_valid\",\"pitch_mekf_abs_deg\",\"roll_mekf_abs_deg\",\"pitch_mekf_measurement_relative_deg\",\"pitch_mekf_detector_relative_deg\",\"mekf_bias_x_dps\",\"mekf_bias_y_dps\",\"mekf_bias_z_dps\",\"mekf_accel_confidence\",\"mekf_accel_residual_deg\",\"mekf_accel_mag_error_g\",\"imu_update_dt_us\",\"imu_sample_age_us\",\"mekf_accel_used\",\"gyro_heading_deg\",\"steering_delta_deg\",\"steering_actual_difference_deg\",\"steering_desired_difference_deg\",\"steering_cycle_yaw_rate_dps\",\"steering_cycles\",\"gyro_heading_valid\",\"steering_reason\",\"roller_speed_rpm\",\"roller_speed_read_start_us\",\"roller_speed_sample_time_us\",\"roller_speed_read_end_us\",\"roller_speed_sequence\",\"roller_speed_valid\",\"physical_roll_rate_dps\",\"body_rate_sample_time_us\",\"roller_applied_current_mA\",\"roller_applied_command_sequence\",\"roller_applied_command_time_us\",\"roller_position_raw_cdeg\",\"roller_position_read_start_us\",\"roller_position_sample_time_us\",\"roller_position_read_end_us\",\"roller_position_sequence\",\"roller_position_valid\",\"roller_position_deg\"]}";
   json += ",";
+#if FOOT_PERIODIC_V38
+  periodicFeet.appendRun(json);
+#endif
   feet.appendMetadata(json);
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
   runner.appendFootSupportMetadata(json);

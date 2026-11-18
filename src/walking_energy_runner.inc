@@ -125,6 +125,9 @@ bool ExperimentRunner::tryWalkingEnergy(
   e.cg_shift_mm=0;
   e.reason=Config::ENERGY_CONTROL_AUTONOMOUS_REASON_VALID_NO_OUTPUT;
   WalkingEnergyAudit a;a.time_ms=t;a.peak_ms=energy_control_autonomous_last_peak_ms_;
+#if FOOT_PERIODIC_V38
+  a.periodic_packet=periodic_foot_packet_.count;
+#endif
   a.side=side;a.optional=optional_early_event_;a.rescue=stall_rescue_event_;
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
   a.fore_aft_allowed=motion_allowed;a.fore_aft_angle_deg=walking_fore_aft_last_.angle_deg;
@@ -598,6 +601,9 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     row+=",\"return_deceleration_dps2\":"+n(a.return_deceleration_dps2)+",\"return_stopping_distance_deg\":"+n(a.return_stopping_distance_deg)+",\"return_foot_age_ms\":"+String(a.return_foot_age_ms);
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
     row+=",\"return_evidence\":"+String(a.return_evidence)+",\"assisted_cycle\":"+String(a.assisted_cycle?"true":"false");
+#if FOOT_PERIODIC_V38
+    row+=",\"periodic_foot_packet\":"+String(a.periodic_packet);
+#endif
     row+=",\"envelope_before_ms\":"+String(a.envelope_before_ms)+",\"envelope_after_ms\":"+String(a.envelope_after_ms);
 #endif
 #endif

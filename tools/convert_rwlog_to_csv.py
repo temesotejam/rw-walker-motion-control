@@ -1337,6 +1337,22 @@ def convert(path: Path, out_dir: Path) -> None:
     metadata = expand_tables(json.loads(data[metadata_start:metadata_end].decode("utf-8")))
     (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     foot_count = write_foot_frames(metadata, out_dir)
+    periodic = metadata.get("foot_periodic")
+    if periodic is not None:
+        columns = ["slot_us", "publish_us", "left_sequence", "right_sequence", "left_est_deg", "right_est_deg"]
+        if periodic["columns"] != columns or len(periodic["samples"]) != periodic["stored"]:
+            raise ValueError("Invalid periodic foot archive")
+        frames = {f["sequence"]: f for f in metadata["foot_frames"]}
+        with (out_dir / "foot_periodic.csv").open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(columns + ["left_observed_deg", "right_observed_deg", "left_age_us", "right_age_us"])
+            for row in periodic["samples"]:
+                if len(row) != len(columns):
+                    raise ValueError("Invalid periodic foot row")
+                sources = [frames.get(row[2]), frames.get(row[3])]
+                measured = [f[side + "_deg"] if f else None for f, side in zip(sources, ("left", "right"))]
+                ages = [row[1] - f["measurement_time_us"] if f else None for f in sources]
+                writer.writerow(row + measured + ages)
     cad_count = write_cad_support_shadow(metadata, out_dir)
     support_count = write_foot_support_diagnostics(metadata, out_dir)
     walking_energy_count = write_walking_energy_diagnostics(metadata, out_dir)

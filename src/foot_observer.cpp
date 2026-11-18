@@ -569,7 +569,11 @@ void FootObserver::appendMetadata(PsramString& json) const {
   json+=",\"sensor_hblank\":64,\"sensor_vblank\":12,\"sensor_max_exposure_level_rows\":396,\"sensor_flicker_step_rows\":132";
   json+=",\"sensor_period_estimate_ms\":37.9";
 #endif
+#if FOOT_PERIODIC_V38
+  json+=",\"sensor_period_estimate_validated\":false,\"predictor_min_interval_ms\":"+String(foot_timing_policy::kMinFrameIntervalMs);
+#else
   json+=",\"sensor_period_estimate_validated\":false,\"predictor_min_interval_ms\":25";
+#endif
   json+=",\"contrast_reuse\":\"exact_integer_vertical_rolling_v22\"";
 #else
   json+="\"target_fps\":25,\"capacity\":"+String(kCapacity);

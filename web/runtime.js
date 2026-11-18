@@ -24,6 +24,7 @@ function saveWheelWorkCsv(kind) {
     completedName.replace(/\.rwlog$/, `_wheel_work_${kind}.csv`));
 }
 let offlineMode = false, offlineUntil = 0;
+let periodicSession = false;
 let offlineGeneration = 0;
 const offlineKey = 'freefoot-offline-run-until';
 const targetChoices = [8, 10, 12];
@@ -85,7 +86,7 @@ function walkingAdmissionTrial(s = latest) {
   return walkingFootFastTrial(s) || /^walking-energy-admission-v19(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function walkingFootFastTrial(s = latest) {
-  return /^walking-foot-fast-v20(?:-|$)/.test(s?.diagnostic_build_id || '');
+  return /^walking-foot-fast-v20(?:-|$)/.test(s?.diagnostic_build_id || '') || s?.diagnostic_build_id === 'walking-foot-periodic40-v38';
 }
 function foreAftStopText(reason) {
   return ({
@@ -233,6 +234,13 @@ function renderOffline() {
   $('mekf-axes').textContent = '運転中の姿勢表示を停止しています。';
   controls();
 }
+
+function periodicFootText(p) {
+  const side = s => Number.isFinite(s?.estimated_deg)
+    ? `${format(s.estimated_deg)}°（観測から${Math.round(s.age_us / 1000)} ms）` : '推定無効';
+  if (!p.count || p.packet_age_ms > 150) return '足角度の定周期更新待ち';
+  return `足角度　左 ${side(p.left)}　右 ${side(p.right)} · 平均${format(p.published_hz,1)} Hz · 更新${p.count}回（両足有効${p.both_valid}回）· 周期抜け${p.missed}回`;
+}
 const format = (n, digits = 2) => Number.isFinite(n) ? n.toFixed(digits) : '—';
 function drawMarkers(f) {
   const ctx = $('markers').getContext('2d'); ctx.clearRect(0, 0, 640, 120);
@@ -280,8 +288,8 @@ function footFastTiming(f, stale, terminal) {
 function render(s) {
   if (walkingAdmissionTrial(s)) {
     const fast = walkingFootFastTrial(s);
-    $('work-title').textContent = fast ? '歩行のエネルギー制御（v20・足角度低遅延版・30秒）' : '歩行のエネルギー制御（v19・30秒）';
-    $('work-description').textContent = (fast ? '今回のv20は足角度低遅延版です。±8°の制御方式はv19を継承します。' : '今回のv19は±8°を使用します。') +
+    $('work-title').textContent = s.foot_periodic ? '歩行のエネルギー制御（v38・足角度40 Hz・30秒）' : fast ? '歩行のエネルギー制御（v20・足角度低遅延版・30秒）' : '歩行のエネルギー制御（v19・30秒）';
+    $('work-description').textContent = (s.foot_periodic ? '測定中も足角度と更新回数を約2秒ごとに表示します。' : fast ? '今回のv20は足角度低遅延版です。±8°の制御方式はv19を継承します。' : '今回のv19は±8°を使用します。') +
       '戻りの救済後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。前倒し候補のモデル支持を確認し、範囲外はZEROで再評価します。前後の持続逸脱では入力を停止します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
       (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '') +
       (fast ? ' 最初はモータを開始せず、足角度と画像の更新を確認してください。画像更新は目標' + format(s.foot?.target_fps ?? 15,0) + 'fpsで、実際の更新速度と遅延は下に表示します。時刻差はdriver基準で、露光時刻との対応は未校正です。' : '');
@@ -375,6 +383,7 @@ function render(s) {
   $('fps').textContent = terminal ? '停止中' : `${format(stale ? 0 : f.fps, 1)} / ${format(f.target_fps ?? 15,0)} fps`;
   $('foot-status').textContent = `足角度（${s.foot_control_required ? '8°試験の制御に使用' : '任意'}） · ${f.zero_ready ? 'ゼロ点確定' : 'ゼロ点未確定（' + (f.zero_samples ?? 0) + '枚）'} · 記録${f.frames ?? 0}枚 · 画像取得失敗${f.failures ?? 0}回` +
     footIssues(f, stale, terminal) + (walkingFootFastTrial(s) ? footFastTiming(f, stale, terminal) : '');
+  if (s.foot_periodic) $('foot-status').textContent += ' · ' + periodicFootText(s.foot_periodic);
   const reference = s.upright_reference;
   const cg = s.lateral_cg;
   $('cg-status').textContent = cg?.capturing ? '自然な静止姿勢を測定中です。機体を支えず、動かさないでください。' :
@@ -423,8 +432,27 @@ async function refresh(force = false) {
     // A pre-START poll can arrive after START entered quiet mode. Do not let
     // that old READY response restart automatic polling during the run.
     if (generation !== offlineGeneration) { if (offlineMode) renderOffline(); return; }
+    if (s?.periodic_run && s.foot_periodic) {
+      periodicSession = true;
+      setOffline(0);
+      $('connection').textContent = '接続中 · 測定状態を自動更新';
+      $('state').textContent = s.state;
+      $('remaining').textContent = format(s.remaining_ms / 1000, 1) + ' s';
+      $('pitch').textContent = format(s.pitch_deg) + '°';
+      $('current').textContent = `${s.motor_mA} / ${s.actual_mA} mA`;
+      $('foot-status').textContent = periodicFootText(s.foot_periodic);
+      for (const id of ['left','right']) {
+        const side = s.foot_periodic[id];
+        $(id).textContent = Number.isFinite(side.estimated_deg) ? format(side.estimated_deg) + '°（推定）' : '推定無効';
+      }
+      $('message').textContent = '本体の測定状態を受信しています。';
+      $('guide').textContent = '画面は約2秒ごとに本体の値を取得します。';
+      $('mekf-axes').textContent = '胴体の左右揺動角を上に表示しています。';
+      return;
+    }
     if (s?.offline_run === true && Number.isFinite(s.wait_ms)) { setOffline(s.wait_ms); return; }
     const wasOffline = offlineMode;
+    periodicSession = false;
     adoptStatus(s); clearOffline(); render(latest);
     if (wasOffline) {
       const message = s.network?.last_error || s.last_error ||
@@ -467,6 +495,7 @@ function adoptStatus(s) {
   }
 }
 function statusPollDelayMs() {
+  if (latest?.foot_periodic || periodicSession) return 2000;
   const idleFast = walkingFootFastTrial(latest) && latest?.state === 'READY_TO_MEASURE' &&
     latest?.ready && !latest.running && lastSeen && Date.now() - lastSeen < 2000 &&
     !offlineMode && !transferRunning && !previewRunning && !poseRunning && !commandInFlight;
@@ -518,10 +547,11 @@ async function startOfflineRun(isBatchPackage = false, forcedModel = null, workT
   requestedEnergyModel = energyModel;
   const runLabel = positiveCurrentPackage ? '正側300・350・400 mAの一括実験' : extendedPackage ? '負側30・35・40 msの一括実験' : isBatchPackage ? '負側5条件の一括実験' :
     workPackage ? '固定脚・ホイール仕事に基づく制御' : inversePackage ? '固定脚・負側のエネルギー制御' : '左右揺動エネルギー制御';
-  commandInFlight = true; setOffline(batchPackage || workPackage ? 50000 : 30000); $('message').textContent = `${runLabel}（目標${target}°・${inputCurrentMa} mA）の開始要求を送信中…`;
+  commandInFlight = true; setOffline(latest?.foot_periodic ? 0 : (batchPackage || workPackage ? 50000 : 30000)); $('message').textContent = `${runLabel}（目標${target}°・${inputCurrentMa} mA）の開始要求を送信中…`;
   try {
     await request(`/start-energy-control-autonomous?target_deg=${target}&input_peak_percent=${inputPercent}&input_current_mA=${inputCurrentMa}&brake_max_ms=${brakeMaxMs}&peak_adaptation=${adaptationValue}&energy_model=${energyModel}`, {method:'POST', kind:'text'});
     $('message').textContent = `${runLabel}（目標${target}°・${inputCurrentMa} mA）の開始要求を受け付けました。Web休止後に本体が開始条件を確認します。Wi-Fi接続と画面をそのまま保ってお待ちください。`;
+    if (latest?.foot_periodic) $('message').textContent = '開始要求を受け付けました。この画面に測定状態を表示します。';
   } catch (error) {
     if (/^\d{3}:/.test(error.message)) { clearOffline(); await refresh(); }
     $('message').textContent = `開始結果の確認: ${error.message}。Web復帰後に本体の結果を確認します。`;

@@ -43,6 +43,19 @@ vm.runInContext(code,context);
   assert.match(element('firmware-revision').textContent,/foot-control-observation-v1/);
   assert.strictEqual(element('probe-batch').disabled,false);
   assert.strictEqual(element('inverse-start').disabled,false);
+  const footPacket = {count:401,missed:1,both_valid:397,published_hz:39.9,packet_age_ms:10,
+    left:{estimated_deg:4,age_us:31000},right:{estimated_deg:null,age_us:80000}};
+  context.fetch=async()=>({ok:true,json:async()=>({periodic_run:true,foot_periodic:footPacket,
+    state:'RUNNING_BATCH_SWEEP',remaining_ms:15000,pitch_deg:1,motor_mA:0,actual_mA:0})});
+  await vm.runInContext('refresh()',context);
+  assert.match(element('foot-status').textContent,/39.9 Hz/);
+  assert.match(element('foot-status').textContent,/周期抜け1回/);
+  assert.match(element('right').textContent,/推定無効/);
+  assert.strictEqual(vm.runInContext('statusPollDelayMs()',context),2000);
+  assert.strictEqual(element('work-start').disabled,true);
+  context.fetch=async()=>({ok:true,json:async()=>valid});
+  await vm.runInContext('refresh()',context);
+  assert.strictEqual(element('start').disabled,false);
   assert(!code.includes('steering-status'));
   const html=fs.readFileSync('web/index.html','utf8');
   assert.match(html,/id="probe-batch"/);

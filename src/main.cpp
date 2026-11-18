@@ -13,6 +13,7 @@
 #include "web_ui.h"
 #include "run_control_worker.h"
 #include "foot_observer.h"
+#include "periodic_foot_stream.h"
 #include "immutable_export.h"
 #include "runtime_diagnostics.h"
 #include "foot_support_start.h"
@@ -286,6 +287,10 @@ static bool controlStep(void*) {
           log_epoch_us = esp_timer_get_time() - static_cast<uint32_t>(micros() - logger.runStartUs());
           measurement_epoch_us = 0;
           feet.beginRun(runner.status().run_id, log_epoch_us);
+#if FOOT_PERIODIC_V38
+          periodicFeet.startRun(runner.status().run_id);
+          runner.observePeriodicFoot(periodic_foot::Packet{});
+#endif
           run_control.beginRunAudit(start);
         }
       }
@@ -304,6 +309,9 @@ static bool controlStep(void*) {
     run_control.completeCommand(ok,ok ? "lateral_cg_saved" : "lateral_cg_save_failed");
   }
   const bool measurement = runner.status().state == ExperimentState::RUNNING_BATCH_SWEEP;
+#if FOOT_PERIODIC_V38
+  periodicFeet.enter(measurement && measurement_epoch_us,measurement_epoch_us,esp_timer_get_time());
+#endif
   control_latency::setActive(measurement);
   const bool fresh = r.gyro_fresh;
   const bool pulse_at_runner_entry = runner.status().pulse_active;
@@ -331,6 +339,9 @@ static bool controlStep(void*) {
     foot_observation_poll_ms=millis();
     const auto idle_foot=feet.snapshot();
     const uint64_t observed_us=esp_timer_get_time();
+#if FOOT_PERIODIC_V38
+    periodicFeet.observe(idle_foot.latest,observed_us);
+#endif
     if(idle_foot.latest.timestamp_valid && !idle_foot.latest.control_observed_us)
       feet.recordControlObservation(idle_foot.latest.run_id,idle_foot.latest.sequence,observed_us);
   }
@@ -338,6 +349,9 @@ static bool controlStep(void*) {
   if(measurement && measurement_epoch_us && millis()-foot_observation_poll_ms>=foot_poll_interval_ms) {
     foot_observation_poll_ms=millis();
     const auto fs=feet.snapshot();const uint64_t foot_observed_us=esp_timer_get_time();const auto& f=fs.latest;
+#if FOOT_PERIODIC_V38
+    periodicFeet.observe(f,foot_observed_us);
+#endif
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
     // Raw identity/receipt survive an invalid local projection. A repeated
     // snapshot retains its first receipt; invalid timestamps cancel evidence.
@@ -383,6 +397,9 @@ static bool controlStep(void*) {
           f.frame_valid && f.state_id==3 && f.right_reason==MarkerDetectionReason::Detected,f.left_x,f.right_x);
     }
   }
+#if FOOT_PERIODIC_V38
+  if (periodicFeet.service(esp_timer_get_time())) runner.observePeriodicFoot(periodicFeet.current());
+#endif
   runner.update();
 #if FOOT_EARLY_TRIAL && !ANGLE_EARLY_TRIAL
   if(measurement && measurement_epoch_us) {earlySyncIdentity();earlyRecordPose(measurement_epoch_us);}
@@ -452,6 +469,9 @@ void setup() {
       Config::ROLLER_IO_TASK_PRIORITY, Config::ROLLER_IO_TASK_STACK_BYTES));
   RuntimeDiag::boot(RuntimeDiag::Stage::Runner);
   runner.begin(logger, imu, roller);
+#if FOOT_PERIODIC_V38
+  periodicFeet.begin();
+#endif
   RuntimeDiag::boot(RuntimeDiag::Stage::Control);
   RuntimeDiag::result(run_control.begin(controlStep, captureRunState, nullptr));
   RuntimeDiag::boot(RuntimeDiag::Stage::Feet); RuntimeDiag::result(feet.begin(camera_probe, run_control));

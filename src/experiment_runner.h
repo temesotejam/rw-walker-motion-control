@@ -1,4 +1,7 @@
 #pragma once
+#if FOOT_PERIODIC_V38
+#include "periodic_foot_state.h"
+#endif
 
 #include <Adafruit_AHRS.h>
 #include <Arduino.h>
@@ -92,6 +95,9 @@
 
 class ExperimentRunner {
 public:
+#if FOOT_PERIODIC_V38
+  void observePeriodicFoot(const periodic_foot::Packet& packet) { periodic_foot_packet_ = packet; }
+#endif
   enum class QRunMode : uint8_t { NONE = 0, VALIDATION = 1, CONTROL = 2 };
   void begin(PsramLogger& logger, ImuManager& imu, Roller485Manager& roller);
   void serviceFast();
@@ -719,6 +725,9 @@ private:
   float walking_energy_peaks_[2]={NAN,NAN};
   uint32_t walking_energy_peak_ms_[2]={0,0};
   struct WalkingEnergyAudit {
+#if FOOT_PERIODIC_V38
+    uint32_t periodic_packet = 0;
+#endif
     uint32_t time_ms=0,peak_ms=0;int8_t side=0;
     uint32_t output_start_ms=0;
     uint16_t requested_ms=0,guarded_ms=0;
@@ -752,6 +761,9 @@ private:
   };
 #if defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
   PsramArchive<WalkingEnergyAudit,192> walking_energy_audit_;
+#if FOOT_PERIODIC_V38
+  periodic_foot::Packet periodic_foot_packet_;
+#endif
 #else
   WalkingEnergyAudit walking_energy_audit_[192];
 #endif

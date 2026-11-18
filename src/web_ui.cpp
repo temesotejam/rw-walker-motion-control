@@ -1,6 +1,7 @@
 #include "work_target_policy.h"
 #include "work_start_policy.h"
 #include "web_ui.h"
+#include "periodic_foot_stream.h"
 #if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
 #include "camera_frame_ready.h"
 #endif
@@ -40,7 +41,9 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
   RuntimeDiag::result(WiFi.softAPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0)));
   boot_id_ = esp_random();
   s.on("/", HTTP_GET, [this]() {
+#if !FOOT_PERIODIC_V38
     if (quietResponse()) return;
+#endif
     RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpRoot);
     server_->sendHeader("Cache-Control", "no-store");
     server_->send_P(200, "text/html; charset=utf-8", RUNTIME_HTML);
@@ -86,7 +89,11 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
 }
 void WebUi::update() {
   if (offline_.busy()) {
+#if FOOT_PERIODIC_V38
+    if (server_) server_->handleClient();
+#else
     if (offline_.serving() && server_) server_->handleClient();
+#endif
     const uint32_t now = millis();
     if (now - offline_poll_ms_ >= 20) { offline_poll_ms_ = now; offline_.update(now, *this); }
     return;
@@ -98,9 +105,13 @@ void WebUi::update() {
   RuntimeDiag::phase(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::Wait);
 }
 bool WebUi::stopServer() {
+#if FOOT_PERIODIC_V38
+  return server_->listening();
+#else
   server_->client().stop();
   server_->stop();
   return !server_->listening();
+#endif
 }
 bool WebUi::queueStart() {
   start_command_id_ = control_->commandState().submitted + 1;
@@ -120,6 +131,9 @@ OfflineRunSession::StartResult WebUi::startResult() const {
 bool WebUi::runActive() const { return control_->active(); }
 void WebUi::cancelStart() { if (!cancel_sent_) cancel_sent_ = control_->requestStop(); }
 bool WebUi::restoreTransport() {
+#if FOOT_PERIODIC_V38
+  if (server_->listening()) return true;
+#endif
   // AP/netif/DHCP were never stopped. Rebind only port 80, preserving routes,
   // boot ID, buffers, sealed logs and ImmutableExport token/CRC/metadata.
   // Also close a client left by cancellation during the response-drain phase.
@@ -273,6 +287,18 @@ void WebUi::cameraLatency() {
 }
 #endif
 void WebUi::status() {
+#if FOOT_PERIODIC_V38
+  if (offline_.busy()) {
+    const auto s = control_->snapshot();
+    String body = "{\"periodic_run\":true,\"state\":\"" + String(s.state_name) +
+        "\",\"remaining_ms\":" + String(s.remaining_ms) + ",\"pitch_deg\":" + num(s.pitch_deg) +
+        ",\"actual_mA\":" + String(s.actual_current_mA) + ",\"motor_mA\":" + String(s.motor_cmd_mA) +
+        ",\"foot_periodic\":" + periodicFeet.liveJson() + "}";
+    server_->sendHeader("Cache-Control","no-store");
+    server_->send(200,"application/json",body);
+    return;
+  }
+#endif
 #if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
   ++latency_status_requests_;
 #endif
@@ -296,6 +322,9 @@ void WebUi::status() {
   json += ",\"diagnostic_build_id\":\"" RUNTIME_DIAGNOSTIC_BUILD_ID "\"";
 #endif
   json += ",\"boot_id\":" + String(boot_id_);
+#if FOOT_PERIODIC_V38
+  json += ",\"foot_periodic\":" + periodicFeet.liveJson();
+#endif
 #if defined(FOOT_LIVE_STATUS_V35) && FOOT_LIVE_STATUS_V35
   json += ",\"live_status_supported\":true,\"status_view\":\"" + String(live?"live":"full") + "\"";
 #endif
@@ -513,6 +542,9 @@ void WebUi::status() {
   server_->send_P(200, "application/json", json.c_str(), json.length());
 }
 void WebUi::manifest() {
+#if FOOT_PERIODIC_V38
+  if (quietResponse()) return;
+#endif
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpManifest);
   const auto s = export_->status();
   char body[800];
@@ -539,6 +571,9 @@ static bool unsignedArg(const String& text, uint32_t& value) {
   value = static_cast<uint32_t>(n); return true;
 }
 void WebUi::chunk() {
+#if FOOT_PERIODIC_V38
+  if (quietResponse()) return;
+#endif
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpChunk);
   uint32_t offset = 0, length = 0;
   if (!unsignedArg(server_->arg("offset"), offset) || !unsignedArg(server_->arg("length"), length) ||
