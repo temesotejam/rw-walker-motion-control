@@ -43,7 +43,7 @@ def main():
                      "foot_periodic40_flasher", "observed_transfers", "support_transfer_audit",
                      "support_transfer_replay", "http_client_queue"):
             checked(*py, ROOT / "test" / f"test_{test}.py")
-        for test in ("periodic_foot", "mekf_host", "fore_aft_motion_guard", "support_transfer_plan",
+        for test in ("periodic_foot", "mekf_host", "fore_aft_motion_guard", "support_transfer_plan", "runtime_page_encoding",
                      "offline_run_export", "export_transport_recovery", "wifi_transport_restart"):
             binary = tmp / (test + ".exe")
             source = [ROOT / "test" / f"test_{test}.cpp"]

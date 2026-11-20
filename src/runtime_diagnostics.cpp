@@ -39,6 +39,9 @@ Memory memory{};
 uint32_t diagnostics_enabled = 0, run_active = 0;
 uint32_t wifi_recovery_requested = 0;
 uint32_t wifi_recoveries = 0;
+// Updated by the HTTP owner and read independently over USB, even with the AP unreachable.
+uint32_t last_http_write_ms = 0, http_complete_writes = 0, http_short_writes = 0;
+uint32_t http_short_at_ms = 0, http_short_sent = 0, http_short_wanted = 0, http_short_errno = 0;
 usb_diag::Parser usb_commands;
 CameraDriver camera_driver{};
 uint32_t event_id = 0, event_count = 0, clients = 0, ap_active = 0;
@@ -49,7 +52,8 @@ Sample previous_sample{};
 bool have_previous_boot = false, have_previous_sample = false;
 bool observer_started = false;
 uint32_t last_sample_ms = 0, last_report_ms = 0, report_started_ms = 0, dropped = 0;
-char report[4096];
+constexpr size_t kReportBytes = 4096;
+char* report = nullptr;
 size_t report_length = 0, report_sent = 0;
 
 uint32_t get(const uint32_t& value) { return __atomic_load_n(&value, __ATOMIC_RELAXED); }
@@ -108,12 +112,12 @@ Sample capture() {
   return s;
 }
 void append(const char* format, ...) {
-  if (report_length >= sizeof(report) - 1) return;
+  if (report_length >= kReportBytes - 1) return;
   va_list args; va_start(args, format);
-  const int n = vsnprintf(report + report_length, sizeof(report) - report_length, format, args);
+  const size_t room = kReportBytes - report_length;
+  const int n = vsnprintf(report + report_length, room, format, args);
   va_end(args);
-  if (n > 0) report_length += static_cast<size_t>(n) < sizeof(report) - report_length
-      ? static_cast<size_t>(n) : sizeof(report) - report_length - 1;
+  if (n > 0) report_length += static_cast<size_t>(n) < room ? static_cast<size_t>(n) : room - 1;
 }
 void appendSample(const char* label, const Sample& s) {
   static const char* const names[] = {"control", "imu", "camera", "http", "roller", "export"};
@@ -188,6 +192,12 @@ void tick() {
   }
   if (report_sent == report_length && (now - last_report_ms >= 1000 || !last_report_ms)) {
     report_sent = report_length = 0; report_started_ms = last_report_ms = now;
+    if (!report) {
+      static constexpr char unavailable[] = "USBDBG,report=psram_unavailable\n";
+      if (Serial && Serial.availableForWrite() > 128)
+        Serial.write(reinterpret_cast<const uint8_t*>(unavailable), sizeof(unavailable) - 1);
+      return;
+    }
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
     append("\nUSBDBG,boot,version=" RUNTIME_VERSION ",build=" RUNTIME_DIAGNOSTIC_BUILD_ID ",id=%u,reset=%s,reset_id=%u,stage=%s,failures=0x%08x,observer=%u,observer_stack_bytes=%u,usb_dropped=%u\n",
 #else
@@ -197,6 +207,9 @@ void tick() {
         get(boot_failures), observer_started, heavyAllowed() ? uxTaskGetStackHighWaterMark(nullptr) : 0, dropped);
     append("USBDBG,mode,enabled=1,run_quiet=%u,heavy_scans_allowed=%u\n", runActive(), heavyAllowed());
     append("USBDBG,wifi,recoveries=%u\n", get(wifi_recoveries));
+    append("USBDBG,http_tx,complete_blocks=%u,last_complete_ms=%u,short_blocks=%u,last_short_ms=%u,sent=%u,wanted=%u,errno=%u\n",
+           get(http_complete_writes), get(last_http_write_ms), get(http_short_writes), get(http_short_at_ms),
+           get(http_short_sent), get(http_short_wanted), get(http_short_errno));
     if (have_previous_boot) {
       append("USBDBG,previous_boot,id=%u,stage=%s,failures=0x%08x,rtc_sample=%u\n",
           previous_boot.id, stageName(previous_boot.stage), previous_boot.failures, have_previous_sample);
@@ -274,6 +287,9 @@ void begin() {
       previous_sample.boot == previous_boot.id;
   current_boot.id = have_previous_boot ? previous_boot.id + 1 : 1;
   boot_journal.clear(); sample_journal.clear(); boot(Stage::UsbWindow);
+  // Allocate before the observer starts. USB reporting is separate from ISR and DMA storage.
+  report = static_cast<char*>(ps_malloc(kReportBytes));
+  result(report != nullptr);
   observer_started = true;
   if (xTaskCreatePinnedToCore(observer, "usb_diagnostics", 6144, nullptr, 2, nullptr, 0) != pdPASS) {
     observer_started = false; result(false);
@@ -333,6 +349,18 @@ void wifiEvent(uint32_t event, int change, int active) {
   if (active >= 0) { put(ap_active, active); if (!active) put(clients, 0); }
   if (change > 0) put(clients, get(clients) + 1);
   else if (change < 0 && get(clients)) put(clients, get(clients) - 1);
+}
+void httpWriteResult(size_t sent, size_t wanted, int error) {
+  if (sent == wanted) {
+    put(last_http_write_ms, millis());
+    put(http_complete_writes, get(http_complete_writes) + 1);
+  } else {
+    put(http_short_at_ms, millis());
+    put(http_short_sent, sent);
+    put(http_short_wanted, wanted);
+    put(http_short_errno, static_cast<uint32_t>(error));
+    put(http_short_writes, get(http_short_writes) + 1);
+  }
 }
 void pollFallback() { if (!observer_started) tick(); }
 }

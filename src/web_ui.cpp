@@ -7,6 +7,7 @@
 #endif
 #include "config.h"
 #include "runtime_web.h"
+#include "runtime_page_encoding.h"
 #include "runtime_diagnostics.h"
 #include "foot_range_diagnostics.h"
 #include "foot_calibration_diagnostics.h"
@@ -19,6 +20,7 @@
 static_assert(ARDUINO_EVENT_RUNNING_CORE == 0, "Wi-Fi events must run outside the control core");
 
 static String num(float x) { return isfinite(x) ? String(x, 4) : String("null"); }
+static bool unsignedArg(const String& text, uint32_t& value);
 static const char* phase(ImmutableExport::Phase p) {
   switch (p) {
     case ImmutableExport::Phase::Building: return "building";
@@ -29,6 +31,7 @@ static const char* phase(ImmutableExport::Phase p) {
 }
 void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObserver& feet, ImmutableExport& exporter) {
   server_ = &s; control_ = &control; feet_ = &feet; export_ = &exporter;
+  RuntimeDiag::result(reserveChunkBuffer());
   status_json_.reserve(16384); // HTTP owner reuses fixed PSRAM storage.
   preview_buffer_ = static_cast<uint8_t*>(ps_malloc(FootObserver::kPreviewBytes));
   WiFi.onEvent([this](arduino_event_id_t event, arduino_event_info_t) {
@@ -36,15 +39,27 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
         event == ARDUINO_EVENT_WIFI_AP_STACONNECTED ? 1 : event == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED ? -1 : 0,
         event == ARDUINO_EVENT_WIFI_AP_START ? 1 : event == ARDUINO_EVENT_WIFI_AP_STOP ? 0 : -1);
   });
-  RuntimeDiag::result(startWifiAp());
+  const bool ap_ready = startWifiAp();
+  RuntimeDiag::result(ap_ready);
   boot_id_ = esp_random();
+  const char* request_headers[] = {"Accept-Encoding"};
+  s.collectHeaders(request_headers, 1);
   s.on("/", HTTP_GET, [this]() {
 #if !FOOT_PERIODIC_V38
     if (quietResponse()) return;
 #endif
     RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpRoot);
     server_->sendHeader("Cache-Control", "no-store");
-    server_->send_P(200, "text/html; charset=utf-8", RUNTIME_HTML);
+    server_->sendHeader("Vary", "Accept-Encoding");
+    const auto encoding = runtime_page::selectEncoding(server_->header("Accept-Encoding").c_str());
+    if (encoding == runtime_page::Encoding::Gzip) {
+      server_->sendHeader("Content-Encoding", "gzip");
+      server_->send_P(200, "text/html; charset=utf-8", RUNTIME_HTML_GZIP, sizeof(RUNTIME_HTML_GZIP) - 1);
+    } else if (encoding == runtime_page::Encoding::Identity) {
+      server_->send_P(200, "text/html; charset=utf-8", RUNTIME_HTML, sizeof(RUNTIME_HTML) - 1);
+    } else {
+      server_->send(406, "text/plain", "");
+    }
   });
   s.on("/status.json", HTTP_GET, [this]() { status(); });
 #if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
@@ -66,8 +81,20 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
   s.on("/export/prepare", HTTP_POST, [this]() {
     if (offline_.busy()) { server_->send(409, "text/plain", "run_preparing"); return; }
     RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpCommand);
+    uint32_t client = 0;
+    if (server_->hasArg("client") && (!unsignedArg(server_->arg("client"), client) || !client)) {
+      server_->send(400, "text/plain", "invalid_export_client"); return;
+    }
     const bool ok = prepareCompletedExport();
+    if (ok) recovery_.downloadRequested(millis(), client);
     server_->send(ok ? 202 : 409, "text/plain", ok ? "preparing" : "completed_run_required");
+  });
+  s.on("/export/pause", HTTP_POST, [this]() {
+    uint32_t client, boot, run;
+    const bool ok = unsignedArg(server_->arg("boot_id"), boot) && boot == boot_id_ &&
+        unsignedArg(server_->arg("run_id"), run) && run == export_->status().run_id &&
+        unsignedArg(server_->arg("client"), client) && recovery_.pauseDownload(client);
+    server_->send(ok ? 200 : 409, "text/plain", ok ? "paused" : "export_session_mismatch");
   });
   s.on("/export/manifest", HTTP_GET, [this]() { manifest(); });
   s.on("/export/complete", HTTP_POST, [this]() { confirmExport(); });
@@ -84,7 +111,9 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
   });
   s.onNotFound([this]() { server_->send(404, "text/plain", "not_found"); });
   s.enableDelay(false);
-  RuntimeDiag::result(startHttpListener());
+  const bool listening = ap_ready && startHttpListener();
+  if (ap_ready) RuntimeDiag::result(listening);
+  wifi_restart_.afterStartup(millis(), ap_ready, listening);
 }
 void WebUi::update() {
   if (wifi_restart_.active()) {
@@ -95,6 +124,7 @@ void WebUi::update() {
     return;
   }
   if (offline_.busy()) {
+    ready_http_stall_.clear();
 #if FOOT_PERIODIC_V38
     if (server_) server_->handleClient();
 #else
@@ -107,9 +137,15 @@ void WebUi::update() {
   RuntimeDiag::phase(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpPoll);
   if (server_) server_->handleClient();
   const uint32_t now = millis();
-  if (server_ && server_->takeResponseActivity()) recovery_.onRequest(now);
-  if (recovery_.awaitingDownload() && now - recovery_poll_ms_ >= 100) {
+  const auto response = server_ ? server_->lastResponse() : BoundedWriteWebServer::Response::None;
+  if (response != BoundedWriteWebServer::Response::None) recovery_.onRequest(now);
+  if (response == BoundedWriteWebServer::Response::Complete) ready_http_stall_.clear();
+  if (response == BoundedWriteWebServer::Response::Stalled && !offline_.busy() &&
+      !strcmp(control_->snapshot().state_name, "READY_TO_MEASURE")) ready_http_stall_.stalled(now);
+  if ((recovery_.awaitingDownload() || ready_http_stall_.due(now)) && now - recovery_poll_ms_ >= 100) {
     recovery_poll_ms_ = now;
+    const auto s = export_->status();
+    recovery_.buildProgress(now, s.metadata_bytes + s.hashed_bytes);
     requestWifiRecovery(false);
   }
   RuntimeDiag::sampleMemory();
@@ -121,12 +157,18 @@ bool WebUi::requestWifiRecovery(bool manual) {
   if (!server_ || !control_ || offline_.busy() || wifi_restart_.active()) return false;
   if (!control_->commandsSettled()) return false;
   const auto s = control_->snapshot();
+  const uint32_t now = millis();
+  const bool ready = !strcmp(s.state_name, "READY_TO_MEASURE");
+  const bool ready_stall = ready && ready_http_stall_.due(now);
   const bool stopped = !s.running && !s.pulse_active && s.motor_cmd_mA == 0 &&
       !s.upright_reference_capturing && !s.equilibrium_capturing &&
       s.heartbeat_us && static_cast<uint32_t>(micros() - s.heartbeat_us) < 500000 &&
       (!strcmp(s.state_name, "FINISHED") || !strcmp(s.state_name, "ESTOP") ||
-       (manual && !strcmp(s.state_name, "READY_TO_MEASURE")));
-  if (!recovery_.requestRepair(millis(), stopped, manual)) return false;
+       ((manual || ready_stall) && ready));
+  // A confirmed READY stall has its own one-shot budget; share the full stop
+  // checks and cooldown with the USB command and post-run transport repairs.
+  if (!recovery_.requestRepair(now, stopped, manual || ready_stall)) return false;
+  ready_http_stall_.repairIssued();
   wifi_restart_.request();
   return true;
 }
@@ -330,7 +372,7 @@ void WebUi::cameraLatency() {
   latency.appendJson(json);
   json+=",\"status_requests\":"+String(latency_status_requests_)+",\"preview_requests\":"+String(latency_preview_requests_)+"}";
   if(!json.ok()){server_->send(503,"text/plain","status_buffer_overflow");return;}
-  server_->sendHeader("Cache-Control","no-store");server_->send(200,"application/json",json.c_str());
+  server_->sendHeader("Cache-Control","no-store");server_->send_P(200,"application/json",json.c_str(),json.length());
 }
 #endif
 void WebUi::status() {
@@ -369,6 +411,7 @@ void WebUi::status() {
   json += ",\"diagnostic_build_id\":\"" RUNTIME_DIAGNOSTIC_BUILD_ID "\"";
 #endif
   json += ",\"boot_id\":" + String(boot_id_);
+  json += ",\"wifi_export_recovery\":true";
 #if FOOT_PERIODIC_V38
   json += ",\"foot_periodic\":" + periodicFeet.liveJson();
 #endif
@@ -628,11 +671,17 @@ void WebUi::confirmExport() {
   if (ok) recovery_.downloadComplete();
   server_->send(ok ? 200 : 409, "text/plain", ok ? "confirmed" : "export_identity_mismatch");
 }
+bool WebUi::reserveChunkBuffer() {
+  // Only the HTTP task uses this packet. lwIP copies its bytes into the send queue.
+  if (!chunk_buffer_) chunk_buffer_ = static_cast<uint8_t*>(ps_malloc(export_protocol::kChunkBytes + 16));
+  return chunk_buffer_ != nullptr;
+}
 void WebUi::chunk() {
 #if FOOT_PERIODIC_V38
   if (quietResponse()) return;
 #endif
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpChunk);
+  if (!reserveChunkBuffer()) { server_->send(503, "text/plain", "chunk_buffer_unavailable"); return; }
   uint32_t offset = 0, length = 0;
   if (!unsignedArg(server_->arg("offset"), offset) || !unsignedArg(server_->arg("length"), length) ||
       !export_->chunk(server_->arg("token").c_str(), offset, length, chunk_buffer_ + 16)) {
@@ -640,6 +689,7 @@ void WebUi::chunk() {
   }
   const uint32_t header[] = {export_protocol::kChunkMagic, offset, length,
       export_protocol::crc32(0, chunk_buffer_ + 16, length)};
+  recovery_.chunkRequested(millis(), offset);
   memcpy(chunk_buffer_, header, 16);
   server_->sendHeader("Cache-Control", "no-store");
   server_->setContentLength(length + 16);
@@ -707,6 +757,7 @@ void WebUi::previewCapture() {
 }
 void WebUi::previewChunk() {
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpChunk);
+  if (!reserveChunkBuffer()) { server_->send(503, "text/plain", "chunk_buffer_unavailable"); return; }
   uint32_t token = 0, offset = 0, length = 0;
   if (!previewAllowed() || !preview_buffer_ || !preview_token_ ||
       !unsignedArg(server_->arg("token"), token) || token != preview_token_ ||

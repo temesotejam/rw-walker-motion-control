@@ -6,7 +6,7 @@ let latest = null, lastSeen = 0, refreshInFlight = false, commandInFlight = fals
 let lastPeriodicStatusAt = 0, lastStatusFailure = null;
 let diagnosticInFlight = false;
 let transferRunning = false, cancelTransfer = false, completedFile = null, completedName = '', completedFoot = null;
-let transferAbort = null, transferDiagnostic = null;
+let transferAbort = null, transferDiagnostic = null, pendingExportPause = null;
 const exportPolicy = {requestTimeoutMs:8000, maxAttempts:5, buildWaitMs:120000, pollMs:500};
 let wheelWorkReport = null;
 function calculateWheelWork() {
@@ -443,6 +443,11 @@ async function refreshStatus(force) {
   let received = false;
   try {
     const s = await request(path, {timeout: 2500}); received = true;
+    if (pendingExportPause && Number.isInteger(s?.boot_id) && Number.isInteger(s?.run_id)) {
+      if (s.boot_id === pendingExportPause.boot_id && s.run_id === pendingExportPause.run_id)
+        await sendExportPause(pendingExportPause);
+      else pendingExportPause = null;
+    }
     // A pre-START poll can arrive after START entered quiet mode. Do not let
     // that old READY response restart automatic polling during the run.
     if (generation !== offlineGeneration) { if (offlineMode) renderOffline(); return; }
@@ -696,6 +701,17 @@ function expandFootTable(value, observations = null) {
   }
   return frames;
 }
+async function sendExportPause(session) {
+  try {
+    await request(`/export/pause?client=${session.client}&boot_id=${session.boot_id}&run_id=${session.run_id}`,
+      {method:'POST', kind:'text', timeout:2000});
+  } catch (error) {
+    // Keep a lost pause until a status poll succeeds. A different run or
+    // newer download on this board has already discarded this session.
+    if (error.status !== 409) return;
+  }
+  if (pendingExportPause === session) pendingExportPause = null;
+}
 function transferCheck() {
   if (cancelTransfer) throw new Error('一時停止しました。取得・再開で続けられます。');
 }
@@ -738,9 +754,10 @@ async function diagnosticSnapshotWithDetails() {
   return snapshot;
 }
 async function exportRequest(path, options, label, validate = value => value) {
-  // A stopped webfix2 board can re-open its AP after 35 s of silence.
-  // Immediate browser network errors must not exhaust retries before then.
-  const hasWifiRecovery = latest?.diagnostic_build_id === 'walking-support-transfer-v39-webfix2';
+  // Allow a stopped device time to recover its transport. The first firmware
+  // with recovery predates the status capability flag.
+  const hasWifiRecovery = latest?.wifi_export_recovery === true ||
+    latest?.diagnostic_build_id === 'walking-support-transfer-v39-webfix2';
   const deadline = Date.now() + 70000;
   for (let attempt = 1; ; ++attempt) {
     transferCheck();
@@ -753,7 +770,7 @@ async function exportRequest(path, options, label, validate = value => value) {
       transferNote({last_failure:{path, attempt, name:error.name, code:error.code ?? null,
         status:error.status ?? null, message:error.message, at:new Date().toISOString()}});
       transferCheck();
-      const preparingRun = path === '/export/prepare' && error.status === 409 && error.responseText === 'run_preparing';
+      const preparingRun = path.split('?')[0] === '/export/prepare' && error.status === 409 && error.responseText === 'run_preparing';
       const permanent = !preparingRun && Number.isInteger(error.status) && error.status >= 400 && error.status < 500 &&
         ![408,429].includes(error.status);
       const linkLost = error.name === 'TypeError' || error.code === 'request_timeout';
@@ -769,6 +786,8 @@ async function download() {
   if (transferRunning || diagnosticInFlight || commandInFlight || previewRunning || poseRunning) return;
   transferRunning = true; cancelTransfer = false; controls();
   transferAbort = new AbortController();
+  const session = latest?.wifi_export_recovery === true && Number.isInteger(latest.boot_id) && Number.isInteger(latest.run_id)
+    ? {client:Math.floor(Math.random() * 0xffffffff) + 1, boot_id:latest.boot_id, run_id:latest.run_id} : null;
   transferDiagnostic = {revision:'resumable_export_retry_v2', phase:'prepare',
     started_at:new Date().toISOString(), boot_id:latest?.boot_id ?? null, run_id:latest?.run_id ?? null,
     confirmed_bytes:0, cached_bytes:0, received_bytes:0, retries:0, manifest:null, last_failure:null};
@@ -782,7 +801,9 @@ async function download() {
       transferNote({source_lost:true});
       throw new Error('選択した測定から本体または測定番号が変わりました。');
     }
-    await exportRequest('/export/prepare', {method:'POST', kind:'text'}, 'ログ確定の開始');
+    if (session) pendingExportPause = null;
+    const preparePath = session ? `/export/prepare?client=${session.client}` : '/export/prepare';
+    await exportRequest(preparePath, {method:'POST', kind:'text'}, 'ログ確定の開始');
     transferNote({phase:'manifest'});
     const waitStarted = Date.now();
     let m;
@@ -857,6 +878,10 @@ async function download() {
     $('transfer').textContent = transferDiagnostic.source_lost ?
       `${error.message}（端末に取得済みの部分は保持しますが、失われた本体ログの続きは取得できません。）` :
       `${stage} · ${error.message}（${progress}取得済みの部分は再開に利用します。）`;
+    if (session && !transferDiagnostic.source_lost) {
+      pendingExportPause = session;
+      await sendExportPause(session);
+    }
   } finally { transferAbort = null; transferRunning = false; controls(); }
 }
 function footCsv(rows) {

@@ -11,6 +11,51 @@ struct Host {
 };
 
 int main() {
+  {
+    ReadyHttpStallRecovery stall;
+    const uint32_t at = UINT32_MAX - 10000;
+    assert(!stall.due(at));
+    stall.stalled(at);
+    stall.stalled(at + 30000);
+    assert(!stall.due(at + 34999) && stall.due(at + 35000));
+    stall.repairIssued();
+    stall.stalled(at + 36000);
+    assert(!stall.due(at + 72000));
+    stall.clear();
+    stall.stalled(at + 73000);
+    stall.clear(); // a fully sent response, or entry to measurement
+    assert(!stall.due(at + 150000));
+  }
+  {
+    WifiTransportRestart startup;
+    Host boot;
+    const uint32_t startup_ms = UINT32_MAX - 10;
+    startup.afterStartup(startup_ms, false, false);
+    assert(startup.active());
+    startup.update(startup_ms + 999, boot);
+    assert(boot.aps == 0 && boot.binds == 0);
+    startup.update(startup_ms + 1000, boot);
+    assert(boot.aps == 1 && boot.binds == 0);
+    boot.ap_ok = true;
+    startup.update(startup_ms + 2000, boot);
+    assert(startup.active() && boot.aps == 2 && boot.binds == 1);
+    boot.bind_ok = true;
+    startup.update(startup_ms + 3000, boot);
+    assert(!startup.active() && boot.aps == 2 && boot.binds == 2);
+    startup.update(startup_ms + 120000, boot);
+    assert(boot.aps == 2 && boot.binds == 2 && !boot.stops && !boot.closes && !startup.count());
+  }
+  {
+    WifiTransportRestart startup;
+    Host boot;
+    startup.afterStartup(10, true, true);
+    startup.update(200000, boot);
+    assert(!startup.active() && !boot.stops && !boot.closes && !boot.aps && !boot.binds);
+    startup.afterStartup(200100, true, false);
+    boot.bind_ok = true;
+    startup.update(201100, boot);
+    assert(!startup.active() && !boot.stops && !boot.closes && !boot.aps && boot.binds == 1);
+  }
   WifiTransportRestart restart;
   Host host;
   const uint32_t start = UINT32_MAX - 99;

@@ -29,7 +29,8 @@ function harness(scenario={}) {
     URL:{createObjectURL:blob=>blob,revokeObjectURL:()=>{}},
     fetch:async(path,opts)=>{
       requests.push(path);
-      if(path==='/export/prepare'){
+      const url=new URL(path,'http://192.168.4.1');
+      if(url.pathname==='/export/prepare'){
         ++prepareCount;
         if (prepareCount <= (scenario.disconnectedPrepares || 0)) throw new TypeError('Failed to fetch');
         if(scenario.transientPrepare && prepareCount===1)return {ok:false,status:409,text:async()=>'run_preparing'};
@@ -47,7 +48,13 @@ function harness(scenario={}) {
         if(scenario.building && manifestCount===2)return {ok:true,json:async()=>({phase:'building',hashed_bytes:4096,bytes:fixture.length})};
         return {ok:true,json:async()=>({...manifest,...scenario.manifest})};
       }
-      const url=new URL(path,'http://192.168.4.1');
+      if(url.pathname==='/export/pause'){
+        assert.equal(opts.method,'POST');
+        assert.equal(url.searchParams.get('boot_id'),'123');
+        assert.equal(url.searchParams.get('run_id'),'1');
+        if(scenario.pauseLost)throw new TypeError('Failed to fetch');
+        return {ok:true,text:async()=>'paused'};
+      }
       if (url.pathname === '/export/complete') {
         assert.equal(saves.length,1);
         assert.equal(opts.method,'POST');
@@ -88,11 +95,14 @@ function harness(scenario={}) {
   const same=harness({manifest:{boot_id:123,metadata_bytes:12345}});await same.run();
   assert.equal(same.diagnostic().browser_transfer.phase,'complete');
   assert(!same.requests.some(path=>path.startsWith('/export/complete')));
-  const reconnect=harness({disconnectedPrepares:6});
-  vm.runInContext("latest.diagnostic_build_id='walking-support-transfer-v39-webfix2'",reconnect.context);
-  await reconnect.run();
-  assert.equal(reconnect.prepareCount,7);
-  assert.equal(reconnect.diagnostic().browser_transfer.phase,'complete');
+  for (const capability of ["latest.diagnostic_build_id='walking-support-transfer-v39-webfix2'",
+                            "latest.wifi_export_recovery=true"]) {
+    const reconnect=harness({disconnectedPrepares:6});
+    vm.runInContext(capability,reconnect.context);
+    await reconnect.run();
+    assert.equal(reconnect.prepareCount,7);
+    assert.equal(reconnect.diagnostic().browser_transfer.phase,'complete');
+  }
   for (const ackLost of [false,true]) {
     const trial=harness({manifest:{boot_id:123,run_id:1,completion_ack:true},ackLost});
     await trial.run();
@@ -196,6 +206,25 @@ function harness(scenario={}) {
   h=harness({pauseManifest:true});await h.run();assert.equal(h.manifestCount,1);
   assert.equal(h.diagnostic().browser_transfer.phase,'paused');assert.equal(h.saves.length,0);
   assert.equal(vm.runInContext('transferRunning',h.context),false);
+  h=harness({pauseManifest:true,pauseLost:true});
+  vm.runInContext('latest.wifi_export_recovery=true; let nonce=0; Math.random=()=> (++nonce)/4',h.context);
+  await h.run();
+  const clientOf = path=>new URL(path,'http://device').searchParams.get('client');
+  const firstClient=clientOf(h.requests.find(p=>p.startsWith('/export/prepare')));
+  assert(Number(firstClient)>0);
+  assert.equal(clientOf(h.requests.find(p=>p.startsWith('/export/pause'))),firstClient);
+  assert(vm.runInContext('pendingExportPause !== null',h.context));
+  h.scenario.pauseLost=false;
+  const fetchBeforePauseRetry=h.context.fetch;
+  h.context.fetch=(path,opts)=>path.startsWith('/status.json')
+    ? Promise.resolve({ok:true,json:async()=>({boot_id:123,run_id:1})}) : fetchBeforePauseRetry(path,opts);
+  await vm.runInContext('refresh(true)',h.context);
+  assert.equal(vm.runInContext('pendingExportPause',h.context),null);
+  h.scenario.pauseManifest=false;
+  const resumeAt=h.requests.length;
+  await h.run();
+  assert.notEqual(clientOf(h.requests.slice(resumeAt).find(p=>p.startsWith('/export/prepare'))),firstClient);
+  assert.equal(h.diagnostic().browser_transfer.phase,'complete');
 
   // CRC corruption is never cached or published; token rejection is permanent.
   h=harness({badCrc:true});await h.run();

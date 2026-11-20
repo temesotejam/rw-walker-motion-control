@@ -36,6 +36,7 @@ class WebUi {
   void command(RunControlWorker::Command);
   void manifest();
   void confirmExport();
+  bool reserveChunkBuffer();
   void chunk();
   void previewCapture();
   void previewChunk();
@@ -48,12 +49,13 @@ class WebUi {
 #if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
   uint32_t latency_status_requests_=0,latency_preview_requests_=0;
 #endif
-  uint8_t chunk_buffer_[export_protocol::kChunkBytes + 16] = {};
+  uint8_t* chunk_buffer_ = nullptr;
   uint8_t* preview_buffer_ = nullptr;
   uint32_t preview_token_ = 0;
   uint32_t boot_id_ = 0;
   OfflineRunSession offline_;
   ExportTransportRecovery recovery_;
+  ReadyHttpStallRecovery ready_http_stall_;
   WifiTransportRestart wifi_restart_;
   uint32_t recovery_poll_ms_ = 0;
   bool start_observed_ = false;

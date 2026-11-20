@@ -15,7 +15,7 @@ enum HTTPClientStatus { HC_NONE, HC_WAIT_READ, HC_WAIT_CLOSE };
 struct Connection { bool readable = false, closed = false; int served = 0; };
 struct Client {
   Connection* socket = nullptr;
-  int fd() const { return -1; }
+  int fd() const { return socket && !socket->closed ? 3 : -1; }
   int available() { return socket && !socket->closed && socket->readable; }
   void stop() { if (socket) socket->closed = true; }
 };
@@ -34,6 +34,11 @@ class WebServer {
   explicit WebServer(int) {}
   void queue(Connection& c) { _server.queued.push_back(&c); }
   unsigned probes() const { return _server.probes; }
+  void (*dispatch)(WebServer&) = nullptr;
+  void reply() {
+    _currentClientWrite("H", 1);
+    _currentClientWrite_P("B", 1);
+  }
   void stop() { _currentStatus = HC_NONE; }
   virtual void handleClient() {
     if (_currentStatus == HC_NONE) {
@@ -43,7 +48,10 @@ class WebServer {
       _currentStatus = HC_WAIT_READ;
       _statusChange = millis();
     }
-    if (_currentClient.available()) ++_currentClient.socket->served;
+    if (_currentClient.available()) {
+      ++_currentClient.socket->served;
+      if (dispatch) dispatch(*this);
+    }
     else if (!_currentClient.socket->closed && millis() - _statusChange <= 5000) return;
     _currentStatus = HC_NONE;
     _currentClient = {};
@@ -61,6 +69,14 @@ class WebServer {
 CASES = r"""
 #include "bounded_web_server.h"
 #include <cassert>
+#include <cerrno>
+int socket_error = 0;
+int sent_calls = 0;
+int send(int, const void*, size_t n, int) {
+  if (++sent_calls == 1 || !socket_error) return int(n);  // first send is the header
+  errno = socket_error;
+  return -1;
+}
 int main() {
   Connection idle, status{true}, slow, queued{true}, late, other{true};
   WebServer baseline(80);
@@ -99,6 +115,19 @@ int main() {
   fixed.queue(current); fixed.handleClient(); fixed.queue(cached);
   fixed.closeTransport();
   assert(current.closed && cached.closed);
+
+  using Response = BoundedWriteWebServer::Response;
+  fixed.dispatch = [](WebServer& s) { s.reply(); };
+  for (const int error : {0, EPIPE, ECONNRESET, ENOMEM, ENOBUFS, EAGAIN, EINTR}) {
+    Connection client{true};
+    socket_error = error; sent_calls = 0;
+    fixed.queue(client); fixed.handleClient();
+    const auto expected = !error ? Response::Complete :
+        (error == EAGAIN || error == ENOMEM || error == ENOBUFS) ? Response::Stalled : Response::Incomplete;
+    assert(fixed.lastResponse() == expected);
+    fixed.handleClient();
+    assert(fixed.lastResponse() == Response::None);
+  }
 }
 """
 
@@ -109,7 +138,7 @@ def main():
         (root / "WebServer.h").write_text(SERVER, encoding="utf8")
         (root / "lwip").mkdir()
         (root / "lwip/sockets.h").write_text(
-            "#define MSG_DONTWAIT 0\ninline int send(int,const void*,size_t n,int){return int(n);}\n",
+            "#define MSG_DONTWAIT 0\nint send(int,const void*,size_t,int);\n",
             encoding="utf8",
         )
         test = root / "queue.cpp"

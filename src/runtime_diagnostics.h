@@ -1,4 +1,5 @@
 #pragma once
+#include <stddef.h>
 #include <stdint.h>
 
 #define RUNTIME_VERSION "1.0.99-alternate-foot-trial"
@@ -42,7 +43,7 @@
 #if defined(FOOT_RECEIVE_CORE1_V31) && FOOT_RECEIVE_CORE1_V31
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-receive-core1-v31"
 #elif defined(SUPPORT_TRANSFER_V39) && SUPPORT_TRANSFER_V39
-#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-support-transfer-v39-webfix2"
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-support-transfer-v39-webfix3"
 #elif defined(FOOT_PERIODIC_V38) && FOOT_PERIODIC_V38
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-periodic40-v38"
 #elif defined(FOOT_CADENCE20_V37) && FOOT_CADENCE20_V37
@@ -204,6 +205,7 @@ void cameraDriverTask(uint32_t requested, uint32_t allocated, bool created);
 void cameraDriverStack(uint32_t free_bytes);
 void cameraDriverStopped();
 void wifiEvent(uint32_t event, int client_change = 0, int ap_active = -1);
+void httpWriteResult(size_t sent, size_t wanted, int error);
 void pollFallback(); // Only used if the independent observer task could not be created.
 #else
 inline ResetSnapshot resetSnapshot() { return {}; }
@@ -214,6 +216,7 @@ inline void setEnabled(bool value) { enabledState() = value; }
 inline bool runActive() { return runState(); }
 inline void setRunActive(bool value) { runState() = value; }
 inline void wifiTransportRestored() {}
+inline void httpWriteResult(size_t, size_t, int) {}
 inline MemorySnapshot memorySnapshot() { return {}; }
 inline ExecutionSnapshot executionSnapshot() { return {}; }
 inline void cameraLifecycleCore(bool, int) {}

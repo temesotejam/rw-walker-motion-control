@@ -5,10 +5,14 @@ function canvasContext() {return new Proxy({}, {get:(_target,name)=>name==='crea
   ? (w,h)=>({data:new Uint8Array(w*h*4)}) : ()=>{}});}
 function element(id) {if(!elements.has(id)) elements.set(id, {textContent:'',style:{},width:640,height:480,getContext:canvasContext}); return elements.get(id);}
 const code=fs.readFileSync('web/pose_comparison.js','utf8')+'\n'+fs.readFileSync('web/runtime.js','utf8').replace(/poll\(\);\s*$/, '');
-const embedded=fs.readFileSync('src/runtime_web.h','utf8').split('R"FREEFOOT(')[1].split(')FREEFOOT";')[0];
+const header=fs.readFileSync('src/runtime_web.h','utf8');
+const embedded=header.split('R"FREEFOOT(')[1].split(')FREEFOOT";')[0];
 const expected=fs.readFileSync('web/index.html','utf8').replace('/*POSE_SCRIPT*/',fs.readFileSync('web/pose_comparison.js','utf8'))
   .replace('/*WHEEL_WORK_SCRIPT*/',fs.readFileSync('web/wheel_work.js','utf8')).replace('/*RUNTIME_SCRIPT*/',fs.readFileSync('web/runtime.js','utf8'));
 assert.strictEqual(embedded.replace(/\r\n/g,'\n'),expected.replace(/\r\n/g,'\n'),'Embedded runtime UI must match the tested browser sources');
+const compressed=Buffer.from(Array.from(header.split('RUNTIME_HTML_GZIP[] PROGMEM =')[1].matchAll(/\\x([0-9a-f]{2})/g),
+  match=>parseInt(match[1],16)));
+assert.deepStrictEqual(require('zlib').gunzipSync(compressed),Buffer.from(expected.replace(/\r\n/g,'\n')));
 const context=vm.createContext({document:{getElementById:element,createElement:()=>({getContext:canvasContext})},setTimeout,clearTimeout,AbortController,
   Date,DataView,Uint8Array,TextDecoder,Map,console,btoa:s=>Buffer.from(s,'binary').toString('base64'),
   atob:s=>Buffer.from(s,'base64').toString('binary'),fetch:()=>{throw Error('unset');}});

@@ -1,6 +1,7 @@
 #include "export_transport_recovery.h"
 #include <cassert>
 #include <cstdio>
+#include <initializer_list>
 
 int main() {
   ExportTransportRecovery policy;
@@ -28,7 +29,39 @@ int main() {
   for (int i = 0; i < 6; ++i) {
     now += quiet - 1;
     assert(!policy.requestRepair(now, true, false));
-    policy.onRequest(now);  // repeated manifests, chunks or periodic status
+    policy.onRequest(now);  // ordinary browsing before choosing Download
+  }
+  constexpr uint32_t stall = ExportTransportRecovery::kTransferStallMs;
+  constexpr uint32_t client = 184, other = 721;
+  policy.downloadRequested(now, client);
+  policy.buildProgress(now + 100, 800);
+  policy.buildProgress(now + 1000, 800);  // repeated identical manifest
+  policy.downloadRequested(now + 2000, client);  // browser retry of the same POST
+  policy.onRequest(now + stall);  // status is still being polled in another tab
+  assert(!policy.requestRepair(now + stall + 99, true, false));
+  assert(policy.requestRepair(now + stall + 100, true, false));
+  now += stall + 100;
+  assert(!policy.requestRepair(now + quiet - 1, true, false));
+  assert(policy.requestRepair(now + quiet, true, false));
+  assert(!policy.requestRepair(now + quiet * 2, true, false));  // bounded if the client has gone away
+  now += quiet * 3;
+  policy.chunkRequested(now, 8192);  // an actual resume from a cached prefix
+  policy.chunkRequested(now + stall - 1, 8192);  // stuck retry of the same chunk
+  assert(policy.requestRepair(now + stall, true, false));
+  assert(!policy.pauseDownload(other));
+  assert(policy.pauseDownload(client));
+  assert(policy.pauseDownload(client));  // lost pause acknowledgement
+  policy.downloadRequested(now + quiet, client);  // delayed retry preceding Pause
+  policy.onRequest(now + quiet * 2);
+  policy.chunkRequested(now + quiet * 2, 0);
+  assert(!policy.requestRepair(now + quiet * 3, true, false));
+  now += quiet * 4;
+  policy.downloadRequested(now, other);
+  assert(!policy.pauseDownload(client));  // older browser attempt cannot pause a newer one
+  for (uint32_t offset : {8192U, 12288U, 0U, 4096U}) {
+    now += stall - 1;
+    policy.chunkRequested(now, offset);
+    assert(!policy.requestRepair(now, true, false));
   }
   policy.downloadComplete();  // browser verifies CRC, including any locally cached tail
   policy.sealed(now + 1);
@@ -50,10 +83,11 @@ int main() {
   ExportTransportRecovery rollover;
   now = UINT32_MAX - 10000;
   rollover.sealed(now - 5000);
-  rollover.onRequest(now);
-  assert(!rollover.requestRepair(now + quiet - 1, true, false));
-  assert(rollover.requestRepair(now + quiet, true, false));
-  assert(!rollover.requestRepair(now + quiet + 1, true, true));
+  rollover.downloadRequested(now - 3000, 0);  // legacy browser
+  rollover.chunkRequested(now, 0);
+  assert(!rollover.requestRepair(now + stall - 1, true, false));
+  assert(rollover.requestRepair(now + stall, true, false));
+  assert(!rollover.requestRepair(now + stall + 1, true, true));
 
   ExportTransportRecovery manual;
   assert(manual.requestRepair(0, true, true));  // explicit test while stopped at READY
