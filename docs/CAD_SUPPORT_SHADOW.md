@@ -1,6 +1,6 @@
 # CAD足姿勢予測の診断版 v10
 
-ビルド環境：`atoms3cam-cad-support-shadow`、識別名：`cad-support-shadow-v10`。
+この資料は診断版 `cad-support-shadow-v10` の記録。現在の実機版はv38で、足角度の発行周期や書き込み先は次の手順で確認できる。[現行版の構成と書き込み](../README.md)
 v6系の制御を継承し、CADに基づく足姿勢予測と幾何計算を診断として追加する。
 追加トルク・早期入力の新規発動は行わない。CAD/カメラの原点と機体姿勢の対応が未同定のため、計算値を出力許可に使わない。
 
@@ -30,18 +30,16 @@ v6系の制御を継承し、CADに基づく足姿勢予測と幾何計算を診
 `geometry_valid`, `compute_us`。予測の対象時刻はフレーム時刻+horizon。
 現在角・未来角・予測無効を混同せず、無効な予測値はnullとする。
 
-## 検証
+## v10で行った検証
 
-`python tools/test_cad_support_shadow.py`：予測の時刻・run切り替え・無効画像・急変の破棄、CAD中立対称性と既知の接触計算例、compact metadataからCSVへの結合を確認する。
+v10のテストでは、予測の時刻・run切り替え・無効画像・急変の破棄、CAD中立対称性と既知の接触計算例、compact metadataからCSVへの結合を確認した。[当時のテスト](https://github.com/temesotejam/rw-walker-motion-control/blob/ce7d01871b3b31cd5e061fc813d8166bb65d4e13/tools/test_cad_support_shadow.py)
 
-`python tools/replay_cad_support_shadow.py <converted-dir> --out replay.json` は同じC++をホストで実行する。取得後に届いた次の有効画像を線形補間した値との比較は診断に限り、独立した角度真値ではない。
+当時の再生には実機と同じC++を使った。比較対象は取得後に届いた次の有効画像を線形補間した値で、独立した角度真値は未測定。[当時の再生ツール](https://github.com/temesotejam/rw-walker-motion-control/blob/ce7d01871b3b31cd5e061fc813d8166bb65d4e13/tools/replay_cad_support_shadow.py)
 今回の27908524では399フレーム中237件で予測可能、比較432値の平均絶対差約0.474°、最大約3.956°。実機処理時刻を厳密には再現していない。予測が不安定な場面を調べるための結果であり、介入の改善を意味しない。
 
-## 書き込みと次の確認
+## v10の配布記録と当時の検証計画
 
-ビルド：`platformio run -e atoms3cam-cad-support-shadow`。
-成功後：`python tools/prepare_cad_support_flasher.py`。
-専用ページ：`http://127.0.0.1:8767/cad-support-shadow/`。
+当時は `atoms3cam-cad-support-shadow` をビルドし、ローカル配信の `/cad-support-shadow/` に書き込み用ファイルを用意した。[v10の配布スクリプト](https://github.com/temesotejam/rw-walker-motion-control/blob/ce7d01871b3b31cd5e061fc813d8166bb65d4e13/tools/prepare_cad_support_flasher.py)
 
 この版で新しいログを取得し、予測誤差・処理時間・支持位置の仮説を実際の足の動きと照合する。
 静止時の中立姿勢と左右各足を前へ振った姿勢で、カメラゼロとCAD角・前後姿勢を合わせる。

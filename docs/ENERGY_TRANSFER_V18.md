@@ -1,7 +1,6 @@
 # v18: 戻り救済と実ZERO主入力のエネルギー計算
 
-`atoms3cam-energy-transfer` / `walking-energy-transfer-v18` / branch23。
-v17-rangefix1の5度の運用許容、MEKF、電流・完了時間モデル、通信修正を継承する。変更対象は±8度試験。比較用の既存環境と書込みページは保持する。
+この資料はv18（`walking-energy-transfer-v18`、branch23）の±8度試験に導入した処理を記録したもの。v17-rangefix1の5度の運用許容、MEKF、電流・完了時間モデル、通信修正を継承した。現行のv38では前倒し入力にv19の判定も適用する。[v19の判断条件](ENERGY_ADMISSION_V19.md)
 
 ## 今回の根拠
 
@@ -9,7 +8,7 @@ v17-rangefix1の5度の運用許容、MEKF、電流・完了時間モデル、�
 
 最後は24.214秒の正側ピーク後、24.427秒の+7.51度で戻りが折り返した。ユーザーは「自立したまま停止した」と確認した。左足は認識曖昧・再取得中で、v17はローカル予測が無効になると減速履歴まで失っていた。rawフレームと無効ローカル予測のframe_ms比較も不一致になる。
 
-詳細は [実機試行報告](../analysis/2026-11-14-walking/v17実機試行_39825069.md)。記録された状態の再生は変更後の機体運動を予測するものではない。
+再生で評価したのは記録済みの状態に対する判定で、変更後の機体軌道は未検証。[整理前の実機試行報告](https://github.com/temesotejam/rw-walker-motion-control/blob/ce7d01871b3b31cd5e061fc813d8166bb65d4e13/analysis/2026-11-14-walking/v17実機試行_39825069.md)
 
 ## 入力をJで決める
 
@@ -43,10 +42,10 @@ rawフレームのrun・撮影時刻・最初の制御受取時刻を、ロー�
 
 機構ゼロは0度。足姿勢で移る位置エネルギーの谷・実慣性はまだ同定していない。左右ピークの平均・差のJ補正は、左右に同時存在する二つの独立したエネルギー貯蔵や、実エネルギー中立点の推定を意味しない。MPCは使っていない。
 
-## 確認と実機手順
+## v18の検証・配布記録
 
 最終build SUCCESS 44.19秒、RAM127076/327680、Flash1893789/3342336。firmware1894160bytes、SHA256 `03c75464a246ec0947b26fecd300a10a2fa93d20fa9018bbf223ad201464e18e`。ページ・manifest・4parts・補助JS2件のHTTP配信8件を全バイト照合し、既存v17/startfix/rangefixのSHA維持を確認した。
 
 portable C++で台帳・整数逆算・認識欠落の条件を確認し、実runnerの選択・送信・タイマ・ZERO打切り・同サンプル主入力・満杯ログ・不明送信を結合検証する。旧v16/v17、5度許容、JSON/CSV、UI埋込みと通信にも回帰確認を行う。
 
-専用ページは `http://127.0.0.1:8767/energy-transfer/`。ビルド後に `python tools/prepare_energy_transfer_flasher.py` で4部品を準備する。今回、新しい実機書込みや測定は行っていない。書込み後は `walking-energy-transfer-v18` を確認して±8度を測定する。次の動画・RWLOGでは、救済後の実ZERO主入力、残不足J、認識欠落中の救済根拠、交互の支持と前進を照合する。
+当時は `atoms3cam-energy-transfer` をビルドし、ローカル配信の `/energy-transfer/` に4部品を用意した。この報告時点で実機への書き込み・測定は未実施だった。次の±8度試行での照合項目は、救済後の実ZERO主入力、残不足J、認識欠落中の救済根拠、交互の支持と前進だった。[v18の配布スクリプト](https://github.com/temesotejam/rw-walker-motion-control/blob/ce7d01871b3b31cd5e061fc813d8166bb65d4e13/tools/prepare_energy_transfer_flasher.py) ／ [現行版のビルドと書き込み](../README.md#ビルドと書き込み)

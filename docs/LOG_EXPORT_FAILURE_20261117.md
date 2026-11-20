@@ -47,8 +47,9 @@ run 2動画 `WIN_20261117_11_59_40_Pro.mp4` は43.665秒。抽出画像では序
 
 ブラウザ再試行、HTTP休止/復帰、送信制限、実serializer全容量v25/v25native/v26の既存テストPASS。全容量テストのworker期待値だけがCore1のまま残っていたため現行Core0/priority1へ訂正した。通常条件のホスト試験であり、実機無線・ヒープ枯渇・反復測定を再現した試験ではない。
 
-ローカル証拠:
-- `analysis/2026-11-17-log-recovery/`: diagnostics_6.json、diagnostics_7.json、diagnostic_comparison.json、USB診断、故障注入再現、run2_video_metadata.json、run2_video_contact.jpg。
-- `analysis/2026-11-17-walking/38091117/`: header.json、metadata.json、timeseries.csvほか変換CSV、speed_trial_review.json、latest_foot_at_energy.csv、energy_half_cycles.csv、foot_gaps.csv、speed_trial_overview.png、speed_trial_final_cycle.png。
+このPCで参照できる記録は次の2か所にある。
+
+- 整理前コピーの `analysis/2026-11-17-log-recovery/` に、diagnostics_6.json、diagnostics_7.json、diagnostic_comparison.json、USB診断、故障注入再現、run2_video_metadata.json、run2_video_contact.jpgを保管した。[整理前コピーの場所](../README.md#旧版実験データの保管先)
+- 現行の作業フォルダーの `analysis/2026-11-17-walking/38091117/` に、header.json、metadata.json、timeseries.csvほか変換CSV、speed_trial_review.json、latest_foot_at_energy.csv、energy_half_cycles.csv、foot_gaps.csv、speed_trial_overview.png、speed_trial_final_cycle.pngを保管した。[研究用データの入口](../analysis/README.md)
 
 生データ・動画・バイナリはGitへ追加しない。

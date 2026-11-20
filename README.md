@@ -1,11 +1,36 @@
 # RW Walker Motion Control
 
-リアクションホイール歩行器の制御プログラムの保存用リポジトリです。GitHubへの更新で自動ビルドやデプロイは行いません。実機への書き込みはPCで行います。
+リアクションホイールで左右に揺動し、受動脚を交互に振り出す歩行器のファームウェアと実験用ツールです。現在の実機版は **v38**（`walking-foot-periodic40-v38`）。エネルギー制御はv19、胴体姿勢はMEKF、足角度はカメラ観測を基に制御側が25 ms周期で推定・発行します。
 
-初期データは atoms3r-lateral-energy-control の試験版ソース 9939ff1da6550ac9de21451c92c1106edd8b374f を基準に移行しました。試験版の ID は angle-early-eta-v1 です。今回のログに基づく改善はまだ含まれていません。
+## ビルドと書き込み
 
-PlatformIO の設定は platformio.ini を参照してください。早期入力試験のビルドには FOOT_EARLY_TRIAL=1 と ANGLE_EARLY_TRIAL=1 が必要です。通常版のビルドと混同しないでください。
+1. PlatformIOでこのフォルダーを開き、**Build** を選ぶか、ルートで `pio run` を実行します。[platformio.ini](platformio.ini) のビルド環境は `atoms3cam-foot-periodic40` の1つです。
+2. このPCで実機確認済みの版を書き込むには、[open-flasher.cmd](open-flasher.cmd) を開きます。書き込みページは `http://127.0.0.1:8767/foot-periodic40/` です。機体にWi-Fiで接続して開く測定画面は `http://192.168.4.1/` です。
+3. **自分でビルドした版を配布する場合**は、ビルド成功後に `python tools/prepare_foot_periodic40_flasher.py` を実行して、書き込みページに4個のバイナリを用意します。新しくクローンしたPCでもこの手順でページを準備できます。
 
-## Local trial build
+## プログラムの入口
 
-Use platformio run -e atoms3cam-angle-early to select the angle-early trial flags explicitly. The toms3cam environment builds the ordinary version without those flags. The trial environment preserves the same base board and library settings.
+| 用途 | 読み始める場所 |
+|---|---|
+| センサー、タスク構成、制御の流れ | [ファームウェア構成](src/README.md) |
+| 必要仕事の算定、電流パルスの採否と開始 | [歩行時の入力処理](src/walking_energy_runner.inc)、[v19の判断条件](docs/ENERGY_ADMISSION_V19.md) |
+| カメラの足角と40 Hzの定周期推定 | [足角観測](src/foot_observer.cpp)、[定周期の推定器](src/periodic_foot_state.h) |
+| 測定画面とRWLOG保存 | [Web画面](web/index.html)、[画面の処理](web/runtime.js)、[RWLOG変換](tools/convert_rwlog_to_csv.py) |
+| 次の荷重移行を見越した制御の研究 | [研究の現在地](CURRENT_STATUS_20261109.md)、[足姿勢とエネルギー中立点](docs/ENERGY_NEUTRAL_V14.md)、[イベント単位の再生結果](docs/EVENT_FOOT_ENERGY_REPLAY_20261119.md) |
+
+測定画面のソースを編集した場合は、`python tools/embed_runtime_web.py` でファームウェア用ヘッダーを更新し、`python tools/embed_runtime_web.py --check` で一致を確認します。
+
+制御、足角の推定、Web画面、ログ変換は、PC上で `python -B test/run.py` を実行して一括確認できます。必要なソフトと、実測ログを加えて再生する手順は[検証手順](test/README.md)にあります。
+
+## 測定ログの扱い
+
+```powershell
+python tools/convert_rwlog_to_csv.py run.rwlog --out analysis/my-run
+python tools/replay_event_foot_energy.py run1.rwlog run2.rwlog --out analysis/my-replay
+```
+
+前者は元ログのCRCを確認して時系列と診断値を展開します。後者は、v19の戻り補助を判断した時点で入手済みの足角・姿勢・過去のZERO記録を使って入力候補を比較します。荷重移行前の最適な開始位相を選ぶMPCは研究段階です。
+
+## 旧版・実験データの保管先
+
+2026-11-20の整理前のGit管理ファイルは[コミット ce7d018](https://github.com/temesotejam/rw-walker-motion-control/tree/ce7d01871b3b31cd5e061fc813d8166bb65d4e13)にあります。Git管理外の実測データ、書き込みイメージ、ビルド成果物、Git履歴を含む全体のコピーは、このPCの `C:\Users\arika\Desktop\walker-backups\rw-walker-motion-control_20261120_before_cleanup\project.zip` です。同じ場所の `retired` では、作業フォルダーから移した旧ファイルを元の相対パスで参照できます。全体を復元する場合はZIPを別の空フォルダーに展開してください。

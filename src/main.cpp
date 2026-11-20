@@ -17,12 +17,6 @@
 #include "immutable_export.h"
 #include "runtime_diagnostics.h"
 #include "foot_support_start.h"
-#if FOOT_EARLY_TRIAL && !ANGLE_EARLY_TRIAL
-#include "foot_geometry_async.h"
-#include "early_geometry_diagnostics.h"
-#include "early_clock.h"
-#include "foot_calibration_table.h"
-#endif
 
 BoundedWriteWebServer server(Config::HTTP_PORT);
 OneShotCamera camera_probe;
@@ -35,117 +29,6 @@ FootObserver feet;
 ImmutableExport log_export;
 WebUi web;
 
-#if FOOT_EARLY_TRIAL && !ANGLE_EARLY_TRIAL
-// Provisional test only: frame driver timestamp +/-20 ms is an assumed
-// exposure window; no optical timing validation is implied.
-early_diag::Counters g_early_diag;
-static foot_geometry_worker::Async early_worker;
-static bool early_worker_ready=false;
-static uint32_t early_generation=0,early_run=0,early_peak=0,early_sequence=0;
-static uint32_t early_last_pose_us=0;
-static float early_pitch_origin=NAN;
-static void earlySyncIdentity() {
-  const uint32_t run=runner.status().run_id,peak=runner.footEarlyPeakIdentity();
-  if(run!=early_run || peak!=early_peak) {
-    runner.invalidateFootEarlyCandidate();
-    if(run!=early_run) {early_pitch_origin=NAN;early_last_pose_us=0;early_sequence=0;g_early_diag.reset(run);}
-    early_run=run;early_peak=peak;
-    if(++early_generation==0)++early_generation;
-    early_worker.generation(run,peak,early_generation);
-  }
-}
-static void __attribute__((noinline)) earlyRecordPose(uint64_t epoch) {
-  if(!early_worker_ready || !epoch || !runner.status().mekf_attitude.valid)return;
-  const auto& att=runner.status().mekf_attitude;
-  const uint32_t age=static_cast<uint32_t>(micros()-att.sample_us);
-  if(!att.sample_us || age>10000 || (early_last_pose_us &&
-      static_cast<uint32_t>(att.sample_us-early_last_pose_us)<10000))return;
-  const uint64_t now_us=esp_timer_get_time();
-  if(now_us<age)return;
-  const uint64_t sample_time=now_us-age;
-  uint32_t sample_ms;
-  if(!early_clock::relativeMs(sample_time,epoch,sample_ms))return;
-  const auto& q=att.quaternion;
-  const float pitch=atan2f(2.f*(q.w*q.x+q.y*q.z),1.f-2.f*(q.x*q.x+q.y*q.y))*57.2957795f;
-  if(!isfinite(pitch))return;
-  if(!isfinite(early_pitch_origin))early_pitch_origin=pitch;
-  foot_geometry_worker::PoseMessage p;p.run_id=early_run;
-  p.pose.ms=sample_ms;
-  p.pose.fore_aft_deg=pitch-early_pitch_origin;
-  if(early_worker.pose(p))early_last_pose_us=att.sample_us;
-  else ++g_early_diag.pose_dropped;
-}
-static void __attribute__((noinline)) earlySubmitFrame(
-    const FootSnapshot& fs,uint64_t observed_us,uint64_t epoch) {
-  const FootFrame& f=fs.latest;
-  if(!early_worker_ready || !epoch || !f.sequence || f.sequence==early_sequence)return;
-  // Every new frame supersedes an armed result, including invalid frames.
-  runner.invalidateFootEarlyCandidate();
-  early_sequence=f.sequence;++g_early_diag.frames;if(++early_generation==0)++early_generation;
-  early_worker.generation(early_run,early_peak,early_generation);
-  if(!early_peak || f.run_id!=early_run || !f.timestamp_valid || !f.frame_valid ||
-     !f.zero_ready || !f.left_valid || !f.right_valid ||
-#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
-     !foot_control_range::allows(f.left_in_range,f.left_x,false) || !foot_control_range::allows(f.right_in_range,f.right_x,true) ||
-#else
-     !f.left_in_range || !f.right_in_range ||
-#endif
-     f.frame_us<epoch || observed_us<f.frame_us || !isfinite(early_pitch_origin)) {++g_early_diag.invalid_frames;return;}
-  uint32_t frame,observed;
-  if(!early_clock::epochSupported(epoch) || !early_clock::relativeMs(f.frame_us,epoch,frame) ||
-     !early_clock::relativeMs(observed_us,epoch,observed)) {++g_early_diag.invalid_frames;return;}
-  // The earliest provisional exposure must be strictly after the current
-  // confirmed peak, with 5 ms extra allowance for run-clock disagreement.
-  // Subtractions are ordered to avoid unsigned under/overflow.
-  if(frame<20 || frame-20<=early_peak || frame-20-early_peak<=5 ||
-     observed<frame+20 || observed-frame>=120) {++g_early_diag.invalid_frames;return;}
-#if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
-  if(!foot_control_range::assess(fs.left_zero,false).accepted || !foot_control_range::assess(fs.right_zero,true).accepted) {++g_early_diag.invalid_frames;return;}
-#else
-  if(fs.left_zero<appcfg::kFootAngleBMinCalXPx || fs.left_zero>appcfg::kFootAngleBMaxCalXPx ||
-     fs.right_zero<appcfg::kFootAngleAMinCalXPx || fs.right_zero>appcfg::kFootAngleAMaxCalXPx) {++g_early_diag.invalid_frames;return;}
-#endif
-  foot_geometry_worker::Request q;q.run_epoch_ms=static_cast<uint32_t>(epoch/1000);
-  q.max_pose_gap_ms=25;auto& in=q.input;
-  in.run_id=early_run;in.peak_id=early_peak;in.sequence=f.sequence;in.generation=early_generation;
-  in.frame_ms=frame;in.observed_ms=observed;in.expiry_ms=frame+120;
-  in.exposure=foot_geometry_worker::Input::Exposure::Provisional;
-  in.exposure_earliest_ms=frame-20;in.exposure_latest_ms=frame+20;
-  in.side=runner.footEarlyPeakSide();
-  in.left_deg=foot_calibration::angleAt(foot_calibration::left,f.left_x);
-  in.right_deg=foot_calibration::angleAt(foot_calibration::right,f.right_x);
-  if(early_worker.submit(q))++g_early_diag.submitted;else ++g_early_diag.submit_failed;
-}
-static void __attribute__((noinline)) earlyReceive() {
-  if(!early_worker_ready)return;
-  foot_geometry_worker::Reply q;
-  if(!early_worker.receive(q))return;
-  // A replaced job can complete after a new run/peak/frame is current.
-  // Never mix its reason or timings into the current run's diagnostics.
-  if(q.diagnostic.run_id!=early_run || q.diagnostic.peak_id!=early_peak ||
-     q.diagnostic.sequence!=early_sequence || q.diagnostic.generation!=early_generation) {
-    ++g_early_diag.stale_replies;return;
-  }
-  ++g_early_diag.replies;
-  if(q.compute_us>g_early_diag.max_compute_us.load())g_early_diag.max_compute_us.store(q.compute_us);
-  if(q.max_step_us>g_early_diag.max_step_us.load())g_early_diag.max_step_us.store(q.max_step_us);
-  if(q.stack_high_water_raw && (!g_early_diag.min_stack_raw.load() ||
-      q.stack_high_water_raw<g_early_diag.min_stack_raw.load()))g_early_diag.min_stack_raw.store(q.stack_high_water_raw);
-  const unsigned reason=static_cast<unsigned>(q.diagnostic.reason);
-  const unsigned async_reason=static_cast<unsigned>(q.async_reason);
-  if(reason<early_diag::kReasonCount)++g_early_diag.reason[reason];
-  if(async_reason<early_diag::kAsyncReasonCount)++g_early_diag.async_reason[async_reason];
-  if(!q.accepted)return;
-  ++g_early_diag.valid;
-  const auto& r=q.result;
-  if(r.run_id!=early_run || r.peak_id!=early_peak || r.sequence!=early_sequence ||
-     r.generation!=early_generation || r.exposure!=foot_geometry_worker::Input::Exposure::Provisional) {
-    ++g_early_diag.stale_replies;return;
-  }
-  if(runner.offerFootEarlyCandidate(static_cast<uint16_t>(r.run_id),r.peak_id,r.frame_ms,r.ready_ms,r.threshold_deg))
-    ++g_early_diag.armed;
-}
-#endif
 static uint32_t boot_ms = 0, upright_epoch = 0;
 static uint32_t foot_observation_poll_ms = 0, foot_observation_sequence = 0;
 static uint64_t upright_since_us = 0, log_epoch_us = 0, measurement_epoch_us = 0;
@@ -321,9 +204,6 @@ static bool controlStep(void*) {
   const uint32_t sample_us = r.last_gyro_update_us;
   RuntimeDiag::phase(RuntimeDiag::Lane::Control, RuntimeDiag::Phase::ControlRunner);
   const uint32_t runner_start = micros();
-#if FOOT_EARLY_TRIAL && !ANGLE_EARLY_TRIAL
-  if(measurement && measurement_epoch_us) {earlySyncIdentity();earlyReceive();}
-#endif
   // v12's local evidence can be short-lived. Poll its already-computed
   // snapshot more promptly; image processing stays on Core0.
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
@@ -371,9 +251,6 @@ static bool controlStep(void*) {
       runner.observeReturnFootFrame(raw);
     }
 #endif
-#if FOOT_EARLY_TRIAL && !ANGLE_EARLY_TRIAL
-    earlySubmitFrame(fs,foot_observed_us,measurement_epoch_us);
-#endif
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
     // Even a timestamp-invalid new frame must cancel the previous forecast.
     runner.observeFootProjection(f.sequence,f.pose_projection);
@@ -401,9 +278,6 @@ static bool controlStep(void*) {
   if (periodicFeet.service(esp_timer_get_time())) runner.observePeriodicFoot(periodicFeet.current());
 #endif
   runner.update();
-#if FOOT_EARLY_TRIAL && !ANGLE_EARLY_TRIAL
-  if(measurement && measurement_epoch_us) {earlySyncIdentity();earlyRecordPose(measurement_epoch_us);}
-#endif
   uint32_t done;
   const auto done_activity = control_latency::activity(&done);
   const uint32_t runner_us = done - runner_start;
@@ -411,9 +285,6 @@ static bool controlStep(void*) {
   control_latency::setActive(runner.status().state == ExperimentState::RUNNING_BATCH_SWEEP);
   if (!measurement_epoch_us && runner.status().state == ExperimentState::RUNNING_BATCH_SWEEP) {
     measurement_epoch_us = esp_timer_get_time() - static_cast<uint64_t>(runner.status().measure_elapsed_ms) * 1000;
-#if FOOT_EARLY_TRIAL && !ANGLE_EARLY_TRIAL
-    runner.setFootEarlyEpoch(measurement_epoch_us);
-#endif
   }
   if (was_running || runner.running()) {
     run_control.recordSampleCompletion(measurement, fresh, sample_us, done, runner_us,
@@ -479,10 +350,6 @@ void setup() {
   RuntimeDiag::result(export_memory_ready && log_export.begin(logger));
   RuntimeDiag::boot(RuntimeDiag::Stage::Web);
   web.begin(server, run_control, feet, log_export);
-#if FOOT_EARLY_TRIAL && !ANGLE_EARLY_TRIAL
-  early_worker_ready=early_worker.begin();
-  g_early_diag.worker_ready.store(early_worker_ready);
-#endif
   RuntimeDiag::boot(RuntimeDiag::Stage::Ready);
 }
 void loop() { RuntimeDiag::pollFallback(); web.update(); delay(1); }

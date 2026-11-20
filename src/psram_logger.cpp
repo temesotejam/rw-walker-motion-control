@@ -11,9 +11,6 @@ extern ImuManager imu;
 extern RunControlWorker run_control;
 #include "roller485_manager.h"
 extern Roller485Manager roller;
-#if defined(FOOT_EARLY_TRIAL) && FOOT_EARLY_TRIAL && !(defined(ANGLE_EARLY_TRIAL) && ANGLE_EARLY_TRIAL)
-#include "early_geometry_diagnostics.h"
-#endif
 #include "foot_observer.h"
 extern FootObserver feet;
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
@@ -478,25 +475,11 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
 #if defined(FAST_CROSSING_SHADOW) && FAST_CROSSING_SHADOW
   json += "\"fast_crossing_shadow\":{\"policy\":\"candidate_only;not_applied_to_output;other_guards_remain_active\",\"physical_response_identified\":false,\"hardware_validated\":false},";
 #endif
-#if defined(ANGLE_EARLY_TRIAL) && ANGLE_EARLY_TRIAL
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX && defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
   json += "\"angle_early_trial\":{\"policy\":\"v15_energy_main_selector_with_v16_pulse_lifecycle;existing_generic_timing_window;postguard_predicted_budget_required;experimental_main_ceiling80ms;rescue15ms_separate;one_attempt_per_peak;queue_rejection_not_physical_ACK\",\"physical_timing_validated\":false},";
 #else
   json += "\"angle_early_trial\":{\"policy\":\"inward_abs_angle_gt_0p3_le_1p5_deg;rate_gt_5_dps;constant_rate_eta_gt_20_le_30_ms;max_pulse_15ms;one_per_peak;no_send_zero_reevaluation;ambiguous_write_estop\",\"camera_role\":\"diagnostic_and_existing_balance_only\",\"geometry_worker_enabled\":false,\"applies_during_startup_ramp\":true,\"configured_target_deg\":8,\"pulse_width_changes_alongside_timing\":true,\"physical_timing_validated\":false},";
 #endif
-#else
-  const auto early = g_early_diag.snapshot();
-  json += "\"foot_early_trial\":{\"exposure\":\"unverified_frame_timestamp_plus_minus_20ms\",\"pitch_origin\":\"initial_pose_plus_minus_2deg_unverified\",\"geometry\":\"discrete_hypotheses_not_contact_ground_truth\",";
-  json += "\"run\":" + String(early.run) + ",\"frames\":" + String(early.frames) + ",\"invalid_frames\":" + String(early.invalid_frames);
-  json += ",\"submitted\":" + String(early.submitted) + ",\"submit_failed\":" + String(early.submit_failed) + ",\"pose_dropped\":" + String(early.pose_dropped);
-  json += ",\"replies\":" + String(early.replies) + ",\"valid\":" + String(early.valid) + ",\"armed\":" + String(early.armed) + ",\"stale_replies\":" + String(early.stale_replies);
-  json += ",\"worker_ready\":" + String(early.worker_ready) + ",\"max_compute_us\":" + String(early.max_compute_us) + ",\"max_step_us\":" + String(early.max_step_us) + ",\"min_stack_raw\":" + String(early.min_stack_raw);
-  json += ",\"reason_codes\":[";
-  for (unsigned i=0;i<early_diag::kReasonCount;++i) { if(i)json+=","; json+=String(early.reason[i]); }
-  json += "],\"reason_names\":[\"none\",\"unknown_exposure\",\"provisional_disabled\",\"bad_exposure_interval\",\"pose_unavailable\",\"bad_identity\",\"bad_time\",\"bad_input\",\"stale_generation\",\"expired\",\"no_root\",\"disagree\"],\"async_reason_codes\":[";
-  for (unsigned i=0;i<early_diag::kAsyncReasonCount;++i) { if(i)json+=","; json+=String(early.async_reason[i]); }
-  json += "],\"async_reason_names\":[\"none\",\"pose_timeout\",\"replaced\",\"generation_changed\",\"calculation_rejected\",\"cpu_budget\"]},";
-#endif // ANGLE_EARLY_TRIAL
 #endif
   json += "\"wheel_cycle_trial\":{\"policy\":\"branch15_midpoint_guard;four_fresh_matched_alternating_peaks_at_least_4p5deg_with_pair_gap_at_most_2deg;no_extra_shortening_on_weaker_or_declining_side;above_100rpm_at_most_5ms_extra;no_reverse_or_added_torque;15ms_startup_recovery\",\"hardware_validated\":false},";
 #if defined(FOOT_SUPPORT_TRANSFER) && FOOT_SUPPORT_TRANSFER
@@ -1808,11 +1791,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
   for (uint16_t i = 0; i < energy_control_autonomous_zero_cross_event_count_; ++i) {
     const EnergyControlAutonomousZeroCrossEvent& e = events_->energy_control_autonomous_zero_cross_events_[i];
     String detail = "{\"event_index\":" + String(e.event_index);
-#if defined(ANGLE_EARLY_TRIAL) && ANGLE_EARLY_TRIAL
     const char* early_kind="angle_rate_early_trial";
-#else
-    const char* early_kind="foot_geometry_early_trial";
-#endif
     detail += ",\"event_kind\":\"" + String(e.event_kind == 1 ? "strong_start_kick" : e.event_kind == 2 ? "inward_stall_rescue" : e.event_kind == 3 ? early_kind : e.event_kind == 4 ? "early_inward_stall_rescue" : e.event_kind == 5 ? "approach_inward_stall_rescue" : "energy_control_zero_cross") + "\"";
     detail += ",\"zero_cross_time_ms\":" + String(e.zero_cross_time_ms);
 #if defined(SWAY_BALANCE_TRIAL) && SWAY_BALANCE_TRIAL

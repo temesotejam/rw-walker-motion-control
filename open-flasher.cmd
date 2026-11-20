@@ -1,9 +1,9 @@
 @echo off
 setlocal
-cd /d "%~dp0flasher"
-echo Starting the local flasher at http://127.0.0.1:8767/
-echo Keep this window open while writing the firmware.
-start "" "http://127.0.0.1:8767/"
-python -m http.server 8767 --bind 127.0.0.1
-echo The server stopped. If the port is in use, close the other local server first.
+cd /d "%~dp0"
+python tools\prepare_foot_periodic40_flasher.py --serve
+if not errorlevel 1 exit /b 0
+echo The installer could not be opened. Check the error above.
+echo To package the current build, run python tools\prepare_foot_periodic40_flasher.py
 pause
+exit /b 1

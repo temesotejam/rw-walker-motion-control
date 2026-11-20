@@ -1,10 +1,10 @@
 # v19：前倒し入力のモデル支持と前後の持続逸脱
 
-環境 `atoms3cam-energy-admission`、識別 `walking-energy-admission-v19`、branch24。比較用のv18環境・配信物は保持する。今回の変更は±8度試験を対象にする。
+v19で導入し、現行のv38にも組み込んでいる±8度試験の入力判定（branch24）を説明する。v38の配布識別名は `walking-foot-periodic40-v38`。以下の試行・ビルド結果はv19の開発時に得たもの。[現行版のビルドと書き込み](../README.md#ビルドと書き込み)
 
 ## 修正の根拠
 
-[62788986試行](../analysis/2026-11-14-walking/v18実機試行_62788986.md)は後方転倒した。v18の61判断、38完了、共有80ms台帳は計算どおりだったが、正側の予測約8.416度に対して実ピーク11.81081度が出た。最後の主入力開始時には前後角が約24.21度へ増えていた。
+試行62788986では機体が後方に転倒した。v18の61判断、38完了、共有80ms台帳は計算どおりだったが、正側の予測約8.416度に対して実ピーク11.81081度が出た。最後の主入力開始時には前後角が約24.21度へ増えていた。[整理前の実機試行報告](https://github.com/temesotejam/rw-walker-motion-control/blob/ce7d01871b3b31cd5e061fc813d8166bb65d4e13/analysis/2026-11-14-walking/v18実機試行_62788986.md)
 
 単一試行に合わせた係数の再fitは行わない。v18の救済J、実ZEROでの主入力J再計算、符号付き残留電流、実経過完了、共通80ms枠、足の校正端から5度の許容を引き継ぎ、入力を採用する条件を追加する。
 
@@ -48,4 +48,4 @@ portable検証には、正負方向、数度の高速揺動、大きめの低速
 
 最終ビルドはSUCCESS45.200秒、RAM127244/327680、Flash1906321/3342336。firmware1906688bytes、SHA256 `7f214f5101ec90d5b073da94680968bdf32e97699493aaf64362578a068b3b71`。ページ・manifest・4部品・補助JS2件のHTTP配信8件を全バイト照合し、旧v18/v17rangeの配信SHA維持を確認した。
 
-書込みページは `http://127.0.0.1:8767/energy-admission/`。ビルド後 `python tools/prepare_energy_admission_flasher.py` で専用4部品を準備する。旧v18ページは比較用に保持する。今回の実機書込み・新測定は未実施で、実歩行の改善効果は未確認。
+当時は `atoms3cam-energy-admission` をビルドし、ローカル配信の `/energy-admission/` に専用4部品を用意した。配布時の識別名は `walking-energy-admission-v19`。この報告時点では実機への書き込み・測定は未実施で、歩行の改善効果は未確認。[v19の配布スクリプト](https://github.com/temesotejam/rw-walker-motion-control/blob/ce7d01871b3b31cd5e061fc813d8166bb65d4e13/tools/prepare_energy_admission_flasher.py)

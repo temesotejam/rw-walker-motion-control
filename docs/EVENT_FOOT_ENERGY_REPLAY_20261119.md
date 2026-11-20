@@ -50,5 +50,5 @@ Python 3でリポジトリのルートから実行する。入力のSHA-256とCR
 
 ```powershell
 python tools/replay_event_foot_energy.py "$env:USERPROFILE/Downloads/energy_control_autonomous_run_1_46492793.rwlog" "$env:USERPROFILE/Downloads/energy_control_autonomous_run_2_201405726.rwlog" --out analysis/2026-11-19-event-replay
-python -m unittest discover -s tools -p "test_event_foot*.py"
+python -m unittest discover -s test -p "test_event_foot*.py"
 ```
