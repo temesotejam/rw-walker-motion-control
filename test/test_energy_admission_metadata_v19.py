@@ -44,6 +44,9 @@ fixture = fixture.replace(marker, marker + r'''
 #if SUPPORT_TRANSFER_CARRY2
     if(a.return_event){
       a.arc_aid.reason=receiving_arc_aid::Reason::Applied;a.arc_aid.extra_j=.00004f;
+#if SUPPORT_TRANSFER_STALL_V3
+      a.arc_aid.extension_pivot_only=true;
+#endif
       a.arc_foot_source=2;a.base_aid_ms=28;a.arc_candidate_ms=33;a.main_reserve_ms=50;
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
       a.arc_feedback_peak_ms=1250;a.arc_feedback_base_ms=30;
@@ -84,6 +87,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
         subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror'] + flags +
                        ['-DWALKING_ADMISSION_V19=' + str(int(admission)), '-DSUPPORT_TRANSFER_CARRY2=' + str(int(carry)),
                         '-DWALKING_TURN_OBSERVER=' + str(int(turn)), '-DSUPPORT_TRANSFER_ARC_FEEDBACK=' + str(int(turn)),
+                        '-DSUPPORT_TRANSFER_STALL_V3=' + str(int(turn)),
                         '-I' + str(ROOT / 'test/fixtures/arduino'),
                         '-I' + str(ROOT / 'src'), str(temp / 'test.cpp'), '-o', str(exe)], check=True)
         for mode, count in [('', 7), ('empty', 0)]:
@@ -132,6 +136,8 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                     assert block['arc_aid_reason_names'][aids[0]['arc_aid_reason']] == 'applied'
                     assert block['arc_aid_reason_names'][10] == 'command_veto'
                     if turn:
+                        assert block['return_evidence_names'][5] == 'measured_arc_shortfall'
+                        assert aids[0]['arc_extension_pivot_only'] is True
                         assert aids[0]['arc_feedback_peak_ms']==1250 and aids[0]['arc_feedback_base_ms']==30
                         assert abs(aids[0]['arc_feedback_available_j']-.000013)<1.e-10
                         assert aids[0]['arc_feedback_command_j']==(aids[0]['arc_feedback_available_j'] if block['records']['rows'][1][block['records']['fields'].index('executed')] else 0)
@@ -190,6 +196,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                     assert csv_rows[1]['arc_base_guarded_ms'] == '28' and csv_rows[1]['arc_main_reserve_ms'] == '50'
                     assert all(row['arc_aid_reason'] == '' for i, row in enumerate(csv_rows) if i != 1)
                 if turn:
+                    assert csv_rows[1]['arc_extension_pivot_only'] == 'True'
                     for index in (0,4):
                         event = csv_rows[index]
                         assert event['turn_cycle_end_ms'] == '900'

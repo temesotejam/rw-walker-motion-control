@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>歩行器 v39-turn2 書き込み</title>
+  <title>歩行器 v39-turn3 書き込み</title>
   <script src="flasher-completion.js"></script>
   <script type="module" src="https://unpkg.com/esp-web-tools@10.1.1/dist/web/install-button.js?module"></script>
   <style>body{font:1rem/1.7 system-ui,sans-serif;max-width:42rem;margin:3rem auto;padding:0 1rem;color:#203044}button{font:inherit;background:#175ab1;color:white;border:0;border-radius:.5rem;padding:.6rem 1rem;cursor:pointer}.serial-button{margin-top:1rem;background:#435369}</style>
 </head>
 <body><main>
-  <h1>歩行器 v39-turn2 書き込み</h1>
-  <p><code>walking-support-transfer-v39-turn2</code> を書き込みます。±8°歩行で二周期にわたり右足が出にくく機体が曲がると、通常入力の仕事を調整します。左へ戻る補助では、前回同じ条件で受け足の円弧に届かなかった分も考慮します。</p>
+  <h1>歩行器 v39-turn3 書き込み</h1>
+  <p><code>walking-support-transfer-v39-turn3</code> を書き込みます。±8°歩行で左足へ支持を移す途中、足角と胴体の減速から0°の手前で止まると予測したときに補助します。補助を延長する場合も、0°通過後の主入力に必要な通電時間を残します。</p>
   <p>測定後は機体の画面で「RWLOGを取得・再開」を押すとログを保存できます。</p>
   <p>機体を停止し、バッテリーを外してUSBだけでPCにつないでください。PC版のChromeまたはEdgeで操作できます。</p>
   <esp-web-install-button manifest="manifest.json">
-    <button slot="activate">v39-turn2を書き込む</button>
+    <button slot="activate">v39-turn3を書き込む</button>
     <span slot="unsupported">PC版ChromeまたはEdgeで開いてください。</span>
   </esp-web-install-button>
   <p><a href="../foot-periodic40/">実機確認済みのv38を書き込む</a></p>

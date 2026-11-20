@@ -12,6 +12,9 @@ enum class Reason : uint8_t {
 struct Input {
   int side=0;
   bool observed_shape=false;
+#if SUPPORT_TRANSFER_STALL_V3
+  uint16_t base_width_ms=0;  // Already selected after the wheel-speed guard.
+#endif
   float body_deg=NAN, speed_dps=NAN, decel_dps2=NAN, fore_aft_deg=NAN;
   float left_deg=NAN, right_deg=NAN, left_est=NAN, right_est=NAN;
   float left_rate=NAN, right_rate=NAN, base_j=NAN, target_j=NAN;
@@ -19,6 +22,9 @@ struct Input {
 struct Result {
   Reason reason=Reason::Inactive;
   float extra_j=0, terminal_deg=NAN, horizon_s=NAN;
+#if SUPPORT_TRANSFER_STALL_V3
+  bool extension_pivot_only=false;
+#endif
 };
 inline Result evaluate(const Input& in) {
   Result out;
@@ -53,8 +59,28 @@ inline Result evaluate(const Input& in) {
   // Certify both halves if the full-interval bound is inconclusive.
   const float loss=28.f*lateral_energy::kRadPerDeg*(std::fabs(in.left_rate)+std::fabs(in.right_rate))*out.horizon_s;
   const float start=clearance(0);
-  if (!(start>0 && clearance(out.horizon_s)>0 &&
-        (start>loss || (start>.5f*loss && clearance(.5f*out.horizon_s)>.5f*loss)))) {
+  const float end=clearance(out.horizon_s);
+  bool proven=start>0 && end>0 &&
+      (start>loss || (start>.5f*loss && clearance(.5f*out.horizon_s)>.5f*loss));
+#if SUPPORT_TRANSFER_STALL_V3
+  // Both commands are identical up to base_width_ms. A receiving pivot need
+  // only be certified where extending that pulse can change the current. The
+  // same one-sided clearance-loss bound must cover every instant, including
+  // the full possible pulse tail. Four equal intervals bound the extra cost.
+  if (!proven && end>0 && in.base_width_ms>0 &&
+      in.base_width_ms<walking_energy_policy::kMaxPulseMs &&
+      out.horizon_s>=walking_energy_policy::kMaxPulseMs*.001f) {
+    const float begin=in.base_width_ms*.001f;
+    const float step=(out.horizon_s-begin)*.25f;
+    const float bound=loss*(step/out.horizon_s);
+    proven=true;
+    for (unsigned i=0;i<4;++i) {
+      if (!(clearance(begin+i*step)>bound)) {proven=false;break;}
+    }
+    out.extension_pivot_only=proven;
+  }
+#endif
+  if (!proven) {
     out.reason=Reason::UncertainPivot;return out;
   }
   out.terminal_deg=support_transfer_plan::arcEntryDeg(in.side,in.left_deg+in.fore_aft_deg);

@@ -331,7 +331,7 @@ function render(s) {
       '戻りの救済後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。前倒し候補のモデル支持を確認し、範囲外はZEROで再評価します。前後の持続逸脱では入力を停止します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
       (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '') +
       (fast ? ' 最初はモータを開始せず、足角度と画像の更新を確認してください。画像更新は目標' + format(s.foot?.target_fps ?? 15,0) + 'fpsで、実際の更新速度と遅延は下に表示します。時刻差はdriver基準で、露光時刻との対応は未校正です。' : '');
-    const turnVersion = /^walking-support-transfer-v39-(turn[12])$/.exec(s.diagnostic_build_id);
+    const turnVersion = /^walking-support-transfer-v39-(turn[123])$/.exec(s.diagnostic_build_id);
     if (turnVersion) {
       $('work-title').textContent = '歩行のエネルギー制御（' + turnVersion[1] + '・左右の足運びと旋回・30秒）';
       $('work-description').textContent += ' ±8°歩行では、一往復ごとに足の前振れと相対方位を測ります。右足の前振れ不足と負方向の旋回が続くと、実測で右足が振り出される半周期には通常入力の仕事を加え、左足が振り出される半周期には十分な揺れがあるときに仕事を減らします。補正前後の幅はRWLOGに記録します。';

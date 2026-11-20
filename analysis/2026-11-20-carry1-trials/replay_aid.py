@@ -12,13 +12,14 @@ FIELDS = ("time_ms packet_age_us source left_est right_est left_rate right_rate 
           "old_raw old_guarded candidate_raw candidate_guarded reserve_ms new_ms").split()
 
 
-def replay(folder, exe):
+def replay(folder, exe, *, compare_pivot=False):
     m = json.loads((folder/"metadata.json").read_text(encoding="utf8"))
     active = [f for f in m["foot_frames"] if f["state_id"] == 3 and f["control_observed_us"]]
     epoch, = {f["frame_us"]-f["measurement_time_us"] for f in active if f["timestamp_valid"]}
     plan = m["walking_energy"]
     assert plan["archive_available"] and not plan["truncated"] and len(plan["records"]) == plan["total"]
     walking = plan["records"]
+    arc_rows = {row["row_index"]: row for row in plan.get("arc_aids", [])}
     zeros = m["energy_control_autonomous_zero_cross_events"]
     periodic = m["foot_periodic"]["samples"]
     assert len({f["run_id"] for f in active}) == 1
@@ -39,7 +40,7 @@ def replay(folder, exe):
         matched = p["pending_command_matched"] and (p["pending_q_command_mA_s"] or 0)>0
         add(epoch+p["peak_telemetry_capture_time_ms"]*1000, "K", p["physical_peak_side"], p["peak_time_ms"],
             matched, p["peak_amplitude_deg"])
-    for r in walking:
+    for index, r in enumerate(walking):
         t, side, peak = r["time_ms"], r["side"], r["peak_ms"]
         # ZERO is interpolated between samples. The walking record timestamps the
         # control tick that acted on that detection, up to one sample later.
@@ -69,22 +70,30 @@ def replay(folder, exe):
         add(now, "R", t, now, pkt, p[2], p[3], p[4], p[5], raw["sequence"], raw["frame_us"],
             raw["control_observed_us"], r["envelope_before_ms"], fresh, side, e["detector_angle_after_deg"],
             r["start_rate_dps"], r["return_deceleration_dps2"], r["fore_aft_angle_deg"], raw["left_deg"],
-            raw["right_deg"], r["request_j"], r["target_j"], r["start_i0_ma"], r["start_goal_ma"],
+            raw["right_deg"], r["return_work_j"] if compare_pivot else r["request_j"], r["target_j"],
+            e["aligned_initial_current_mA"] if compare_pivot else r["start_i0_ma"],
+            e["predicted_current_goal_mA"] if compare_pivot else r["start_goal_ma"],
             r["start_tau_s"], e["pre_input_wheel_speed_rpm"])
         main = [c for c in walking if c["peak_ms"]==peak and c["executed"] and not c["return_event"] and c["time_ms"]>t]
         crossed = any(z["previous_peak_time_ms"]==peak and z["event_kind"]=="energy_control_zero_cross"
                       and z["zero_cross_time_ms"]>t for z in zeros)
-        ground[t] = (r, crossed, sum(c["actual_elapsed_ms"] for c in main))
+        ground[t] = (r, crossed, sum(c["actual_elapsed_ms"] for c in main), arc_rows.get(index, {}))
     payload = "\n".join([str(epoch)] + [line for _,_,line in sorted(events)])
     result = subprocess.check_output([exe], text=True, input=payload+"\n")
     rows = []
     for line in result.splitlines():
         vals = line.split()
-        if len(vals) != len(FIELDS):
+        fields = FIELDS + (["old_pivot", "old_choice", "tail_proof", "start_clearance_mm",
+                            "tail_clearance_mm", "end_clearance_mm", "horizon_s", "new_work_j"] if compare_pivot else [])
+        if len(vals) != len(fields):
             raise ValueError(line)
-        row = dict(zip(FIELDS, vals))
-        r, crossed, later = ground[int(row["time_ms"])]
-        if (int(row["old_raw"]), int(row["old_guarded"])) != (r["requested_ms"], r["guarded_ms"]):
+        row = dict(zip(fields, vals))
+        r, crossed, later, arc = ground[int(row["time_ms"])]
+        if compare_pivot:
+            expected = arc.get("arc_base_guarded_ms", r["guarded_ms"])
+            if int(row["old_guarded"]) != expected or (arc and int(row["old_choice"]) != r["guarded_ms"]):
+                raise ValueError(f"Wheel-limited base or original arc choice differs: {folder.name} {row}")
+        elif (int(row["old_raw"]), int(row["old_guarded"])) != (r["requested_ms"], r["guarded_ms"]):
             raise ValueError(f"Baseline width mismatch: {folder.name} {row}")
         row.update(trial=folder.name, observed_zero=int(crossed), later_main_ms=later,
                    remaining_ms=r["envelope_before_ms"]-int(row["new_ms"]))

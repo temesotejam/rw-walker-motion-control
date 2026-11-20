@@ -199,6 +199,32 @@ static void turn_main_response(){
 }
 #endif
 int main(){
+#if SUPPORT_TRANSFER_STALL_V3
+ // A measured shortfall can spend only the part of this half-cycle left after
+ // reserving a completed main pulse on the same side. Exercise real dispatch.
+ for(unsigned mode=0;mode<4;++mode){
+  ExperimentRunner r;ready19(r);r.energy_control_autonomous_last_peak_side_=1;
+  if(mode!=2)r.walking_main_reserve_.observe(-1,true,mode==1?80:62);
+  if(mode==3)r.roller_obj.write_ok=false;
+  r.walking_return_event_=r.stall_rescue_event_=true;
+  r.walking_return_choice_.request_j=.00009f;r.walking_return_choice_.deceleration_dps2=75;
+  r.walking_return_observation_.evidence=return_observation_policy::Evidence::MeasuredArcShortfall;
+  r.acceptMotionCrossing(true,1200,-15,1.7f,1.65f,1,1200);
+  auto a=r.walking_energy_audit_[0];
+  assert(a.return_event && a.return_evidence==5 && a.return_work_j>0);
+  if(mode!=0){
+   assert(!a.executed && !r.status_.pulse_active && r.walking_half_cycle_budget_.remaining()==80);
+   if(mode!=3)assert(a.main_reserve_ms==80 && a.arc_aid.reason==receiving_arc_aid::Reason::NoMainRoom);
+   continue;
+  }
+  assert(a.executed && a.side==-1 && a.main_reserve_ms==62 && a.guarded_ms>0 && a.guarded_ms<=18);
+  r.walking_return_event_=r.stall_rescue_event_=false;
+  clock19(r,a.output_start_ms+a.guarded_ms);r.updateEnergyControlAutonomousPulse(mock_ms);
+  assert(!r.status_.pulse_active && r.walking_half_cycle_budget_.remaining()>=62 && !r.walking_half_cycle_budget_.mainUsed());
+  main19(r,1400,-25);
+  assert(r.status_.pulse_active && r.walking_half_cycle_budget_.mainUsed());
+ }
+#endif
 #if WALKING_TURN_OBSERVER
  turn_main_response();
 #endif
@@ -455,10 +481,11 @@ int main(){
 '''
 with tempfile.TemporaryDirectory(prefix='energy_admission_runner_v19_') as folder:
     temp = Path(folder);(temp/'fixture.cpp').write_text(fixture, encoding='utf8')
-    for carry, turn, feedback in ((0,0,0),(1,0,0),(1,1,0),(1,1,1)):
+    for carry, turn, feedback, stall in ((0,0,0,0),(1,0,0,0),(1,1,0,0),(1,1,1,0),(1,1,1,1)):
         subprocess.run(['g++','-std=c++11','-O2','-Wall','-Wextra','-Werror',
         '-DSUPPORT_TRANSFER_CARRY2='+str(carry),'-DSUPPORT_TRANSFER_V39='+str(carry),'-DWALKING_TURN_OBSERVER='+str(turn),
         '-DSUPPORT_TRANSFER_ARC_FEEDBACK='+str(feedback),
+        '-DSUPPORT_TRANSFER_STALL_V3='+str(stall),
         '-DFOOT_SUPPORT_ASSIST=1','-DFOOT_SUPPORT_LOCAL=1','-DFOOT_SUPPORT_TRANSFER=1',
         '-DFOOT_SUPPORT_ENERGY=1','-DEARLY_ENERGY_MAIN=1','-DPULSE_LIFECYCLE_FIX=1',
         '-DSWAY_BALANCE_TRIAL=1','-DWALKING_RETURN_ENERGY=1','-DWALKING_TRANSFER_V18=1',

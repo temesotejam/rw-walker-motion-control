@@ -69,7 +69,6 @@ int main() {
       arc.observed_shape=source!=0;
       arc.left_est=left.estimated;arc.right_est=right.estimated;
       arc.left_rate=left.rate_dps;arc.right_rate=right.rate_dps;
-      const auto result=receiving_arc_aid::evaluate(arc);
       lateral_energy::CurrentTable table; if (!table.prepare(tau)) return 2;
       const auto cap=timing.timingCap(arc.side,t,envelope);
       const auto width=[&](float request) {
@@ -80,14 +79,35 @@ int main() {
         }
         return unsigned(cap);
       };
-      const auto old=width(arc.base_j), proposal=width(arc.base_j+result.extra_j);
+      const auto old=width(arc.base_j);
       auto g1=guard,g2=guard;
-      const auto baseline=g1.limit(arc.side,rpm,true,t,old), candidate=g2.limit(arc.side,rpm,true,t,proposal);
+      const auto baseline=g1.limit(arc.side,rpm,true,t,old);
+#if SUPPORT_TRANSFER_STALL_V3
+      const auto old_pivot=receiving_arc_aid::evaluate(arc);
+      auto old_guard=guard;
+      const auto old_candidate=old_guard.limit(arc.side,rpm,true,t,width(arc.base_j+old_pivot.extra_j));
+      arc.base_width_ms=baseline;
+#endif
+      const auto result=receiving_arc_aid::evaluate(arc);
+      const auto proposal=width(arc.base_j+result.extra_j);
+      const auto candidate=g2.limit(arc.side,rpm,true,t,proposal);
       const auto reserved=reserve.forSide(arc.side);
       const auto choice=receiving_arc_aid::boundWidth(baseline,candidate,envelope,reserved);
       std::cout<<t<<' '<<now-p.published_us<<' '<<source<<' '<<arc.left_est<<' '<<arc.right_est<<' '<<arc.left_rate<<' '
                <<arc.right_rate<<' '<<int(result.reason)<<' '<<result.extra_j<<' '<<cap<<' '<<old<<' '
-               <<baseline<<' '<<proposal<<' '<<candidate<<' '<<reserved<<' '<<choice<<'\n';
+               <<baseline<<' '<<proposal<<' '<<candidate<<' '<<reserved<<' '<<choice;
+#if SUPPORT_TRANSFER_STALL_V3
+      const auto clearance=[&](float s) {
+        return -support_transfer_plan::supportGap(arc.left_est+arc.left_rate*s,arc.right_est+arc.right_rate*s,
+                                                 arc.fore_aft_deg,arc.body_deg-arc.speed_dps*s);
+      };
+      const auto q=lateral_energy::charge(table,choice,i0,goal);
+      const auto work=lateral_energy::work(lateral_energy::coefficients(arc.side),arc.speed_dps*lateral_energy::kRadPerDeg,q);
+      std::cout<<' '<<int(old_pivot.reason)<<' '<<receiving_arc_aid::boundWidth(baseline,old_candidate,envelope,reserved)
+               <<' '<<result.extension_pivot_only<<' '<<clearance(0)<<' '<<clearance(.001f*baseline)
+               <<' '<<clearance(result.horizon_s)<<' '<<result.horizon_s<<' '<<work;
+#endif
+      std::cout<<'\n';
     } else return 3;
   }
 }

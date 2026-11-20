@@ -3513,6 +3513,12 @@ __attribute__((noinline)) bool ExperimentRunner::observeInwardStallRescue(
   ri.peak_deg=energy_control_autonomous_last_peak_amplitude_deg_;ri.angle_deg=angle_deg;ri.rate_dps=rate_dps;
   ri.target_j=lateral_energy::potential(lateral_energy_geometry_,tilt_priority_.target());
   ri.foot=walking_return_frame_;
+#if SUPPORT_TRANSFER_STALL_V3
+  ri.periodic=&periodic_foot_packet_;
+  ri.fore_aft_deg=walking_fore_aft_last_.angle_deg;
+  if (transfer_previous_sample_us_==ri.sample_us && transfer_packet_==periodic_foot_packet_.count)
+    ri.periodic_acceleration_dps2=transfer_acceleration_dps2_;
+#endif
   walking_return_observation_=walking_return_observer_.observe(ri);
   walking_return_choice_={};
   if(walking_return_observation_.selected){
@@ -3877,6 +3883,9 @@ void ExperimentRunner::observeSupportTransfer(uint32_t t, uint32_t sample_us, fl
                            ? (rate - transfer_previous_rate_dps_) * (1000000.f / dt) : NAN;
   transfer_previous_sample_us_ = sample_us;
   transfer_previous_rate_dps_ = rate;
+#if SUPPORT_TRANSFER_STALL_V3
+  transfer_acceleration_dps2_=acceleration;
+#endif
   const int side = -energy_control_autonomous_last_peak_side_;
   if (!wheelWorkMode() || energy_control_autonomous_target_peak_deg_ != 8.f ||
       energy_control_autonomous_input_peak_percent_ != 0 || !energy_control_autonomous_last_peak_valid_ ||

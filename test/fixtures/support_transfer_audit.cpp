@@ -60,6 +60,7 @@ struct ExperimentRunner {
   periodic_foot::Packet periodic_foot_packet_;
   uint32_t transfer_packet_=0, transfer_previous_sample_us_=0;
   float transfer_previous_rate_dps_=NAN;
+  float transfer_acceleration_dps2_=NAN;
   int energy_control_autonomous_last_peak_side_=-1, energy_control_autonomous_target_peak_deg_=8,
       energy_control_autonomous_input_peak_percent_=0;
   unsigned energy_control_autonomous_last_peak_ms_=1;
@@ -140,9 +141,12 @@ int main() {
   audit.begin(.05f);audit.startRun();
   r.walking_half_cycle_budget_.sourcePeak(1);
   r.energy_control_autonomous_last_peak_valid_=false; r.tick(1,10);
+  assert(std::isnan(r.transfer_acceleration_dps2_));
   r.status_.pulse_id=17;
   r.energy_control_autonomous_last_peak_valid_=true; r.tick(2,20);
-  r.observeSupportTransfer(host_us/1000,host_us,-2,20); // duplicate packet must not enqueue
+  assert(std::fabs(r.transfer_acceleration_dps2_-400.f)<.01f);
+  r.observeSupportTransfer(host_us/1000,host_us,-2,22); // duplicate packet must not overwrite the derivative
+  assert(std::fabs(r.transfer_acceleration_dps2_-400.f)<.01f);
   host_us+=7000;dispatch();
   r.energy_control_autonomous_last_peak_side_=1;
   r.post_zero=true; r.energy_control_autonomous_zero_cross_consumed_for_peak_=true;

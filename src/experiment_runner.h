@@ -120,6 +120,9 @@ public:
   void startSupportTransferRun() {
     transfer_packet_ = transfer_previous_sample_us_ = 0;
     transfer_previous_rate_dps_ = NAN;
+#if SUPPORT_TRANSFER_STALL_V3
+    transfer_acceleration_dps2_=NAN;
+#endif
     transfer_audit_.startRun();
   }
 #endif
@@ -733,6 +736,9 @@ private:
   SupportTransferAudit transfer_audit_;
   uint32_t transfer_packet_ = 0, transfer_previous_sample_us_ = 0;
   float transfer_previous_rate_dps_ = NAN;
+#if SUPPORT_TRANSFER_STALL_V3
+  float transfer_acceleration_dps2_=NAN;
+#endif
   void observeSupportTransfer(uint32_t t, uint32_t sample_us, float angle, float rate);
 #endif
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY

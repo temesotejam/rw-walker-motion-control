@@ -212,6 +212,12 @@ bool ExperimentRunner::tryWalkingEnergy(
   in.cap_ms=tilt_priority_.timingCap(side,t,80); // timing protection only
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
   in.cap_ms=walking_half_cycle_budget_.cap(a.peak_ms,in.cap_ms);
+#if SUPPORT_TRANSFER_STALL_V3
+  if (return_aid && walking_return_observation_.evidence==return_observation_policy::Evidence::MeasuredArcShortfall) {
+    a.main_reserve_ms=walking_main_reserve_.forSide(side);
+    in.cap_ms=in.cap_ms>a.main_reserve_ms ? in.cap_ms-a.main_reserve_ms : 0;
+  }
+#endif
 #endif
 #if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
   in.arrival_bias_j=walking_arrival_feedback_.bias(side,t,lateral_energy::potential(lateral_energy_geometry_,in.target_deg));
@@ -228,6 +234,12 @@ bool ExperimentRunner::tryWalkingEnergy(
   }
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
   if(return_aid){in.arrival_bias_j=0;a.arrival_bias_j=0;}
+#if SUPPORT_TRANSFER_STALL_V3
+  if (return_aid && walking_return_observation_.evidence==return_observation_policy::Evidence::MeasuredArcShortfall && !in.cap_ms) {
+    a.arc_aid.reason=receiving_arc_aid::Reason::NoMainRoom;
+    save();return true;
+  }
+#endif
 #endif
 #elif defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
   // Main-input relocation gets the same envelope as normal ZERO. The
@@ -285,6 +297,9 @@ bool ExperimentRunner::tryWalkingEnergy(
     arc.left_est=left.estimated;arc.right_est=right.estimated;
     arc.left_rate=left.rate_dps;arc.right_rate=right.rate_dps;
     arc.base_j=selected.request_j;arc.target_j=selected.target_j;
+#if SUPPORT_TRANSFER_STALL_V3
+    arc.base_width_ms=width;
+#endif
     a.arc_aid=receiving_arc_aid::evaluate(arc);
     a.base_aid_ms=a.arc_candidate_ms=width;
     a.main_reserve_ms=walking_main_reserve_.forSide(side);
@@ -650,7 +665,11 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
   json+="\"return_budget\":\"explicit_local_rate_energy_reachability_J_only_no_nominal_U_or_passive_reservoir_credit\",\"return_budget_limit_target_fraction\":0.5,\"dropout_budget_limit_target_fraction\":0.25,";
   json+="\"return_then_main\":true,\"main_at_real_zero_after_aid\":true,\"combined_half_cycle_envelope_ms\":80,\"envelope_accounting\":\"accepted_reservation_replaced_by_all_actual_elapsed_software_ms\",";
   json+="\"aid_prediction_semantics\":\"available_J_zero;predicted_arrival_J_means_local_return_demand_fulfillment_not_next_peak\",\"aid_cutoff_at_fresh_mechanical_zero\":true,";
-  json+="\"return_evidence_names\":[\"unavailable\",\"observed_shape\",\"recognition_dropout\",\"range_rejected\",\"observed_unseparated\"],";
+  json+="\"return_evidence_names\":[\"unavailable\",\"observed_shape\",\"recognition_dropout\",\"range_rejected\",\"observed_unseparated\"";
+#if SUPPORT_TRANSFER_STALL_V3
+  json+=",\"measured_arc_shortfall\"";
+#endif
+  json+="],";
 #elif defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
   json+=",\"walking_energy\":{\"revision\":\"walking_return_energy_v17\",\"output_enabled\":true,\"branch\":22,";
   json+="\"selector_revision\":\"walking_return_energy_v17\",\"arrival_feedback\":\"causal_completed_peak_residual_plus_applied_bias_ewma_per_side\",\"arrival_bias_limit_target_fraction\":0.25,\"return_budget\":\"foot_gated_local_rate_energy_loss_extended_to_mechanical_zero_not_identified_potential\",\"return_budget_limit_target_fraction\":0.5,";
@@ -771,6 +790,9 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
     if(a.return_event) extra_table_bytes+=64;
 #endif
+#if SUPPORT_TRANSFER_STALL_V3
+    if(a.return_event) extra_table_bytes+=8;
+#endif
 #endif
   }
   if(!table.finish()){json.fail();return;}
@@ -782,6 +804,9 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     if(!a.return_event)continue;
     String row="{\"row_index\":"+String(i)+",\"arc_aid_reason\":"+String(static_cast<unsigned>(a.arc_aid.reason));
     row+=",\"arc_foot_source\":"+String(a.arc_foot_source)+",\"arc_base_guarded_ms\":"+String(a.base_aid_ms);
+#if SUPPORT_TRANSFER_STALL_V3
+    row+=a.arc_aid.extension_pivot_only?",\"arc_extension_pivot_only\":true":",\"arc_extension_pivot_only\":false";
+#endif
     row+=",\"arc_candidate_guarded_ms\":"+String(a.arc_candidate_ms)+",\"arc_main_reserve_ms\":"+String(a.main_reserve_ms);
     row+=",\"arc_extra_request_j\":"+n(a.arc_aid.extra_j)+",\"arc_terminal_deg\":"+n(a.arc_aid.terminal_deg)+",\"arc_local_s\":"+n(a.arc_aid.horizon_s);
 #if SUPPORT_TRANSFER_ARC_FEEDBACK

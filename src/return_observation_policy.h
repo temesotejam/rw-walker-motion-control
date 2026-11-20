@@ -1,5 +1,9 @@
 #pragma once
 #include "walking_energy_policy.h"
+#if SUPPORT_TRANSFER_STALL_V3
+#include "periodic_foot_state.h"
+#include "support_transfer_plan.h"
+#endif
 
 // v18 trial observer. The IMU evidence and the latest completed camera frame
 // have separate lifetimes. Missing markers never become measured foot angles.
@@ -8,7 +12,7 @@
 namespace return_observation_policy {
 enum class Evidence : uint8_t {
   Unavailable=0, ObservedShape=1, RecognitionDropout=2, RangeRejected=3,
-  ObservedUnseparated=4
+  ObservedUnseparated=4, MeasuredArcShortfall=5
 };
 struct FootFrame {
   uint16_t run_id=0;
@@ -31,6 +35,10 @@ struct Input {
   float peak_deg=NAN,angle_deg=NAN,rate_dps=NAN,target_j=NAN;
   bool active=false;
   FootFrame foot;
+#if SUPPORT_TRANSFER_STALL_V3
+  const periodic_foot::Packet* periodic=nullptr;
+  float fore_aft_deg=NAN, periodic_acceleration_dps2=NAN;
+#endif
 };
 struct Choice {
   bool selected=false;
@@ -70,13 +78,22 @@ class Observer {
     Choice out;
     // Missing identifiers cannot undo an accepted aid for the previous key.
     // An explicit reset or a new nonzero run/peak is required to rearm it.
-    if(!in.run_id || !in.peak_ms){clearMotion();return out;}
+    if(!in.run_id || !in.peak_ms){
+#if SUPPORT_TRANSFER_STALL_V3
+      arc_confirming_=false;
+#endif
+      clearMotion();return out;
+    }
     if(run_!=in.run_id || peak_!=in.peak_ms){reset();run_=in.run_id;peak_=in.peak_ms;}
     out.evidence=assessFoot(in);
     if(out.evidence!=Evidence::Unavailable)out.foot_age_ms=in.now-in.foot.frame_ms;
     if(out.evidence==Evidence::RangeRejected)range_rejected_=true;
     else if(out.evidence==Evidence::ObservedShape || out.evidence==Evidence::ObservedUnseparated)range_rejected_=false;
     out.range_veto=range_rejected_;
+#if SUPPORT_TRANSFER_STALL_V3
+    const auto arc=observeSmallArc(in,out.evidence);
+    if (arc.selected) return arc;
+#endif
 
     const float distance=in.angle_deg*in.side,speed=-in.rate_dps*in.side;
     if(consumed_ || !in.active || (in.side!=1 && in.side!=-1) ||
@@ -126,6 +143,61 @@ class Observer {
     return out;
   }
  private:
+#if SUPPORT_TRANSFER_STALL_V3
+  // A 25 ms pair must show the same receiving sole, decreasing inward speed,
+  // and a projected stop on the departing side of mechanical ZERO twice.
+  Choice observeSmallArc(const Input& in, Evidence evidence) {
+    Choice out;
+    const auto* p=in.periodic;
+    const float speed=-in.rate_dps;
+    const bool approaching=!consumed_ && in.active && in.side==1 && in.sample_us &&
+        in.sample_age_us<=10000 && in.angle_deg>=.35f && in.angle_deg<=12.f &&
+        in.peak_deg-in.angle_deg>=.5f && in.now>=in.peak_ms && in.now-in.peak_ms>=60 &&
+        in.now-in.peak_ms<=800 && speed>=3.f && speed<=35.f &&
+        evidence==Evidence::ObservedUnseparated && in.foot.left_deg>in.foot.right_deg;
+    if (!approaching) arc_confirming_=false;
+    if (!p || !p->count || !p->epoch_us || p->count==arc_packet_) return out;
+    const uint32_t dt=in.sample_us-arc_sample_us_;
+    const bool adjacent=arc_packet_ && p->count-arc_packet_==1 && dt>=15000 && dt<=50000 &&
+        p->scheduled_us-arc_slot_us_==periodic_foot::period_us;
+    // The control core already differentiates live gyro rates at adjacent
+    // periodic frames. It passes that result only on the originating IMU tick.
+    const float deceleration=in.periodic_acceleration_dps2;
+    arc_packet_=p->count; arc_sample_us_=in.sample_us; arc_slot_us_=p->scheduled_us;
+    const bool previous=arc_confirming_;
+    const uint64_t previous_image=arc_image_us_;
+    arc_confirming_=false;
+    const auto& l=p->left;
+    const auto& r=p->right;
+    const uint32_t now_us=in.sample_us+in.sample_age_us;
+    if (!approaching || !std::isfinite(deceleration) || deceleration<60.f || !l.sequence ||
+        l.sequence!=r.sequence || l.sequence!=in.foot.sequence || !l.image_us ||
+        l.image_us!=r.image_us || l.image_us!=in.foot.image_us || l.image_us<p->epoch_us ||
+        p->published_us<l.image_us || p->published_us-l.image_us>periodic_foot::maximum_age_us ||
+        now_us-static_cast<uint32_t>(p->published_us)>periodic_foot::period_us ||
+        now_us-static_cast<uint32_t>(l.image_us)>periodic_foot::maximum_age_us ||
+        !(std::fabs(in.fore_aft_deg)<=10 && std::fabs(l.measured)<=20 && std::fabs(r.measured)<=20 &&
+          l.measured>r.measured && l.measured-r.measured<3 && in.target_j>0 && std::isfinite(in.target_j))) return out;
+    const float stop=speed*speed/(2.f*deceleration);
+    if (stop>=in.angle_deg || support_transfer_plan::supportGap(
+            l.measured,r.measured,in.fore_aft_deg,in.angle_deg)>=0) return out;
+    if (l.image_us<=previous_image) return out;
+    arc_confirming_=true; arc_image_us_=l.image_us;
+    if (!adjacent || !previous) return out;
+    const float entry=support_transfer_plan::arcEntryDeg(-1,l.measured+in.fore_aft_deg);
+    const float c=walking_energy_policy::passiveCoefficients(-1).omega2_j;
+    const float rad=lateral_energy::kRadPerDeg, carry=support_transfer_plan::kCarryDps;
+    const float needed=c*rad*rad*(2*deceleration*(in.angle_deg-entry)-speed*speed+carry*carry);
+    out.request_j=std::fmin(.25f*in.target_j,needed);
+    out.selected=out.request_j>0; out.evidence=Evidence::MeasuredArcShortfall;
+    out.deceleration_dps2=deceleration; out.stopping_distance_deg=stop;
+    out.foot_age_ms=in.now-in.foot.frame_ms;
+    return out;
+  }
+  uint32_t arc_packet_=0,arc_sample_us_=0;
+  uint64_t arc_image_us_=0,arc_slot_us_=0;
+  bool arc_confirming_=false;
+#endif
   void clearPending(){pending_ms_=0;pending_evidence_=Evidence::Unavailable;}
   void clearMotion() {
     anchor_sample_us_=last_sample_us_=last_ms_=0;anchor_speed_=acceleration_=0;

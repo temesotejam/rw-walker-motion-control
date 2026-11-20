@@ -13,7 +13,7 @@ from fixtures.runtime_rwlog import write_fixture
 def main():
     runner = (ROOT / "src/experiment_runner.cpp").read_text(encoding="utf-8")
     begin = runner.index("void ExperimentRunner::observeSupportTransfer(")
-    end = runner.index("\n#endif", begin)
+    end = runner.index("\n}\n#endif", begin) + len("\n}")
     normal = runner[runner.index("void ExperimentRunner::updateEnergyControlAutonomousMotion("):]
     assert normal.index("observeSupportTransfer(t_test_ms") < normal.index("observeInwardStallRescue(")
     with tempfile.TemporaryDirectory() as temp:
@@ -24,7 +24,7 @@ def main():
         footer_end = logger.index("\n}", footer_start)
         (folder / "metadata_footer.inc").write_text(logger[footer_start:footer_end], encoding="utf-8")
         exe = folder / "audit.exe"
-        subprocess.run(["g++", "-std=c++17", "-O2", "-DSUPPORT_TRANSFER_V39=1", "-DFOOT_STABLE40_V36=1",
+        subprocess.run(["g++", "-std=c++17", "-O2", "-DSUPPORT_TRANSFER_V39=1", "-DSUPPORT_TRANSFER_STALL_V3=1", "-DFOOT_STABLE40_V36=1",
                         "-I", str(folder), "-I", str(ROOT / "src"), "-I", str(ROOT / "test/fixtures/arduino"),
                         str(ROOT / "test/fixtures/support_transfer_audit.cpp"), "-o", str(exe)], check=True)
         lines = subprocess.check_output([exe]).splitlines()

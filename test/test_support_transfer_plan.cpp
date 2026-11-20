@@ -1,4 +1,6 @@
 #include "support_transfer_plan.h"
+#define SUPPORT_TRANSFER_STALL_V3 1
+#include "receiving_arc_aid.h"
 #include <cassert>
 #include <cstdio>
 #include <random>
@@ -176,7 +178,40 @@ static void boundedPivotScan() {
   assert(compared>5000 && reversals>200);
 }
 
+static void existingAidTail() {
+  receiving_arc_aid::Input arc;
+  arc.side=-1;arc.observed_shape=true;arc.body_deg=5.00534f;arc.speed_dps=23.22972f;
+  arc.decel_dps2=99.47084f;arc.fore_aft_deg=-.43247f;
+  arc.left_deg=4.10183f;arc.right_deg=-.25981f;
+  arc.left_est=3.9589622f;arc.right_est=-.2565166f;
+  arc.left_rate=-5.71471f;arc.right_rate=.131734f;
+  arc.base_j=.000030077f;arc.target_j=.000432975f;
+  using Reason=receiving_arc_aid::Reason;
+  assert(receiving_arc_aid::evaluate(arc).reason==Reason::UncertainPivot);
+  arc.base_width_ms=2; // Additional torque would begin before the predicted pivot change.
+  assert(receiving_arc_aid::evaluate(arc).reason==Reason::UncertainPivot);
+  arc.base_width_ms=21;
+  const auto out=receiving_arc_aid::evaluate(arc);
+  assert(out.reason==Reason::Eligible && out.extension_pivot_only);
+  assert(std::fabs(out.extra_j-.0000266543f)<1.e-8f);
+  for (unsigned us=21000;us<=150000;us+=500) {
+    const float s=us*.000001f;
+    assert(st::supportGap(arc.left_est+s*arc.left_rate,arc.right_est+s*arc.right_rate,
+                          arc.fore_aft_deg,arc.body_deg-s*arc.speed_dps)<0);
+  }
+  arc.base_width_ms=80;
+  assert(!receiving_arc_aid::evaluate(arc).extension_pivot_only); // No remaining pulse interval.
+  arc.body_deg=7.066f;arc.speed_dps=16.124f;arc.fore_aft_deg=6.032f;
+  arc.left_est=arc.left_deg=5.264f;arc.right_est=arc.right_deg=-6.927f;
+  arc.left_rate=43.707f;arc.right_rate=-70.417f;arc.base_width_ms=25;
+  assert(st::supportGap(arc.left_est+.025f*arc.left_rate,arc.right_est+.025f*arc.right_rate,
+                        arc.fore_aft_deg,arc.body_deg-.025f*arc.speed_dps)<0);
+  // The receiving foot is lower at extension onset, but no longer lower at the horizon.
+  assert(receiving_arc_aid::evaluate(arc).reason==Reason::UncertainPivot);
+}
+
 int main() {
+  existingAidTail();
   lateral_energy::CurrentTable current;
   auto in=approach();
   assert(st::select(current,in).reason==st::Reason::Invalid);
