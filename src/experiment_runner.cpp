@@ -1188,8 +1188,14 @@ const char* ExperimentRunner::energyControlAutonomousPhaseName() const {
   }
 }
 
-bool ExperimentRunner::startEnergyControlAutonomousCapture() {
+bool ExperimentRunner::startEnergyControlAutonomousCapture(bool small_step_baseline) {
+  if (small_step_baseline && !walking_trial::smallStepAllowed(energy_control_autonomous_target_peak_deg_,
+          energy_control_autonomous_input_peak_percent_,energy_control_autonomous_input_current_mA_,
+          energy_control_autonomous_brake_max_ms_,peak_adaptation_enabled_,energy_bridge_enabled_,negative_probe_mode_)) {
+    status_.last_error="small_step_requires_walking_8deg_package"; return false;
+  }
   if (!logger_ || !imu_ || !roller_) return false;
+  if (logger_->downloading()) { status_.last_error="log_download_in_progress"; return false; }
   if (!logger_->ready()) { status_.last_error = "psram_not_ready"; return false; }
   if (!imu_->ok()) { status_.last_error = "imu_not_ready"; return false; }
   if (wheelWorkMode() && energy_control_autonomous_target_peak_deg_==8.f &&
@@ -1305,7 +1311,11 @@ bool ExperimentRunner::startEnergyControlAutonomousCapture() {
   status_.emergency_stop = false;
   status_.last_error = "";
   status_.sync_event_id = 0;
-  beginStartSync(millis());
+  const bool comparison=walking_trial::comparison_enabled && wheelWorkMode() &&
+      energy_control_autonomous_target_peak_deg_==8.f && energy_control_autonomous_input_peak_percent_==0.f;
+  const auto profile=small_step_baseline ? walking_trial::Profile::SmallStep :
+      comparison ? walking_trial::Profile::Turn3 : walking_trial::Profile::None;
+  beginStartSync(millis(),profile);
   return true;
 }
 bool ExperimentRunner::startQIdentCapture(uint8_t q_ident_run_schedule_id) {
@@ -1458,7 +1468,7 @@ void ExperimentRunner::recordV59StateGateEvent(uint32_t crossing_ms, float hprev
   logger_->addCalibrationStateGateEvent(event);
 }
 
-void ExperimentRunner::beginStartSync(uint32_t now_ms) {
+void ExperimentRunner::beginStartSync(uint32_t now_ms, walking_trial::Profile profile) {
 #if WALKING_TURN_OBSERVER
   gait_turn_run_.start(energy_control_autonomous_mode_ && wheelWorkMode() &&
       energy_control_autonomous_target_peak_deg_ == 8.f && energy_control_autonomous_input_peak_percent_ == 0.f);
@@ -1521,7 +1531,7 @@ void ExperimentRunner::beginStartSync(uint32_t now_ms) {
                       energy_control_autonomous_brake_max_ms_, peak_adaptation_enabled_,
                       energy_bridge_enabled_, negative_probe_mode_,
                       energy_control_autonomous_mode_ ? upright_reference_ : upright_reference::Record{},
-                      negative_probe_batch_seed_);
+                      negative_probe_batch_seed_,profile);
   logger_->recordLateralCg(wheelWorkMode() ? lateral_cg_ : lateral_cg::Record{});
   logger_->recordAdaptiveCg(wheelWorkMode() ? adaptive_cg_.snapshot() : lateral_cg::AdaptiveSnapshot{});
   last_log_us_ = 0;
@@ -3491,6 +3501,9 @@ bool ExperimentRunner::recordEnergyControlAutonomousPeak(uint32_t peak_ms, int8_
 __attribute__((noinline)) bool ExperimentRunner::observeInwardStallRescue(
     uint32_t t_test_ms,bool physical_event_suppressed,
     bool peak_just_confirmed,float angle_deg,float rate_dps) {
+#if WALKING_SMALL_STEP_AB
+  if(smallStepBaselineSelected())return false;
+#endif
   const int8_t peak_side=energy_control_autonomous_last_peak_side_;
   const bool scope=wheelWorkMode() && energy_control_autonomous_target_peak_deg_==8.f &&
       energy_control_autonomous_input_peak_percent_==0 &&
@@ -3808,7 +3821,10 @@ void ExperimentRunner::tryFootSupportCandidate(uint32_t t_test_ms,uint32_t sampl
 void ExperimentRunner::tryAngleEarlyCandidate(uint32_t t_test_ms,uint32_t sample_us,
     float angle_deg,float rate_dps) {
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
-  tryFootSupportCandidate(t_test_ms,sample_us,angle_deg,rate_dps);
+#if WALKING_SMALL_STEP_AB
+  if(!smallStepBaselineSelected())
+#endif
+    tryFootSupportCandidate(t_test_ms,sample_us,angle_deg,rate_dps);
 #endif
   // Configured target 8 includes the staged 4.5-to-8-degree startup ramp.
   // Cold eligibility is checked at most every 5 ms near centre. Normal ZERO

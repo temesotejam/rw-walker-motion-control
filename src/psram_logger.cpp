@@ -162,6 +162,7 @@ void PsramLogger::clear() {
   sealed_ = true;
   sample_count_ = 0;
   current_run_id_ = 0;
+  walking_profile_ = walking_trial::Profile::None;
   run_start_us_ = 0;
   run_current_mA_ = 0;
   run_pulse_width_ms_ = 0;
@@ -213,7 +214,7 @@ void PsramLogger::startRun(uint16_t run_id, uint64_t run_start_us, int16_t curre
                              uint16_t brake_max_ms, bool peak_adaptation_enabled,
                              bool energy_bridge_enabled, bool negative_probe_mode,
                              const upright_reference::Record& upright_reference,
-                             uint32_t negative_probe_batch_seed) {
+                             uint32_t negative_probe_batch_seed, walking_trial::Profile walking_profile) {
   if (!ready_ || downloading_) return;
   sealed_ = false;
   sample_count_ = 0;
@@ -239,6 +240,7 @@ void PsramLogger::startRun(uint16_t run_id, uint64_t run_start_us, int16_t curre
   energy_bridge_enabled_ = energy_bridge_enabled;
   negative_probe_mode_ = negative_probe_mode;
   negative_probe_batch_seed_ = negative_probe_batch_seed;
+  walking_profile_ = walking_profile;
   run_upright_reference_ = upright_reference;
   run_lateral_cg_ = lateral_cg::Record{};
   run_adaptive_cg_ = lateral_cg::AdaptiveSnapshot{};
@@ -517,6 +519,10 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
   json += "\"energy_control_v0_output_policy\":\"sole_actual_output_path;accepted_zero_cross_only;no_braking;all_other_paths_fail_closed\",";
   const bool inverse_mode = energy_bridge_enabled_ && !negative_probe_mode_ &&
       autonomous_brake_max_ms_ == 25;
+  const bool small_step = walking_profile_ == walking_trial::Profile::SmallStep;
+#if WALKING_SMALL_STEP_AB
+  json += "\"walking_profile\":\"" + String(walking_trial::name(walking_profile_)) + "\",";
+#endif
   const bool work_mode = energy_bridge_enabled_ && !negative_probe_mode_ &&
       autonomous_brake_max_ms_ == 40;
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
@@ -525,19 +531,19 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
   const bool walking_energy_mode=false;
 #endif
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
-  const bool early_energy_mode=walking_energy_mode;
+  const bool early_energy_mode=walking_energy_mode && !small_step;
 #else
   const bool early_energy_mode=false;
 #endif
 #if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
-  const bool return_energy_mode=walking_energy_mode;
+  const bool return_energy_mode=walking_energy_mode && !small_step;
 #else
   const bool return_energy_mode=false;
 #endif
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
   const char* walking_energy_revision=
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
-      "walking_energy_admission_v19";
+      small_step ? walking_energy_policy::kRevision : "walking_energy_admission_v19";
 #else
       "walking_energy_transfer_v18";
 #endif
@@ -549,18 +555,18 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
   if (work_mode) {
     if(walking_energy_mode){
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
-      const bool walking_transfer_mode=true;
+      const bool walking_transfer_mode=!small_step;
 #else
       const bool walking_transfer_mode=false;
 #endif
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
-      const bool walking_admission_mode=true;
+      const bool walking_admission_mode=!small_step;
 #else
       const bool walking_admission_mode=false;
 #endif
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
-      const bool early_budget_mode=true;
-      const char* active_walking_revision=walking_admission_mode ? "walking_energy_admission_v19" : walking_transfer_mode ? "walking_energy_transfer_v18" : return_energy_mode ? "walking_return_energy_v17" : walking_energy_policy_v15::kRevision;
+      const bool early_budget_mode=!small_step;
+      const char* active_walking_revision=small_step ? walking_energy_policy::kRevision : walking_admission_mode ? "walking_energy_admission_v19" : walking_transfer_mode ? "walking_energy_transfer_v18" : return_energy_mode ? "walking_return_energy_v17" : walking_energy_policy_v15::kRevision;
 #else
       const bool early_budget_mode=false;
       const char* active_walking_revision=walking_energy_policy::kRevision;
@@ -578,15 +584,18 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
         json += "\"" + String(name) + "\":{\"active\":false,\"scope\":\"inactive_legacy_v13_or_earlier\",\"width_sizing_active\":false},";
       }
       json += "\"peak_mpc\":{\"active\":false,\"scope\":\"inactive_legacy\"},";
-      json += "\"foot_timing\":{\"active\":true,\"policy\":\"" + String(walking_transfer_mode ? "fresh_raw_foot_shape_or_bounded_recognition_dropout_IMU_return_aid;two_strong_deceleration_windows_for_dropout;timestamp_zero_frame_and_5deg_range_allowance_required;no_stale_angle_substitution;one_aid_per_peak;actual_ZERO_main_recomputed;combined80ms_envelope" : return_energy_mode ? "fresh_foot_amount_gates_local_return_work_budget;centre_not_required;all_rescue_energy_inverse_with_main80ms_envelope;no_ms_addition" : early_budget_mode ? "foot_pose_and_generic_early_timing;no_additive_width;generic_early_and_foot_use_same_existing_experimental80ms_ceiling;postguard_full_predicted_budget_required;infeasible_early_defers_without_consuming_normal_opportunity;stall_rescue15ms_is_separate_legacy_trial;no_reversal_cutoff" : "foot_pose_timing_only;no_additive_width_or_forced_input;normal_and_foot_energy_cap80ms;nonfoot_early_and_stall_rescue_cap15ms;guards_can_shorten") + "\"},";
+      if (small_step) json += "\"foot_timing\":{\"active\":false,\"policy\":\"feet_measured_for_comparison;v14_imu_phase_lead\"},";
+      else json += "\"foot_timing\":{\"active\":true,\"policy\":\"" + String(walking_transfer_mode ? "fresh_raw_foot_shape_or_bounded_recognition_dropout_IMU_return_aid;two_strong_deceleration_windows_for_dropout;timestamp_zero_frame_and_5deg_range_allowance_required;no_stale_angle_substitution;one_aid_per_peak;actual_ZERO_main_recomputed;combined80ms_envelope" : return_energy_mode ? "fresh_foot_amount_gates_local_return_work_budget;centre_not_required;all_rescue_energy_inverse_with_main80ms_envelope;no_ms_addition" : early_budget_mode ? "foot_pose_and_generic_early_timing;no_additive_width;generic_early_and_foot_use_same_existing_experimental80ms_ceiling;postguard_full_predicted_budget_required;infeasible_early_defers_without_consuming_normal_opportunity;stall_rescue15ms_is_separate_legacy_trial;no_reversal_cutoff" : "foot_pose_timing_only;no_additive_width_or_forced_input;normal_and_foot_energy_cap80ms;nonfoot_early_and_stall_rescue_cap15ms;guards_can_shorten") + "\"},";
       json += "\"work_control_branch_codes\":" + String(walking_admission_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\",\"21\":\"energy_pulse_lifecycle_v16\",\"22\":\"walking_return_energy_v17\",\"23\":\"walking_energy_transfer_v18\",\"24\":\"walking_energy_admission_v19\"}" : walking_transfer_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\",\"21\":\"energy_pulse_lifecycle_v16\",\"22\":\"walking_return_energy_v17\",\"23\":\"walking_energy_transfer_v18\"}" : pulse_lifecycle_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\",\"21\":\"energy_pulse_lifecycle_v16\",\"22\":\"walking_return_energy_v17\"}" : early_budget_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\"}" : "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\"}") + ",";
       json += "\"pulse_lifecycle\":{\"active\":" + String(pulse_lifecycle_mode ? "true" : "false") + ",\"revision\":\"energy_pulse_lifecycle_v16\",\"selector_revision\":\"" + String(active_walking_revision) + "\",\"energy_model_changed\":" + String(return_energy_mode ? "true" : "false") + ",\"clock\":\"fresh_millis_at_update;queue_acceptance_start_to_stop_request\",\"setCurrentMa_success\":\"desired_current_queued_or_already_requested_not_bus_ACK_or_physical_current_edge\",\"completion\":\"analytic_signed_Q_and_provisional_work_from_actual_software_elapsed_no_duration_clamp\",\"physical_delivery_measured\":false},";
       json += "\"early_energy_main\":{\"active\":" + String(early_budget_mode ? "true" : "false") + ",\"revision\":\"" + String(active_walking_revision) + "\",\"selection\":\"" + String(early_budget_mode ? "least_integer_width_with_predicted_work_at_least_request;cap_limited_retains_unmet;surplus_only_coasts" : "v14_nearest_energy_error") + "\",\"postguard_budget_required\":" + String(early_budget_mode ? "true" : "false") + ",\"experimental_ceiling_ms\":80,\"ceiling_physics_derived\":false,\"reversal_cutoff_active\":false,\"mechanical_zero_cutoff_active\":" + String(walking_transfer_mode ? "true" : "false") + ",\"physical_zero_deficit_guaranteed\":false},";
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
-      json += "\"walking_transfer\":{\"active\":true,\"revision\":\"" + String(active_walking_revision) + "\",\"branch\":" + String(walking_admission_mode ? 24 : 23) + ",\"return_aid_request\":\"local_return_demand_only;minimum_integer_predicted_work_reaches_request;nominal_potential_not_credited\",\"return_aid_fulfillment\":\"local_return_demand_prediction_not_next_peak_arrival_energy\",\"zero_main\":\"recompute_full_arrival_deficit_at_actual_ZERO_using_fresh_rate_and_predicted_actual_elapsed_residual_current\",\"combined_halfcycle_ceiling_ms\":80,\"ceiling_physics_derived\":false,\"assisted_halfcycle_used_for_arrival_bias_learning\":false,\"dropout_budget_limit_target_fraction\":0.25,\"observed_shape_budget_limit_target_fraction\":0.5,\"dropout_evidence\":\"fresh_same_run_raw_frame;valid_timestamp_frame_zero;missing_marker;no_known_range_reject;two_20ms_deceleration_windows_at_least60dps2;speed_loss_at_least4dps;12ms_stopping_deficit\",\"missing_angles_forward_filled\":false,\"mechanical_zero_cutoff_reason\":5,\"cutoff_semantics\":\"software_queue_stop_request_at_mechanical_zero_not_measured_physical_current_edge\",\"physical_recovery_validated\":false},";
+      if (small_step) json += "\"walking_transfer\":{\"active\":false,\"branch\":19},";
+      else json += "\"walking_transfer\":{\"active\":true,\"revision\":\"" + String(active_walking_revision) + "\",\"branch\":" + String(walking_admission_mode ? 24 : 23) + ",\"return_aid_request\":\"local_return_demand_only;minimum_integer_predicted_work_reaches_request;nominal_potential_not_credited\",\"return_aid_fulfillment\":\"local_return_demand_prediction_not_next_peak_arrival_energy\",\"zero_main\":\"recompute_full_arrival_deficit_at_actual_ZERO_using_fresh_rate_and_predicted_actual_elapsed_residual_current\",\"combined_halfcycle_ceiling_ms\":80,\"ceiling_physics_derived\":false,\"assisted_halfcycle_used_for_arrival_bias_learning\":false,\"dropout_budget_limit_target_fraction\":0.25,\"observed_shape_budget_limit_target_fraction\":0.5,\"dropout_evidence\":\"fresh_same_run_raw_frame;valid_timestamp_frame_zero;missing_marker;no_known_range_reject;two_20ms_deceleration_windows_at_least60dps2;speed_loss_at_least4dps;12ms_stopping_deficit\",\"missing_angles_forward_filled\":false,\"mechanical_zero_cutoff_reason\":5,\"cutoff_semantics\":\"software_queue_stop_request_at_mechanical_zero_not_measured_physical_current_edge\",\"physical_recovery_validated\":false},";
 #endif
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
-      json += "\"energy_admission\":{\"active\":true,\"revision\":\"optional_main_empirical_support_v19\",\"optional_only\":true,\"passive_rate_support_required\":true,\"work_rate_support_required\":true,\"charge_support_required\":true,\"ordinary_zero_and_aid_exempt\":true,\"exemption_semantics\":\"no_additional_optional_gate_veto;existing_energy_return_evidence_health_freshness_wheel_and_shared_envelope_gates_remain\",\"request_j_changed\":false,\"selected_width_changed\":false,\"selected_current_changed\":false,\"negative_no_joint_support\":true,\"negative_policy\":\"no_overlap_of_existing_negative_passive_and_work_rate_support;optional_main_defers_to_real_ZERO;ordinary_ZERO_and_explicit_return_aid_keep_their_own_gates\",\"rejected_optional_consumes_ZERO\":false,\"unsupported_mask_bits\":{\"1\":\"passive_rate\",\"2\":\"work_rate\",\"4\":\"charge\"},\"reason_names\":[\"allowed\",\"ordinary_zero_exempt\",\"explicit_return_aid_exempt\",\"invalid_scope\",\"invalid_decision\",\"no_positive_covered_budget\",\"passive_rate_unsupported\",\"work_rate_unsupported\",\"charge_unsupported\"],\"coverage_semantics\":\"inherited_empirical_marginal_ranges_not_joint_validation_or_prediction_accuracy_guarantee\"},";
+      if (small_step) json += "\"energy_admission\":{\"active\":true,\"revision\":\"small_step_v14_current_guards\",\"branch\":19,\"early_cap_ms\":15,\"ordinary_cap_ms\":80,\"early_positive_work_required\":true,\"early_charge_support_required\":true,\"rejected_optional_consumes_ZERO\":false,\"reason_names\":[\"allowed\",\"ordinary_zero_exempt\",\"explicit_return_aid_exempt\",\"invalid_scope\",\"invalid_decision\",\"no_positive_covered_budget\",\"passive_rate_unsupported\",\"work_rate_unsupported\",\"charge_unsupported\",\"no_positive_small_step_work\"]},";
+      else json += "\"energy_admission\":{\"active\":true,\"revision\":\"optional_main_empirical_support_v19\",\"optional_only\":true,\"passive_rate_support_required\":true,\"work_rate_support_required\":true,\"charge_support_required\":true,\"ordinary_zero_and_aid_exempt\":true,\"exemption_semantics\":\"no_additional_optional_gate_veto;existing_energy_return_evidence_health_freshness_wheel_and_shared_envelope_gates_remain\",\"request_j_changed\":false,\"selected_width_changed\":false,\"selected_current_changed\":false,\"negative_no_joint_support\":true,\"negative_policy\":\"no_overlap_of_existing_negative_passive_and_work_rate_support;optional_main_defers_to_real_ZERO;ordinary_ZERO_and_explicit_return_aid_keep_their_own_gates\",\"rejected_optional_consumes_ZERO\":false,\"unsupported_mask_bits\":{\"1\":\"passive_rate\",\"2\":\"work_rate\",\"4\":\"charge\"},\"reason_names\":[\"allowed\",\"ordinary_zero_exempt\",\"explicit_return_aid_exempt\",\"invalid_scope\",\"invalid_decision\",\"no_positive_covered_budget\",\"passive_rate_unsupported\",\"work_rate_unsupported\",\"charge_unsupported\"],\"coverage_semantics\":\"inherited_empirical_marginal_ranges_not_joint_validation_or_prediction_accuracy_guarantee\"},";
       json += "\"fore_aft_motion_guard\":{\"active\":true,\"revision\":\"fore_aft_motion_guard_v19\",\"interpretation\":\"provisional_motion_envelope_not_identified_energy_stability_or_contact_limit\",\"angle_reference\":\"run_start_relative_fore_aft_gravity_projection\",\"rate\":\"bias_corrected_projected_gravity_angle_derivative\",\"policy\":\"outward_candidate_veto;sustained_outward_gain_stop;invalid_or_stale_sample_stop;independent_absolute_tilt_stop_retained\",\"few_degree_static_pose_rejected\":false,\"physical_limit_identified\":false,\"inertia_identified\":false,\"energy_model_identified\":false,\"corrective_work_commanded\":false,\"fall_prevention_guaranteed\":false,\"numeric_limits\":\"see_walking_energy_fore_aft_motion_guard_detail\"},";
 #endif
       json += "\"wheel_work_model_interpretation\":\"passive_rate_and_pulse_Q_effective_arrival_surrogates;no_measured_body_inertia;no_measured_actuator_efficiency;no_new_pulse_coast_can_retain_current_and_stored_energy;no_closed_loop_validation_claim\",";
@@ -645,9 +654,10 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
   }
   json += "\"energy_control_autonomous_policy\":\"" + String(
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
-      walking_energy_mode ? "MEKF_events;v19_optional_main_requires_passive_rate_work_rate_and_charge_support;unsupported_optional_sends_nothing_and_preserves_real_ZERO;ordinary_ZERO_and_explicit_return_aid_exempt_from_optional_gate;selected_J_width_current_unchanged;v18_aid_only_no_potential_credit_and_fresh_ZERO_recompute_retained;combined_halfcycle80ms_experimental;assisted_arrivals_excluded_from_bias_learning;fore_aft_provisional_motion_envelope_veto_and_sustained_stop;physical_zero_deficit_not_guaranteed" :
+      small_step ? "MEKF_events;v14_nearest_energy_error;pre_ZERO_15ms_cap;fresh_motion_and_positive_work_with_supported_charge;accepted_early_uses_one_main;v19_fore_aft_guards" :
+      walking_energy_mode && !small_step ? "MEKF_events;v19_optional_main_requires_passive_rate_work_rate_and_charge_support;unsupported_optional_sends_nothing_and_preserves_real_ZERO;ordinary_ZERO_and_explicit_return_aid_exempt_from_optional_gate;selected_J_width_current_unchanged;v18_aid_only_no_potential_credit_and_fresh_ZERO_recompute_retained;combined_halfcycle80ms_experimental;assisted_arrivals_excluded_from_bias_learning;fore_aft_provisional_motion_envelope_veto_and_sustained_stop;physical_zero_deficit_not_guaranteed" :
 #elif defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
-      walking_energy_mode ? "MEKF_events;v18_local_return_aid_only_no_nominal_potential_credit;fresh_raw_shape_or_bounded_IMU_recognition_dropout;actual_ZERO_recomputes_full_arrival_request_with_fresh_rate_and_elapsed_current;aid_preserves_normal_ZERO_opportunity;combined_halfcycle80ms_experimental;assisted_arrivals_excluded_from_bias_learning;mechanical_zero_software_queue_cutoff;physical_zero_deficit_not_guaranteed" :
+      walking_energy_mode && !small_step ? "MEKF_events;v18_local_return_aid_only_no_nominal_potential_credit;fresh_raw_shape_or_bounded_IMU_recognition_dropout;actual_ZERO_recomputes_full_arrival_request_with_fresh_rate_and_elapsed_current;aid_preserves_normal_ZERO_opportunity;combined_halfcycle80ms_experimental;assisted_arrivals_excluded_from_bias_learning;mechanical_zero_software_queue_cutoff;physical_zero_deficit_not_guaranteed" :
 #endif
       return_energy_mode ? "MEKF_events;v17_causal_per_side_arrival_residual_feedback;foot_gated_local_return_energy_budget;least_integer_energy_width;all_rescue_cap80_experimental;physical_zero_deficit_not_guaranteed" : early_energy_mode
       ? "MEKF_events;v14_frozen_energy_terms;positive_request_uses_least_integer_width_with_W_at_least_request;generic_and_foot_early_use_same_experimental80ms_ceiling;postguard_early_full_budget_required_or_defer_without_consuming_normal;rescue15ms_separate_legacy_trial;no_reversal_cutoff;cap_limited_unmet_is_explicit;no_physical_zero_deficit_guarantee"
@@ -668,7 +678,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
       : "omega_rad_per_s;effective_energy_J;Q_log_mA_s;Q_fit_A_s;time_ms") + "\",";
   json += "\"lateral_energy_formula\":\"" + String(
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
-      walking_energy_mode ? "aid_available=0;aid_request=bounded_local_return_demand;nominal_U_diagnostic_not_aid_credit;aid_width=min_integer_W_ge_aid_request_else_remaining_cap;actual_ZERO_Eavailable=max(0,U_at_fresh_ZERO_sample+effective_rate_energy+offset+clamped_side_bias);ZERO_request=max(0,Utarget+C+R-Eavailable);ZERO_width=min_integer_W_ge_request_else_remaining_cap;combined_software_elapsed_envelope80ms;no_physical_U_or_inertia_identification" :
+      walking_energy_mode && !small_step ? "aid_available=0;aid_request=bounded_local_return_demand;nominal_U_diagnostic_not_aid_credit;aid_width=min_integer_W_ge_aid_request_else_remaining_cap;actual_ZERO_Eavailable=max(0,U_at_fresh_ZERO_sample+effective_rate_energy+offset+clamped_side_bias);ZERO_request=max(0,Utarget+C+R-Eavailable);ZERO_width=min_integer_W_ge_request_else_remaining_cap;combined_software_elapsed_envelope80ms;no_physical_U_or_inertia_identification" :
 #endif
       return_energy_mode ? "Eavailable=max(0,U_nominal+effective_rate_energy+offset+clamped_side_bias);request=max(0,Utarget+C+R-Eavailable,clamped_return_work);return_work=b_side*rad_per_deg^2*max(0,2*local_deceleration*distance-rate_dps^2);width=min_integer_W_ge_request_else_cap;no_physical_U_or_inertia_identification" : early_energy_mode
       ? "Eavailable=U(theta)+b_side*omega_rad^2+a_side*min(1,rate_dps/20)^2;paired_common_and_redistribution_as_v14;request=max(0,Utarget+C+R-Eavailable);W=alpha_side*omega_rad*Q_As+beta_side*Q_As^2;width=min_integer_with_W_at_least_request_else_cap;request0_coasts;early_admission=valid_and_noncoast_and_positive_width_and_nonsaturated_and_actual_guarded_W_plus_1e-9J_at_least_request;unmet=max(0,request-W);Earrival=Eavailable+W"
@@ -691,7 +701,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
   json += "\"energy_request_audit_revision\":\"" + String(walking_energy_mode ? walking_energy_revision : "unrestricted_inverse_v1_20261014") + "\",";
   json += "\"energy_request_audit_semantics\":\"" + String(
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
-      walking_energy_mode ? "aid_request_and_unmet_are_local_return_demand_only;aid_available_zero;potential_is_diagnostic_and_not_credited;aid_predicted_energy_and_elapsed_arrival_are_local_demand_fulfillment_not_next_peak_arrival;actual_ZERO_recomputes_full_arrival_request_with_new_rate_and_actual_elapsed_current;completion_Q_and_work_use_software_queue_timing_not_physical_edges;assisted_halfcycles_excluded_from_arrival_bias_learning;detailed_role_in_walking_energy_records" :
+      walking_energy_mode && !small_step ? "aid_request_and_unmet_are_local_return_demand_only;aid_available_zero;potential_is_diagnostic_and_not_credited;aid_predicted_energy_and_elapsed_arrival_are_local_demand_fulfillment_not_next_peak_arrival;actual_ZERO_recomputes_full_arrival_request_with_new_rate_and_actual_elapsed_current;completion_Q_and_work_use_software_queue_timing_not_physical_edges;assisted_halfcycles_excluded_from_arrival_bias_learning;detailed_role_in_walking_energy_records" :
 #endif
       walking_energy_mode
       ? "delta_energy_required=target+paired_common+redistribution-available;commanded_deficit=max(0,delta);predicted_input_work=empirical_W_of_signed_pulse_Q;predicted_energy=available+work;unapplied=max(0,request-actual_guarded_work);coast_Q_and_new_work_zero_not_zero_residual_current;kinetic_energy_column_is_effective_rate_term_not_physical_K;predicted_loss_is_incoming_discrepancy_not_measured_dissipation;detailed_paired_terms_in_walking_energy_records"
@@ -725,7 +735,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
   json += "\"side_response_correction_direction_policy_unchanged\":false,";
   json += "\"energy_control_autonomous_state_machine\":\"" + String(
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
-      walking_energy_mode ? "IDLE->STRONG_START_KICK->WAIT_FIRST_PEAK->ENERGY_CONTROL->HOLD;return_aid_preserves_WAIT_ZERO_CROSS;one_aid_and_one_actual_ZERO_main_per_peak_share80ms;ZERO_cuts_aid_before_fresh_main_selection;STOP_only_abnormal" :
+      walking_energy_mode && !small_step ? "IDLE->STRONG_START_KICK->WAIT_FIRST_PEAK->ENERGY_CONTROL->HOLD;return_aid_preserves_WAIT_ZERO_CROSS;one_aid_and_one_actual_ZERO_main_per_peak_share80ms;ZERO_cuts_aid_before_fresh_main_selection;STOP_only_abnormal" :
 #endif
       "IDLE->STRONG_START_KICK->WAIT_FIRST_PEAK->ENERGY_CONTROL->HOLD;physical_halfcycle=WAIT_PEAK->WAIT_ZERO_CROSS->PULSE_ACTIVE->WAIT_PEAK;STOP_only_abnormal") + "\",";
   json += "\"physical_event_policy\":\"peak_zero_pulse_halfcycle_v5\",";
@@ -742,9 +752,9 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
       negative_probe_batch::kDurationMs : work_mode ? Config::WHEEL_WORK_CONTROL_DURATION_MS : Config::ENERGY_CONTROL_AUTONOMOUS_DURATION_MS) + ",";
   json += "\"energy_control_autonomous_free_model\":\"" + String(
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
-      walking_energy_mode ? "walking_energy_admission_v19:unchanged_v18_J_and_width;aid_available_zero;nominal_U_diagnostic_only_for_aid;ZERO_effective_rate_energy+offset+causal_side_bias;optional_main_empirical_support_gate;fore_aft_guard_is_motion_envelope_not_energy_identification" :
+      walking_energy_mode && !small_step ? "walking_energy_admission_v19:unchanged_v18_J_and_width;aid_available_zero;nominal_U_diagnostic_only_for_aid;ZERO_effective_rate_energy+offset+causal_side_bias;optional_main_empirical_support_gate;fore_aft_guard_is_motion_envelope_not_energy_identification" :
 #elif defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
-      walking_energy_mode ? "walking_energy_transfer_v18:aid_available_zero;nominal_U_diagnostic_only_for_aid;ZERO_effective_rate_energy+offset+causal_side_bias;local_return_demand_is_not_identified_potential_or_next_peak_energy" :
+      walking_energy_mode && !small_step ? "walking_energy_transfer_v18:aid_available_zero;nominal_U_diagnostic_only_for_aid;ZERO_effective_rate_energy+offset+causal_side_bias;local_return_demand_is_not_identified_potential_or_next_peak_energy" :
 #endif
       return_energy_mode ? "walking_return_energy_v17:nominal_U+effective_rate_energy+offset+causal_side_bias;local_return_loss_budget_is_not_identified_potential" : early_energy_mode
       ? "walking_early_energy_main_v15:unchanged_v14_U(theta)+b_side*omega_rad^2+a_side*min(1,rate_dps/20)^2;effective_passive_arrival_not_physical_kinetic_energy;nominal_zero_CG"

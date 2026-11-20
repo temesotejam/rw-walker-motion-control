@@ -67,6 +67,7 @@ class WebUi {
   bool start_peak_adaptation_enabled_ = true;
   bool start_energy_bridge_enabled_ = true;
   bool start_negative_probe_mode_ = false;
+  bool start_small_step_baseline_ = false;
   float start_target_deg_ = Config::ENERGY_CONTROL_AUTONOMOUS_DEFAULT_TARGET_PEAK_DEG;
   bool start_submitted_ = false, cancel_sent_ = false;
 };

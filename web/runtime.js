@@ -36,7 +36,7 @@ let brakeInitialized = false, brakeBootId = null, requestedBrakeMaxMs = null;
 const brakeChoices = [0, 20, 50];
 const negativeWidthChoices = [0, 15, 20, 25, 30, 40, 50];
 let adaptationInitialized = false, adaptationBootId = null, requestedAdaptation = null;
-let modelInitialized = false, modelBootId = null, requestedEnergyModel = null;
+let modelInitialized = false, modelBootId = null, requestedEnergyModel = null, requestedSmallStep = false;
 const validInputCurrent = value => Number.isInteger(value) && value >= 100 && value <= 1200 && value % 10 === 0;
 const validInputPercent = value => value === 0;
 const nap = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -142,6 +142,10 @@ function controls() {
   $('work-start-10').disabled = $('work-start').disabled;
   $('work-start-12').disabled = $('work-start').disabled;
   if (latest?.foot_control_required && !latest.foot_control_ready) $('work-start').disabled = true;
+  const compare = latest?.diagnostic_build_id === 'walking-support-transfer-v39-smallstep-ab';
+  $('small-step-start').hidden = !compare;
+  $('small-step-start').disabled = !compare || $('work-start').disabled;
+  $('work-start').textContent = compare ? 'turn3 支持移行で30秒測定（±8°）' : '目標±8°で30秒測定';
   $('work-start-status').textContent = !fresh ? '±8°を開始できません：本体との通信を確認してください。' :
     latest.running ? '±8°を開始できません：測定中です。' :
     busy || transferRunning ? '±8°を開始できません：処理の完了を待っています。' :
@@ -204,6 +208,7 @@ function renderOffline() {
     : `目標角度：${requestedTargetDeg}°（ZEROクロスで入力時間を計算）`;
   $('run-percent').textContent = requestedInputPercent === null
     ? '通常入力はZEROクロスで行います。'
+    : requestedSmallStep ? '開始要求：v14式で次ピークのエネルギー誤差から入力を選択'
     : requestedEnergyModel === 'work_control' && requestedTargetDeg === 8 && walkingEnergyTrial()
       ? walkingTransferTrial() ? '開始要求：戻りを救済し、実ZEROクロスで主入力を再計算' : '開始要求：左右の不足エネルギーから入力時間を選択'
     : requestedEnergyModel === 'work_control'
@@ -211,6 +216,7 @@ function renderOffline() {
       : `開始要求：ZEROクロスで${requestedInputCurrentMa} mA、入力時間はエネルギーから計算`;
   $('run-brake').textContent = requestedBrakeMaxMs === null
     ? '負側ブレーキ上限はWeb復帰後に確認します。'
+    : requestedSmallStep ? '開始要求：前倒し入力は最大15 ms、通常のZERO入力は最大80 ms'
     : requestedEnergyModel === 'work_control' && requestedTargetDeg === 8 && walkingEnergyTrial()
       ? walkingTransferTrial() ? '開始要求：救済と主入力を合わせて半周期80ms以内の試験範囲' : '開始要求：主入力・救済とも最大80msの試験範囲'
     : requestedEnergyModel === 'work_control' ? '開始要求：負側はエネルギー差から選択。上限は25 msから段階的に調整'
@@ -221,6 +227,7 @@ function renderOffline() {
       : `開始要求：負側ブレーキ上限 ${requestedBrakeMaxMs} ms`;
   $('run-model').textContent = requestedEnergyModel === 'bridge'
     ? '開始要求：旧到達角予測をエネルギーに換算（逆入力なし）'
+    : requestedSmallStep ? '開始要求：v14式 小歩幅。足角度は比較用に記録します。'
     : requestedEnergyModel === 'work_control' && requestedTargetDeg === 8 && walkingTransferTrial()
       ? walkingAdmissionTrial() ? '開始要求：前倒し候補のモデル支持を確認し、範囲外はZEROで再評価。前後の持続逸脱では入力停止'
         : '開始要求：救済は戻りの不足分、主入力は次ピークの不足分から選択'
@@ -332,7 +339,10 @@ function render(s) {
       (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '') +
       (fast ? ' 最初はモータを開始せず、足角度と画像の更新を確認してください。画像更新は目標' + format(s.foot?.target_fps ?? 15,0) + 'fpsで、実際の更新速度と遅延は下に表示します。時刻差はdriver基準で、露光時刻との対応は未校正です。' : '');
     const turnVersion = /^walking-support-transfer-v39-(turn[123])$/.exec(s.diagnostic_build_id);
-    if (turnVersion) {
+    if (s.diagnostic_build_id === 'walking-support-transfer-v39-smallstep-ab') {
+      $('work-title').textContent = '歩行制御の比較（±8°・30秒）';
+      $('work-description').textContent = 'v14式 小歩幅は、胴体が中心を通過する前に不足エネルギーに応じて最長15 ms通電します。turn3 支持移行は、左足へ支持を移すときの失速を予測して補助します。どちらも同じ足角測定と姿勢監視を使います。選んだ方式をRWLOGに保存します。';
+    } else if (turnVersion) {
       $('work-title').textContent = '歩行のエネルギー制御（' + turnVersion[1] + '・左右の足運びと旋回・30秒）';
       $('work-description').textContent += ' ±8°歩行では、一往復ごとに足の前振れと相対方位を測ります。右足の前振れ不足と負方向の旋回が続くと、実測で右足が振り出される半周期には通常入力の仕事を加え、左足が振り出される半周期には十分な揺れがあるときに仕事を減らします。補正前後の幅はRWLOGに記録します。';
     } else if (s.diagnostic_build_id === 'walking-support-transfer-v39-carry2') {
@@ -426,6 +436,7 @@ function render(s) {
       : s.energy_model === 'bridge_inverse' ? '今回の予測式：次ピークの位置エネルギーから負側入力時間を選択'
       : s.energy_model === 'bridge' ? '今回の予測式：旧到達角予測をエネルギーに換算' : '今回の予測式：二次エネルギー式'
     : '予測式は測定開始時に確定します。';
+  renderWalkingProfile(s.walking_profile);
   $('right').textContent = f.right_valid && (!stale || terminal) ? format(f.right_deg) + '°' : '—';
   $('left').textContent = f.left_valid && (!stale || terminal) ? format(f.left_deg) + '°' : '—';
   $('fps').textContent = terminal ? '停止中' : `${format(stale ? 0 : f.fps, 1)} / ${format(f.target_fps ?? 15,0)} fps`;
@@ -496,6 +507,7 @@ async function refreshStatus(force) {
       setOffline(0);
       $('connection').textContent = '接続中 · 測定状態を自動更新';
       $('state').textContent = s.state;
+      renderWalkingProfile(s.walking_profile);
       $('remaining').textContent = format(s.remaining_ms / 1000, 1) + ' s';
       $('pitch').textContent = format(s.pitch_deg) + '°';
       $('current').textContent = `${s.motor_mA} / ${s.actual_mA} mA`;
@@ -567,8 +579,19 @@ async function poll() {
   catch (error) { $('connection').textContent = '画面更新のエラー（自動再試行）'; }
   finally { setTimeout(poll, statusPollDelayMs()); }
 }
-async function startOfflineRun(isBatchPackage = false, forcedModel = null, workTarget = 8) {
+function renderWalkingProfile(profile) {
+  if (profile === 'v14_small_step') {
+    $('run-percent').textContent = 'v14式 小歩幅。胴体角と角速度から前倒し時点を決めます。';
+    $('run-model').textContent = '次のピークに必要な仕事から通電幅を選びます。';
+    $('run-brake').textContent = '前倒し入力は最長15 msです。';
+    $('run-adaptation').textContent = '左右のピークをエネルギー計算に使います。';
+  } else if (profile === 'turn3') {
+    $('run-percent').textContent = 'turn3 支持移行。左へ戻るときの補助と、中心通過後の主入力を選びます。';
+  }
+}
+async function startOfflineRun(isBatchPackage = false, forcedModel = null, workTarget = 8, smallStep = false) {
   if (commandInFlight || offlineMode) return;
+  if (smallStep && ($('small-step-start').disabled || forcedModel !== 'work_control' || workTarget !== 8)) return;
   const extendedPackage = forcedModel === 'bridge_probe_extended';
   const positiveCurrentPackage = forcedModel === 'bridge_probe_positive_current';
   const batchPackage = isBatchPackage || extendedPackage || positiveCurrentPackage;
@@ -606,11 +629,13 @@ async function startOfflineRun(isBatchPackage = false, forcedModel = null, workT
   requestedInputCurrentMa = inputCurrentMa;
   requestedBrakeMaxMs = brakeMaxMs;
   requestedEnergyModel = energyModel;
+  requestedSmallStep = smallStep;
   const runLabel = positiveCurrentPackage ? '正側300・350・400 mAの一括実験' : extendedPackage ? '負側30・35・40 msの一括実験' : isBatchPackage ? '負側5条件の一括実験' :
-    workPackage ? '固定脚・ホイール仕事に基づく制御' : inversePackage ? '固定脚・負側のエネルギー制御' : '左右揺動エネルギー制御';
+    smallStep ? 'v14式 小歩幅' : workPackage ? 'ホイール仕事に基づく制御' : inversePackage ? '固定脚・負側のエネルギー制御' : '左右揺動エネルギー制御';
   commandInFlight = true; setOffline(latest?.foot_periodic ? 0 : (batchPackage || workPackage ? 50000 : 30000)); $('message').textContent = `${runLabel}（目標${target}°・${inputCurrentMa} mA）の開始要求を送信中…`;
   try {
-    await request(`/start-energy-control-autonomous?target_deg=${target}&input_peak_percent=${inputPercent}&input_current_mA=${inputCurrentMa}&brake_max_ms=${brakeMaxMs}&peak_adaptation=${adaptationValue}&energy_model=${energyModel}`, {method:'POST', kind:'text'});
+    const apiModel = smallStep ? 'work_control_small_step' : energyModel;
+    await request(`/start-energy-control-autonomous?target_deg=${target}&input_peak_percent=${inputPercent}&input_current_mA=${inputCurrentMa}&brake_max_ms=${brakeMaxMs}&peak_adaptation=${adaptationValue}&energy_model=${apiModel}`, {method:'POST', kind:'text'});
     $('message').textContent = `${runLabel}（目標${target}°・${inputCurrentMa} mA）の開始要求を受け付けました。Web休止後に本体が開始条件を確認します。Wi-Fi接続と画面をそのまま保ってお待ちください。`;
     if (latest?.foot_periodic) $('message').textContent = '開始要求を受け付けました。この画面に測定状態を表示します。';
   } catch (error) {
@@ -1057,6 +1082,7 @@ async function capturePose(baseline) {
 $('start').onclick = () => startOfflineRun();
 $('inverse-start').onclick = () => startOfflineRun(false, 'bridge_inverse');
 $('work-start').onclick = () => startOfflineRun(false, 'work_control', 8);
+$('small-step-start').onclick = () => startOfflineRun(false, 'work_control', 8, true);
 $('work-start-10').onclick = () => startOfflineRun(false, 'work_control', 10);
 $('work-start-12').onclick = () => startOfflineRun(false, 'work_control', 12);
 $('probe-batch').onclick = () => startOfflineRun(true);

@@ -41,7 +41,7 @@ def main():
         for test in ("energy_admission_runner_v19", "energy_admission_metadata_v19", "half_cycle_energy_budget",
                      "foot_pipeline", "foot_native_geometry", "foot_cadence", "rwlog_v46_converter",
                      "foot_periodic40_flasher", "observed_transfers", "support_transfer_audit",
-                     "support_transfer_replay", "http_client_queue", "gait_turn_run"):
+                     "support_transfer_replay", "http_client_queue", "gait_turn_run", "walking_trial_request"):
             checked(*py, ROOT / "test" / f"test_{test}.py")
         for test in ("periodic_foot", "mekf_host", "fore_aft_motion_guard", "support_transfer_plan", "small_arc_return", "gait_turn_observer", "runtime_page_encoding",
                      "offline_run_export", "export_transport_recovery", "wifi_transport_restart"):

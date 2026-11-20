@@ -67,6 +67,7 @@ AUDIT_MEMBERS
 SERIALIZER
 int main(int argc,char** argv){
   ExperimentRunner runner;
+  const bool small_step=false;
   const bool empty=argc>1 && std::string(argv[1])=="empty";
   lateral_energy::Geometry geometry;
   lateral_energy::CurrentTable table;CHECK(table.prepare(.0316f));

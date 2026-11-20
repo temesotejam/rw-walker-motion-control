@@ -211,7 +211,7 @@ bool WebUi::queueStart() {
   start_submitted_ = control_->request(RunControlWorker::Command::Start, start_target_deg_,
                                        start_input_peak_percent_, start_input_current_mA_,
                                        start_brake_max_ms_, start_peak_adaptation_enabled_,
-                                       start_energy_bridge_enabled_, start_negative_probe_mode_);
+                                       start_energy_bridge_enabled_, start_negative_probe_mode_, start_small_step_baseline_);
   return start_submitted_;
 }
 OfflineRunSession::StartResult WebUi::startResult() {
@@ -267,8 +267,11 @@ void WebUi::command(RunControlWorker::Command cmd) {
       (export_->status().phase != ImmutableExport::Phase::Empty || !st.ready)) {
     server_->send(409, "text/plain", "clear_previous_run_first"); return;
   }
+  const String model = cmd == RunControlWorker::Command::Start ? server_->arg("energy_model") : String();
+  const bool small_step = walking_trial::requestsSmallStep(model.c_str());
+  const bool work_control = model == "work_control" || small_step;
   if (cmd == RunControlWorker::Command::Start && !work_start_policy::referenceAllowed(
-      server_->hasArg("energy_model") && server_->arg("energy_model")=="work_control",
+      work_control,
       upright_reference::valid(st.upright_reference))) {
     server_->send(409, "text/plain", "upright_reference_required"); return;
   }
@@ -321,7 +324,7 @@ void WebUi::command(RunControlWorker::Command cmd) {
          server_->arg("energy_model") != "bridge_probe_extended" &&
          server_->arg("energy_model") != "bridge_probe_positive_current" &&
          server_->arg("energy_model") != "bridge_inverse" &&
-         server_->arg("energy_model") != "work_control")) {
+         !work_control)) {
       server_->send(400, "text/plain", "energy_model_invalid_reload_page"); return;
     }
     const bool negative_probe_batch_mode = server_->arg("energy_model") == "bridge_probe_batch";
@@ -330,6 +333,10 @@ void WebUi::command(RunControlWorker::Command cmd) {
     const bool negative_probe_mode = server_->arg("energy_model") == "bridge_probe" ||
         negative_probe_batch_mode || negative_probe_extended_mode || positive_current_batch_mode;
     const bool energy_bridge_enabled = server_->arg("energy_model") != "quadratic";
+    if (small_step && !walking_trial::smallStepAllowed(target_deg,input_peak_percent,input_current_mA,brake_max_ms,
+          peak_adaptation_enabled,energy_bridge_enabled,negative_probe_mode)) {
+      server_->send(400,"text/plain","small_step_requires_walking_8deg_package"); return;
+    }
     if ((negative_probe_mode && (!(positive_current_batch_mode ?
            autonomous_brake_limit::positiveCurrentBatch(brake_max_ms) : negative_probe_extended_mode ?
            autonomous_brake_limit::extendedBatch(brake_max_ms) : negative_probe_batch_mode ?
@@ -337,7 +344,7 @@ void WebUi::command(RunControlWorker::Command cmd) {
          target_deg != 8.0f || input_current_mA != 300 || peak_adaptation_enabled)) ||
         (!negative_probe_mode && energy_bridge_enabled && brake_max_ms != 0 &&
          !((server_->arg("energy_model") == "bridge_inverse" && brake_max_ms == 25 ||
-            server_->arg("energy_model") == "work_control" && brake_max_ms == 40) &&
+            work_control && brake_max_ms == 40) &&
            work_target_policy::packageAllowed(target_deg,brake_max_ms,input_current_mA,peak_adaptation_enabled))) ||
         (!energy_bridge_enabled && !autonomous_brake_limit::quadratic(brake_max_ms))) {
       server_->send(400, "text/plain", "experiment_package_settings_invalid_reload_page"); return;
@@ -351,6 +358,7 @@ void WebUi::command(RunControlWorker::Command cmd) {
       start_peak_adaptation_enabled_ = peak_adaptation_enabled;
       start_energy_bridge_enabled_ = energy_bridge_enabled;
       start_negative_probe_mode_ = negative_probe_mode;
+      start_small_step_baseline_ = small_step;
       start_observed_ = start_submitted_ = cancel_sent_ = false;
       RuntimeDiag::setRunActive(true);
     }
@@ -397,6 +405,9 @@ void WebUi::status() {
         "\",\"remaining_ms\":" + String(s.remaining_ms) + ",\"pitch_deg\":" + num(s.pitch_deg) +
         ",\"actual_mA\":" + String(s.actual_current_mA) + ",\"motor_mA\":" + String(s.motor_cmd_mA) +
         ",\"foot_periodic\":" + periodicFeet.liveJson()
+#if WALKING_SMALL_STEP_AB
+        + ",\"walking_profile\":\"" + String(walking_trial::name(s.walking_profile)) + "\""
+#endif
 #if WALKING_TURN_OBSERVER
         + gaitTurnField(s)
 #endif
@@ -471,6 +482,9 @@ void WebUi::status() {
   json += ",\"pitch_deg\":" + num(s.pitch_deg) + ",\"rate_dps\":" + num(s.rate_dps);
   json += ",\"mekf\":" + mekfAttitudeJson(s.mekf_attitude, micros(), s.imu_ok);
   json += ",\"steering\":{\"profile\":\"disabled\",\"enabled\":false,\"feedback_enabled\":false,\"heading_enabled\":false,\"response_check_enabled\":false,\"delta_deg\":0}";
+#if WALKING_SMALL_STEP_AB
+  json += ",\"walking_profile\":\"" + String(walking_trial::name(s.walking_profile)) + "\"";
+#endif
   json += ",\"target_deg\":" + num(s.target_deg);
   json += ",\"input_peak_percent\":" + num(s.input_peak_percent);
   json += ",\"input_current_mA\":" + String(s.input_current_mA);

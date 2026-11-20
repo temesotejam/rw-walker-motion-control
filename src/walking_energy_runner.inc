@@ -108,6 +108,11 @@ bool ExperimentRunner::tryWalkingEnergy(
   namespace energy=walking_energy_policy;
 #endif
   const int side=e.physical_next_peak_side;
+#if WALKING_SMALL_STEP_AB
+  const bool small_step=smallStepBaselineSelected();
+#else
+  const bool small_step=false;
+#endif
   const bool healthy=wheelWorkMode() && e.target_peak_deg==8.f &&
       (side==1 || side==-1) && !status_.emergency_stop && !status_.pulse_active &&
       status_.state==ExperimentState::RUNNING_BATCH_SWEEP && roller_ && roller_->ok() &&
@@ -121,7 +126,7 @@ bool ExperimentRunner::tryWalkingEnergy(
   noteFootSupportBackend(healthy?2:1);
   e.work_control_branch=
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
-      24;
+      small_step?19:24;
 #elif defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
       23;
 #elif defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
@@ -171,7 +176,7 @@ bool ExperimentRunner::tryWalkingEnergy(
     (void)stored_index;
 #endif
   };
-  if(!healthy){save();return true;} // Never fall through to the old selector.
+  if(!healthy || (small_step && (stall_rescue_event_ || foot_support_event_))){save();return true;}
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
   if(!motion_allowed){save();return true;}
 #endif
@@ -212,6 +217,10 @@ bool ExperimentRunner::tryWalkingEnergy(
   in.cap_ms=tilt_priority_.timingCap(side,t,80); // timing protection only
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
   in.cap_ms=walking_half_cycle_budget_.cap(a.peak_ms,in.cap_ms);
+  if(small_step){
+    if(optional_early_event_ && in.cap_ms>15)in.cap_ms=15;
+    if(!optional_early_event_)in.body_angle_deg=0.f;  // v14 evaluated ordinary input at mechanical ZERO.
+  }
 #if SUPPORT_TRANSFER_STALL_V3
   if (return_aid && walking_return_observation_.evidence==return_observation_policy::Evidence::MeasuredArcShortfall) {
     a.main_reserve_ms=walking_main_reserve_.forSide(side);
@@ -220,7 +229,7 @@ bool ExperimentRunner::tryWalkingEnergy(
 #endif
 #endif
 #if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
-  in.arrival_bias_j=walking_arrival_feedback_.bias(side,t,lateral_energy::potential(lateral_energy_geometry_,in.target_deg));
+  in.arrival_bias_j=small_step?0.f:walking_arrival_feedback_.bias(side,t,lateral_energy::potential(lateral_energy_geometry_,in.target_deg));
   in.return_work_j=walking_return_event_?walking_return_choice_.request_j:0;
   a.arrival_bias_j=in.arrival_bias_j;a.return_work_j=in.return_work_j;a.return_event=walking_return_event_;
   if(walking_return_event_){a.return_deceleration_dps2=walking_return_choice_.deceleration_dps2;
@@ -262,7 +271,8 @@ bool ExperimentRunner::tryWalkingEnergy(
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
   const bool exhausted=in.cap_ms==0;
   auto calculation=in;if(exhausted)calculation.cap_ms=1;
-  auto selected=return_aid?half_cycle_energy_budget::decideReturnAid(lateral_energy_geometry_,walking_energy_current_,calculation):
+  auto selected=small_step?walking_energy_policy::decide(lateral_energy_geometry_,walking_energy_current_,calculation):
+      return_aid?half_cycle_energy_budget::decideReturnAid(lateral_energy_geometry_,walking_energy_current_,calculation):
       energy::decide(lateral_energy_geometry_,walking_energy_current_,calculation);
 #else
   const auto selected=energy::decide(lateral_energy_geometry_,walking_energy_current_,in);
@@ -352,6 +362,7 @@ bool ExperimentRunner::tryWalkingEnergy(
 #endif
   auto actual=
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+      small_step?walking_energy_policy::evaluateWidth(lateral_energy_geometry_,walking_energy_current_,calculation,width):
       return_aid?half_cycle_energy_budget::evaluateReturnAidWidth(lateral_energy_geometry_,walking_energy_current_,calculation,width):
       energy::evaluateWidth(lateral_energy_geometry_,walking_energy_current_,calculation,width);
 #else
@@ -361,7 +372,7 @@ bool ExperimentRunner::tryWalkingEnergy(
   // Use the confirmed cycle only on an ordinary, already admissible motion
   // event. Both model inversions start with the same pre-command guard state.
   const auto& turn=gait_turn_run_.status();
-  if (e.event_kind==0 && !optional_early_event_ && !stall_rescue_event_ && !foot_support_event_ &&
+  if (!small_step && e.event_kind==0 && !optional_early_event_ && !stall_rescue_event_ && !foot_support_event_ &&
       !walking_return_event_ && !a.assisted_cycle && !exhausted && width && !selected.coast &&
       energy_control_autonomous_target_peak_deg_==8.f && energy_control_autonomous_input_peak_percent_==0 &&
       turn.enabled && turn.latest.reason==gait_turn::Reason::Confirmed) {
@@ -397,13 +408,15 @@ bool ExperimentRunner::tryWalkingEnergy(
   a.guarded_ms=width;
   a.decision=actual;
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
-  const auto admission=energy_admission_v19::assess(return_aid?energy_admission_v19::Scope::ExplicitReturnAid:
-      optional_early_event_?energy_admission_v19::Scope::OptionalMain:energy_admission_v19::Scope::OrdinaryZero,actual);
+  const auto scope=return_aid?energy_admission_v19::Scope::ExplicitReturnAid:
+      !optional_early_event_?energy_admission_v19::Scope::OrdinaryZero:
+      small_step?energy_admission_v19::Scope::SmallStepEarly:energy_admission_v19::Scope::OptionalMain;
+  const auto admission=energy_admission_v19::assess(scope,actual);
   a.energy_admission_checked=true;a.energy_admission_applies=admission.applies;a.energy_admission_allowed=admission.allowed;
   a.energy_unsupported_mask=admission.unsupported_mask;a.energy_admission_reason=static_cast<uint8_t>(admission.reason);
 #endif
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
-  if(exhausted && !return_aid){
+  if(exhausted && !return_aid && !(small_step && optional_early_event_)){
     // Closing a real ZERO with no allowance is not energy surplus. Preserve
     // its calculated positive deficit even though no pulse can be admitted.
     e.target_energy_j=actual.target_j;e.passive_energy_j=actual.available_j;
@@ -458,9 +471,10 @@ bool ExperimentRunner::tryWalkingEnergy(
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
   if(optional_early_event_){
     a.early_budget_checked=true;
-    a.early_budget_admitted=energy::earlyAdmissible(actual);
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
-    a.early_budget_admitted=a.early_budget_admitted && admission.allowed;
+    a.early_budget_admitted=admission.allowed;
+#else
+    a.early_budget_admitted=energy::earlyAdmissible(actual);
 #endif
     if(!a.early_budget_admitted){
       // No transport, no consumed main-input opportunity. The outer
@@ -644,6 +658,16 @@ void ExperimentRunner::tryWalkingEnergyFoot(uint32_t t,uint32_t sample,float ang
 
 void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
   auto n=[](float x){return std::isfinite(x)?String(x,9):String("null");};
+#if WALKING_SMALL_STEP_AB
+  if(smallStepBaselineSelected()){
+    json+=",\"walking_energy\":{\"revision\":\"small_step_v14_current_guards\",\"output_enabled\":true,\"branch\":19,";
+    json+="\"selector_revision\":\"walking_peak_rate_energy_v14\",\"width_selection\":\"minimum_absolute_predicted_work_error\",";
+    json+="\"early_admission\":\"positive_bounded_partial_work_within_charge_range\",\"generic_early_15ms_cap_active\":true,";
+    json+="\"generic_early_ceiling_ms\":15,\"main_ceiling_ms\":80,\"return_then_main\":false,\"combined_half_cycle_envelope_ms\":80,";
+    json+="\"arrival_feedback\":\"disabled\",\"completion_revision\":\"actual_elapsed_pulse_completion_v16\",";
+    json+="\"elapsed_semantics\":\"software_queue_accept_to_stop_request_not_physical_current_edges\",";
+  }else{
+#endif
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
@@ -699,6 +723,9 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
 #else
   json+=",\"walking_energy\":{\"revision\":\"walking_peak_rate_energy_v14\",\"output_enabled\":true,\"branch\":19,";
 #endif
+#if WALKING_SMALL_STEP_AB
+  }
+#endif
   json+="\"origin\":\"nominal_zero_CG_rocker_U_same_for_current_peak_target\",\"physical_body_inertia_identified\":false,\"MPC_active\":false,";
 #if defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
   json+="\"archive_storage\":\"psram\",\"archive_available\":"+String(walking_energy_audit_.available()?"true":"false")+",";
@@ -707,6 +734,10 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
   json+="\"mechanical_reference_deg\":0,\"energy_neutral_model\":\"nominal_only;moving_foot_potential_minimum_not_yet_identified\",\"paired_feedback_is_energy_neutral_estimation\":false,";
   json+="\"paired_semantics\":\"successive_peak_mean_and_difference_not_two_simultaneous_energy_stores\",";
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
+#if WALKING_SMALL_STEP_AB
+  if(smallStepBaselineSelected())json+="\"foot_role\":\"observation_only\",";
+  else
+#endif
   json+="\"foot_role\":\"fresh_raw_shape_or_bounded_recognition_dropout_with_two_strong_IMU_deceleration_windows_no_ms_boost\",";
 #elif defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
   json+="\"foot_role\":\"fresh_observed_amount_gates_return_energy_budget_no_ms_boost\",";

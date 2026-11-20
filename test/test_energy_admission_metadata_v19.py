@@ -24,6 +24,10 @@ fixture = fixture.replace('for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u})',
 marker = 'class ExperimentRunner {public:\n'
 assert fixture.count(marker) == 1
 fixture = fixture.replace(marker, marker + r'''
+#if WALKING_SMALL_STEP_AB
+  bool baseline=false;
+  bool smallStepBaselineSelected() const { return baseline; }
+#endif
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
   fore_aft_motion_guard::Guard walking_fore_aft_guard_;
   fore_aft_motion_guard::Result walking_fore_aft_last_;
@@ -77,6 +81,18 @@ fixture = fixture.replace(marker, r'''
 ''' + marker)
 
 flags = ['-DEARLY_ENERGY_MAIN=1', '-DPULSE_LIFECYCLE_FIX=1', '-DWALKING_RETURN_ENERGY=1', '-DWALKING_TRANSFER_V18=1']
+fixture = '#include "walking_trial_profile.h"\n' + fixture
+fixture = fixture.replace('const bool small_step=false;', '''
+#if WALKING_SMALL_STEP_AB
+  runner.baseline=argc>1 && std::string(argv[1])=="small-step";
+#endif
+  const bool small_step=argc>1 && std::string(argv[1])=="small-step";''')
+fixture = fixture.replace('const bool return_energy_mode=true;', 'const bool return_energy_mode=!small_step;')
+fixture = fixture.replace('early_energy_mode=EARLY_ENERGY_MAIN;', 'early_energy_mode=EARLY_ENERGY_MAIN && !small_step;')
+profile_line = next(line for line in context['logger'].splitlines() if 'String(walking_trial::name(walking_profile_))' in line)
+fixture = fixture.replace('json+="{";', 'json+="{";\n#if WALKING_SMALL_STEP_AB\n'
+                          '  const auto walking_profile_=small_step ? walking_trial::Profile::SmallStep : walking_trial::Profile::Turn3;\n'
+                          + profile_line + '\n#endif\n')
 with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
     temp = Path(folder)
     (temp / 'test.cpp').write_text(fixture, encoding='utf8')
@@ -88,13 +104,31 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                        ['-DWALKING_ADMISSION_V19=' + str(int(admission)), '-DSUPPORT_TRANSFER_CARRY2=' + str(int(carry)),
                         '-DWALKING_TURN_OBSERVER=' + str(int(turn)), '-DSUPPORT_TRANSFER_ARC_FEEDBACK=' + str(int(turn)),
                         '-DSUPPORT_TRANSFER_STALL_V3=' + str(int(turn)),
+                        '-DWALKING_SMALL_STEP_AB=' + str(int(turn)),
                         '-I' + str(ROOT / 'test/fixtures/arduino'),
                         '-I' + str(ROOT / 'src'), str(temp / 'test.cpp'), '-o', str(exe)], check=True)
-        for mode, count in [('', 7), ('empty', 0)]:
+        for mode, count in [('', 7), ('empty', 0)] + ([('small-step', 7)] if turn else []):
             output = subprocess.check_output([str(exe)] + ([mode] if mode else []), text=True).splitlines()
             raw, _ = map(parse, output)
             metadata = converter.expand_tables(raw)
             rows = metadata['walking_energy']['records']
+            if turn:
+                assert raw['walking_profile'] == ('v14_small_step' if mode=='small-step' else 'turn3')
+            if mode=='small-step':
+                revision = 'walking_peak_rate_energy_v14'
+                assert all(raw[key]==revision for key in ('energy_model','wheel_work_model_revision','lateral_energy_revision',
+                                                          'energy_control_autonomous_revision','energy_request_audit_revision'))
+                assert raw['foot_timing']['active'] is False and raw['walking_transfer']['active'] is False
+                assert raw['fore_aft_motion_guard']['active'] and raw['energy_admission']['early_cap_ms']==15
+                assert raw['energy_admission']['reason_names'][9]=='no_positive_small_step_work'
+                assert 'v14_nearest_energy_error' in raw['energy_control_autonomous_policy']
+                assert revision in raw['energy_control_autonomous_free_model']
+                block=metadata['walking_energy']
+                assert block['revision']=='small_step_v14_current_guards' and block['selector_revision']==revision
+                assert block['branch']==19 and block['generic_early_15ms_cap_active'] is True
+                assert block['completion_revision']=='actual_elapsed_pulse_completion_v16'
+                assert block['foot_role']=='observation_only'
+                continue
             if not admission:
                 assert raw['energy_model'] == 'walking_energy_transfer_v18'
                 assert 'energy_admission' not in raw and 'fore_aft_motion_guard' not in raw

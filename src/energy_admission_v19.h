@@ -7,11 +7,11 @@
 // These coverage flags are not proof of physical prediction accuracy.
 namespace energy_admission_v19 {
 constexpr char kRevision[]="optional_main_empirical_support_v19";
-enum class Scope : uint8_t { OrdinaryZero=0,OptionalMain=1,ExplicitReturnAid=2 };
+enum class Scope : uint8_t { OrdinaryZero=0,OptionalMain=1,ExplicitReturnAid=2,SmallStepEarly=3 };
 enum class Reason : uint8_t {
   Allowed=0,OrdinaryZeroExempt=1,ExplicitReturnAidExempt=2,InvalidScope=3,
   InvalidDecision=4,NoPositiveCoveredBudget=5,PassiveRateUnsupported=6,
-  WorkRateUnsupported=7,ChargeUnsupported=8
+  WorkRateUnsupported=7,ChargeUnsupported=8,NoPositiveSmallStepWork=9
 };
 enum Unsupported : uint8_t { PassiveRate=1u,WorkRate=2u,Charge=4u };
 struct Choice {
@@ -30,6 +30,15 @@ inline Choice assess(Scope scope,const walking_energy_policy::Decision& post_gua
   if(scope==Scope::OrdinaryZero){out.allowed=true;out.reason=Reason::OrdinaryZeroExempt;return out;}
   if(scope==Scope::ExplicitReturnAid){out.allowed=true;out.reason=Reason::ExplicitReturnAidExempt;return out;}
   out.applies=true;
+  if(scope==Scope::SmallStepEarly){
+    // The observed v14 gait used a bounded partial contribution. Report fit
+    // coverage and residual J even when only part of the request can be met.
+    if(!post_guard.valid || !post_guard.selected || post_guard.width_ms>15){out.reason=Reason::InvalidDecision;return out;}
+    if(post_guard.coast || !post_guard.width_ms || !(post_guard.request_j>0 && post_guard.q_mas>0 &&
+       post_guard.predicted_work_j>0)){out.reason=Reason::NoPositiveSmallStepWork;return out;}
+    if(!post_guard.charge_supported){out.reason=Reason::ChargeUnsupported;return out;}
+    out.allowed=true;out.reason=Reason::Allowed;return out;
+  }
   if(scope!=Scope::OptionalMain)return out;
   if(!post_guard.valid || !post_guard.selected){out.reason=Reason::InvalidDecision;return out;}
   if(!walking_energy_policy_v15::earlyAdmissible(post_guard)){

@@ -1,4 +1,5 @@
 #pragma once
+#include "walking_trial_profile.h"
 
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
@@ -38,6 +39,7 @@ struct RunControlSnapshot {
   bool peak_adaptation_enabled = true;
   bool energy_bridge_enabled = true;
   bool negative_probe_mode = false;
+  walking_trial::Profile walking_profile = walking_trial::Profile::None;
   upright_reference::Record upright_reference;
   lateral_cg::Record lateral_cg;
   lateral_cg::AdaptiveSnapshot adaptive_cg;
@@ -123,8 +125,10 @@ class RunControlWorker {
                uint16_t brake_max_ms = 0,
                bool peak_adaptation_enabled = true,
                bool energy_bridge_enabled = true,
-               bool negative_probe_mode = false) {
+               bool negative_probe_mode = false, bool small_step_baseline = false) {
     if (!ready() || command == Command::None) return false;
+    if (small_step_baseline && (command != Command::Start || !walking_trial::smallStepAllowed(
+        target_deg,input_peak_percent,input_current_mA,brake_max_ms,peak_adaptation_enabled,energy_bridge_enabled,negative_probe_mode))) return false;
     if (command == Command::Start && (!autonomous_target::selectable(target_deg) ||
         !autonomous_input_percent::valid(input_peak_percent) ||
         !autonomous_input_current::valid(input_current_mA) ||
@@ -149,6 +153,7 @@ class RunControlWorker {
       command_peak_adaptation_enabled_ = peak_adaptation_enabled;
       command_energy_bridge_enabled_ = energy_bridge_enabled;
       command_negative_probe_mode_ = negative_probe_mode;
+      command_small_step_baseline_ = small_step_baseline;
       command_state_.pending = true; ++command_state_.submitted;
     }
     portEXIT_CRITICAL(&mux_);
@@ -159,7 +164,7 @@ class RunControlWorker {
                       uint16_t* brake_max_ms = nullptr,
                       bool* peak_adaptation_enabled = nullptr,
                       bool* energy_bridge_enabled = nullptr,
-                      bool* negative_probe_mode = nullptr) {
+                      bool* negative_probe_mode = nullptr, bool* small_step_baseline = nullptr) {
     portENTER_CRITICAL(&mux_);
     const Command command = stop_requested_ ? Command::None : command_;
     if (command != Command::None) {
@@ -170,6 +175,7 @@ class RunControlWorker {
       if (peak_adaptation_enabled) *peak_adaptation_enabled = command_peak_adaptation_enabled_;
       if (energy_bridge_enabled) *energy_bridge_enabled = command_energy_bridge_enabled_;
       if (negative_probe_mode) *negative_probe_mode = command_negative_probe_mode_;
+      if (small_step_baseline) *small_step_baseline = command_small_step_baseline_;
       command_ = Command::None;
     }
     portEXIT_CRITICAL(&mux_);
@@ -384,6 +390,7 @@ class RunControlWorker {
   bool command_peak_adaptation_enabled_ = true;
   bool command_energy_bridge_enabled_ = true;
   bool command_negative_probe_mode_ = false;
+  bool command_small_step_baseline_ = false;
   float command_target_deg_ = Config::ENERGY_CONTROL_AUTONOMOUS_DEFAULT_TARGET_PEAK_DEG;
   CommandState command_state_;
   RunControlSnapshot snapshot_;

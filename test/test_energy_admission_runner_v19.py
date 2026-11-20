@@ -53,6 +53,13 @@ fixture = fixture.replace('struct EnergyControlAutonomousZeroCrossEvent {',
     'struct EnergyControlAutonomousZeroCrossEvent {\n#if WALKING_TURN_OBSERVER\n'
     ' uint8_t event_kind = 0;\n#endif\n', 1)
 fixture = fixture.replace('class ExperimentRunner {public:', '''class ExperimentRunner {public:
+#if WALKING_SMALL_STEP_AB
+ bool small_step=false;
+ bool smallStepBaselineSelected()const{return small_step;}
+ uint32_t angle_late_blocked_peak_ms_=0,angle_last_check_ms_=0;
+ void tryAngleEarlyCandidate(uint32_t,uint32_t,float,float);
+ void decideAngleEarlyCandidate(uint32_t,uint32_t,float,float);
+#endif
 #if WALKING_TURN_OBSERVER
  GaitStateFixture gait_turn_run_;
 #endif
@@ -61,6 +68,9 @@ fixture = fixture.replace('class ExperimentRunner {public:', '''class Experiment
  void observeSupportTransfer(uint32_t,uint32_t,float,float){}  // Detached shadow observer.
 #endif
 ''')
+angle_begin = runner.index('void ExperimentRunner::tryAngleEarlyCandidate(')
+angle_end = runner.index('\n}\n#endif\n#endif', runner.index('void ExperimentRunner::decideAngleEarlyCandidate(',angle_begin)) + 2
+fixture += '\n#if WALKING_SMALL_STEP_AB\n' + runner[angle_begin:angle_end] + '\n#endif\n'
 fixture += r'''
 static void refresh19(ExperimentRunner& r){
  fore_aft_motion_guard::Input in;in.valid=true;in.now_us=mock_us;in.sample_us=mock_us;
@@ -199,6 +209,52 @@ static void turn_main_response(){
 }
 #endif
 int main(){
+#if WALKING_SMALL_STEP_AB
+ // A v14 partial contribution and a turn3 defer on the same state.
+ {ExperimentRunner r;ready19(r,6.47749f,5.21523f);r.small_step=true;
+  positive_bias(r,.0001457f);confirmed_right_weak(r);
+  r.tryAngleEarlyCandidate(1200,mock_us,-1.35f,39.2354f); // ~34 ms before centre.
+  assert(!r.status_.pulse_active && !r.walking_energy_count_);
+  clock19(r,1206);
+  r.predicted_current_end_ms_=mock_ms;r.predicted_signed_current_end_mA_=-3.9053f;
+  r.tryAngleEarlyCandidate(1206,mock_us,-.99409f,39.2354f); // ~25 ms before centre.
+  const auto a=r.walking_energy_audit_[0];
+  assert(a.executed && a.optional && r.status_.pulse_active && r.last_finished_event.work_control_branch==19);
+  assert(a.guarded_ms==15 && a.early_budget_admitted && a.decision.unmet_j>0 && a.decision.q_mas>0);
+  assert(a.arrival_bias_j==0 && a.turn_adjustment_j==0 && r.walking_half_cycle_budget_.mainUsed());
+  clock19(r,a.output_start_ms+16);r.updateEnergyControlAutonomousPulse(mock_ms);
+  assert(!r.status_.pulse_active && r.walking_half_cycle_budget_.spentMs()==16);
+  const auto sent=r.roller_obj.writes;main19(r,1240,35);assert(r.roller_obj.writes==sent);
+ }
+ {ExperimentRunner r;ready19(r);r.small_step=true;
+  r.tryAngleEarlyCandidate(1200,mock_us,-.65f,39.2354f); // Already within 20 ms.
+  assert(!r.walking_energy_count_ && !r.status_.pulse_active);
+  main19(r,1220,31);assert(r.status_.pulse_active);
+ }
+ // Zero work at the early opportunity keeps the real crossing available.
+ {ExperimentRunner r;ready19(r);r.small_step=true;
+  r.acceptOptionalEarlyMotion(1200,90,-1.f);
+  assert(!r.walking_energy_audit_[0].executed && !r.walking_energy_audit_[0].early_budget_admitted);
+  preserved(r);
+  main19(r,1240,25,.15f);const auto& a=r.walking_energy_active_pulse_;
+  assert(a.executed && !a.optional && r.last_finished_event.work_control_branch==19);
+  assert(a.decision.potential_j==0 && a.guarded_ms>15);
+ }
+ // The opt-in comparison retains machine protection, duplicate suppression,
+ // transport-failure handling and causal freshness.
+ for(unsigned mode=0;mode<4;++mode){
+  ExperimentRunner r;ready19(r);r.small_step=true;
+  if(mode==0)r.walking_fore_aft_last_.allow_output=false;
+  if(mode==1)r.energy_control_autonomous_last_motion_sample_us_=mock_us-11000;
+  if(mode==2)r.roller_obj.write_ok=false;
+  if(mode==3)r.walking_return_event_=r.stall_rescue_event_=true;
+  if(mode==3)r.acceptMotionCrossing(true,1200,-15,4.05f,4.f,1,1200);
+  else r.acceptOptionalEarlyMotion(1200,39.2354f,-.99409f);
+  assert(!r.status_.pulse_active && !r.walking_energy_audit_[0].executed);
+  assert(!r.walking_half_cycle_budget_.mainUsed() && r.walking_half_cycle_budget_.spentMs()==0);
+  if(mode==2)assert(r.status_.emergency_stop);
+ }
+#endif
 #if SUPPORT_TRANSFER_STALL_V3
  // A measured shortfall can spend only the part of this half-cycle left after
  // reserving a completed main pulse on the same side. Exercise real dispatch.
@@ -486,6 +542,7 @@ with tempfile.TemporaryDirectory(prefix='energy_admission_runner_v19_') as folde
         '-DSUPPORT_TRANSFER_CARRY2='+str(carry),'-DSUPPORT_TRANSFER_V39='+str(carry),'-DWALKING_TURN_OBSERVER='+str(turn),
         '-DSUPPORT_TRANSFER_ARC_FEEDBACK='+str(feedback),
         '-DSUPPORT_TRANSFER_STALL_V3='+str(stall),
+        '-DWALKING_SMALL_STEP_AB='+str(stall),
         '-DFOOT_SUPPORT_ASSIST=1','-DFOOT_SUPPORT_LOCAL=1','-DFOOT_SUPPORT_TRANSFER=1',
         '-DFOOT_SUPPORT_ENERGY=1','-DEARLY_ENERGY_MAIN=1','-DPULSE_LIFECYCLE_FIX=1',
         '-DSWAY_BALANCE_TRIAL=1','-DWALKING_RETURN_ENERGY=1','-DWALKING_TRANSFER_V18=1',

@@ -49,10 +49,11 @@ vm.runInContext(code,context);
   assert.strictEqual(element('inverse-start').disabled,false);
   const footPacket = {count:401,missed:1,both_valid:397,published_hz:39.9,packet_age_ms:10,
     left:{estimated_deg:4,age_us:31000},right:{estimated_deg:null,age_us:80000}};
-  context.fetch=async()=>({ok:true,json:async()=>({periodic_run:true,foot_periodic:footPacket,
+  context.fetch=async()=>({ok:true,json:async()=>({periodic_run:true,foot_periodic:footPacket,walking_profile:'v14_small_step',
     state:'RUNNING_BATCH_SWEEP',remaining_ms:15000,pitch_deg:1,motor_mA:0,actual_mA:0})});
   await vm.runInContext('refresh()',context);
   assert.match(element('foot-status').textContent,/39.9 Hz/);
+  assert.match(element('run-percent').textContent,/v14式 小歩幅/);
   assert.match(element('foot-status').textContent,/周期抜け1回/);
   assert.match(element('right').textContent,/推定無効/);
   assert.strictEqual(vm.runInContext('statusPollDelayMs()',context),2000);
@@ -238,6 +239,35 @@ vm.runInContext(code,context);
   vm.runInContext('latest=null;lastSeen=0;controls()',context);
   assert.strictEqual(element('work-start').disabled,true);
   assert.match(element('work-start-status').textContent,/通信/);
+  gate.diagnostic_build_id='walking-support-transfer-v39-smallstep-ab';
+  vm.runInContext('adoptStatus(gate);render(gate)',context);
+  assert.strictEqual(element('small-step-start').hidden,false);
+  assert.strictEqual(element('small-step-start').disabled,true);
+  const startRequests=[];
+  context.fetch=async(path,opts)=>{
+    assert.strictEqual(opts.method,'POST');
+    startRequests.push(new URL(path,'http://device'));
+    return {ok:true,text:async()=>'offline_run_queued'};
+  };
+  await element('small-step-start').onclick();
+  assert.strictEqual(startRequests.length,0);
+  gate.foot_control_ready=true;
+  element('input-current').value='300';
+  for(const [button,model] of [['small-step-start','work_control_small_step'],['work-start','work_control']]){
+    vm.runInContext('clearOffline();adoptStatus(gate);render(gate)',context);
+    assert.strictEqual(element(button).disabled,false);
+    await element(button).onclick();
+    const request=startRequests.pop();
+    assert.strictEqual(request.pathname,'/start-energy-control-autonomous');
+    assert.deepStrictEqual(Object.fromEntries(request.searchParams),
+      {target_deg:'8',input_peak_percent:'0',input_current_mA:'300',brake_max_ms:'40',peak_adaptation:'0',energy_model:model});
+    assert.strictEqual(/v14/.test(element('run-model').textContent),button==='small-step-start');
+  }
+  vm.runInContext("clearOffline();adoptStatus({...gate, diagnostic_build_id:'walking-support-transfer-v39-turn3'});render(latest)",context);
+  assert.strictEqual(element('small-step-start').hidden,true);
+  await element('small-step-start').onclick();
+  assert.strictEqual(startRequests.length,0);
+  console.log('walking A/B: same start gate, explicit profile requests and legacy firmware guard PASS');
   console.log('v17 Start: detected but uncalibrated/zero pending/stale explanations, actual gate, null/offline and release text PASS');
   console.log('neutral-zero gate, frozen preview metadata/pixels, five bounded chunks, whole CRC and token failure recovery PASS');
   console.log('foot failure reasons, tilted/range/terminal display, body timeout, status recovery, stale authority and corrupt chunks PASS');

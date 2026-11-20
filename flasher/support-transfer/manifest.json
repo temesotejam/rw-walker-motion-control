@@ -1,6 +1,6 @@
 {
-  "name": "RW Walker v39 support transfer prediction",
-  "version": "walking-support-transfer-v39-turn3",
+  "name": "RW Walker v39 Small-step / Turn3",
+  "version": "walking-support-transfer-v39-smallstep-ab",
   "new_install_improv_wait_time": 0,
   "builds": [
     {

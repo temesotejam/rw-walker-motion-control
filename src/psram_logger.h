@@ -1,4 +1,5 @@
 #pragma once
+#include "walking_trial_profile.h"
 
 #include <Arduino.h>
 #include "psram_string.h"
@@ -581,7 +582,9 @@ class PsramLogger {
                  bool energy_bridge_enabled = true,
                  bool negative_probe_mode = false,
                  const upright_reference::Record& upright_reference = upright_reference::Record{},
-                 uint32_t negative_probe_batch_seed = 0);
+                 uint32_t negative_probe_batch_seed = 0,
+                 walking_trial::Profile walking_profile = walking_trial::Profile::None);
+  walking_trial::Profile walkingTrialProfile() const {return walking_profile_;}
   void recordMeasurementStartAngle(float absolute_deg) {
     if (!sealed_ && energy_control_autonomous_mode_ && !isfinite(measurement_start_abs_deg_))
       measurement_start_abs_deg_ = absolute_deg;
@@ -753,6 +756,7 @@ private:
   uint32_t negative_probe_batch_seed_ = 0;
   upright_reference::Record run_upright_reference_;
   lateral_cg::Record run_lateral_cg_;
+  walking_trial::Profile walking_profile_ = walking_trial::Profile::None;
   lateral_cg::AdaptiveSnapshot run_adaptive_cg_;
   float measurement_start_abs_deg_ = NAN;
   uint32_t autonomous_timing_compensation_us_ = 0;  // Immutable metadata for the saved run.

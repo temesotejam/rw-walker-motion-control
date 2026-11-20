@@ -159,7 +159,10 @@ public:
   // can enter this path.
   bool startQIdentCapture(uint8_t q_ident_run_schedule_id);  // Frozen: fail closed in this revision.
   bool startEnergyControlV0Capture();
-  bool startEnergyControlAutonomousCapture();
+  bool startEnergyControlAutonomousCapture(bool small_step_baseline=false);
+  bool smallStepBaselineSelected() const {
+    return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::SmallStep;
+  }
   bool setEnergyControlAutonomousTarget(float target_deg);
   bool setEnergyControlAutonomousInputPeakPercent(float peak_percent);
   bool setEnergyControlAutonomousInputCurrentMa(int16_t current_mA);
@@ -317,7 +320,7 @@ private:
     float gx = 0, gy = 0, gz = 0, ax = 0, ay = 0, az = 0, beta = 0;
   } deferred_comparison_;
   void updateStartupCalibration(const ImuReading& r);
-  void beginStartSync(uint32_t now_ms);
+  void beginStartSync(uint32_t now_ms, walking_trial::Profile profile=walking_trial::Profile::None);
   void updateStartSync(uint32_t now_ms);
   void updateEndSync(uint32_t now_ms);
   bool updateSyncPattern(uint32_t now_ms, const Config::LedSyncStep* pattern, uint8_t step_count);
