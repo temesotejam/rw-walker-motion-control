@@ -3,6 +3,7 @@
 #include "esp_timer.h"
 #endif
 #include "control_angle_reference.h"
+#include "walking_current_direction.h"
 #include "experiment_runner.h"
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
 #include "compact_json_table.h"
@@ -126,6 +127,9 @@ void ExperimentRunner::begin(PsramLogger& logger, ImuManager& imu, Roller485Mana
   // Optional archive only. Allocation failure is exported, while the internal
   // active-pulse copy still finalizes current, work and pending state.
   walking_energy_audit_.begin(ps_malloc);
+#endif
+#if SUPPORT_TRANSFER_V39
+  transfer_audit_.begin(predictRiseTauS(1200));
 #endif
   upright_reference::load(upright_reference_);
   lateral_cg::load(lateral_cg_);
@@ -2821,8 +2825,8 @@ bool ExperimentRunner::beginEnergyControlAutonomousPulse(uint32_t now_ms, uint32
   const uint32_t begin_t0_us = micros();
   energy_control_autonomous_pulse_authorized_ = true;
   const int16_t command_current_mA = static_cast<int16_t>(
-      Config::ENERGY_CONTROL_AUTONOMOUS_NORMAL_OUTPUT_SIGN *
-      Config::MOTOR_DRIVER_POLARITY * direction * requested_current_mA);
+      walkingCurrentPolarity(Config::ENERGY_CONTROL_AUTONOMOUS_NORMAL_OUTPUT_SIGN,
+                            Config::MOTOR_DRIVER_POLARITY) * direction * requested_current_mA);
   const uint32_t set_current_t0_us = micros();
   const bool set_current_ok = roller_->setCurrentMa(command_current_mA);
   const uint32_t set_current_us = static_cast<uint32_t>(micros() - set_current_t0_us);
@@ -3124,6 +3128,9 @@ void ExperimentRunner::appendFootSupportMetadata(PsramString& json) const {
   }
   if(!table.finish()){json.fail();return;}
   json+=",\"stored\":"+String(stored)+",\"total\":"+String(foot_support_audit_total_)+",\"truncated\":"+String(stored<foot_support_audit_total_?"true":"false")+"}";
+#if SUPPORT_TRANSFER_V39
+  transfer_audit_.append(json);
+#endif
 }
 #endif
 void ExperimentRunner::observeFootFrame(uint16_t run_id,uint32_t frame_ms,bool left_valid,bool right_valid,float left_deg,float right_deg,float left_px,float right_px,
@@ -3832,6 +3839,76 @@ __attribute__((noinline)) void ExperimentRunner::acceptOptionalEarlyMotion(
   optional_early_event_=false;
 }
 
+#if SUPPORT_TRANSFER_V39
+void ExperimentRunner::observeSupportTransfer(uint32_t t, uint32_t sample_us, float angle, float rate) {
+  const auto& packet = periodic_foot_packet_;
+  if (!packet.count || packet.count == transfer_packet_) return;
+  transfer_packet_ = packet.count;
+  const uint32_t dt = sample_us - transfer_previous_sample_us_;
+  const float acceleration = transfer_previous_sample_us_ && dt >= 15000 && dt <= 50000
+                           ? (rate - transfer_previous_rate_dps_) * (1000000.f / dt) : NAN;
+  transfer_previous_sample_us_ = sample_us;
+  transfer_previous_rate_dps_ = rate;
+  const int side = -energy_control_autonomous_last_peak_side_;
+  if (!wheelWorkMode() || energy_control_autonomous_target_peak_deg_ != 8.f ||
+      energy_control_autonomous_input_peak_percent_ != 0 || !energy_control_autonomous_last_peak_valid_ ||
+      (side != 1 && side != -1) || !roller_ || status_.emergency_stop || side * rate <= 0 ||
+      t < energy_control_autonomous_last_peak_ms_ || t - energy_control_autonomous_last_peak_ms_ > 1500 ||
+      (energy_control_autonomous_phase_ != EnergyControlAutonomousPhase::ENERGY_CONTROL &&
+       energy_control_autonomous_phase_ != EnergyControlAutonomousPhase::HOLD)) return;
+
+  SupportTransferAudit::Sample s;
+  s.captured_us = micros();
+  s.time_ms = t; s.peak_ms = energy_control_autonomous_last_peak_ms_; s.packet = packet.count;
+  if (status_.pulse_active) { s.baseline_flags |= 1; s.gate_mask |= SupportTransferAudit::PulseActive; }
+  if (walking_half_cycle_budget_.reservedMs() || walking_half_cycle_budget_.spentMs()) s.baseline_flags |= 2;
+  if (energy_control_autonomous_zero_cross_consumed_for_peak_) s.baseline_flags |= 4;
+  if (walking_half_cycle_budget_.aidUsed()) s.baseline_flags |= 8;
+  auto& in = s.input;
+  in.side = side; in.angle_deg = angle; in.rate_dps = rate; in.accel_dps2 = acceleration;
+  in.fore_aft_deg = walking_fore_aft_last_.angle_deg;
+  in.left_deg = packet.left.estimated; in.right_deg = packet.right.estimated;
+  in.left_rate_dps = packet.left.rate_dps; in.right_rate_dps = packet.right.rate_dps;
+  const uint64_t now = esp_timer_get_time();
+  const auto age = [&](const periodic_foot::Side& foot) -> uint64_t {
+    return foot.image_us && foot.image_us <= now ? now - foot.image_us : UINT64_MAX;
+  };
+  const uint64_t left_age = age(packet.left), right_age = age(packet.right);
+  s.left_age_ms = left_age / 1000 < UINT16_MAX ? left_age / 1000 : UINT16_MAX;
+  s.right_age_ms = right_age / 1000 < UINT16_MAX ? right_age / 1000 : UINT16_MAX;
+  if (s.captured_us - sample_us > 10000) s.gate_mask |= SupportTransferAudit::StaleImu;
+  if (!packet.published_us || now < packet.published_us || now - packet.published_us > periodic_foot::period_us)
+    s.gate_mask |= SupportTransferAudit::StalePacket;
+  if (left_age > periodic_foot::maximum_age_us || right_age > periodic_foot::maximum_age_us ||
+      !std::isfinite(in.left_deg) || !std::isfinite(in.right_deg) ||
+      !std::isfinite(in.left_rate_dps) || !std::isfinite(in.right_rate_dps)) s.gate_mask |= SupportTransferAudit::InvalidFoot;
+  if (!std::isfinite(acceleration)) s.gate_mask |= SupportTransferAudit::MissingAcceleration;
+  if (!walkingForeAftAllowsOutput()) s.gate_mask |= SupportTransferAudit::ForeAft;
+  const auto tel = roller_->telemetrySnapshot();
+  if (tel.current_valid && tel.current_sample_time_us && s.captured_us - tel.current_sample_time_us <= 50000)
+    in.initial_current_ma = side * walkingCurrentPolarity(Config::ENERGY_CONTROL_AUTONOMOUS_NORMAL_OUTPUT_SIGN,
+                                                          Config::MOTOR_DRIVER_POLARITY) * tel.actual_current_mA;
+  else s.gate_mask |= SupportTransferAudit::Current;
+  s.raw_vbat_mv = tel.battery_mV;
+  const auto battery = control_math::modelVoltage(tel.battery_mV, Config::MODEL_VBAT_REFERENCE_V,
+                                                   Config::MODEL_VBAT_MIN_V, Config::MODEL_VBAT_MAX_V);
+  s.model_vbat_mv = static_cast<uint16_t>(lroundf(battery.volts * 1000.f));
+  s.model_vbat_status = battery.status;
+  if (battery.status == 2) s.gate_mask |= SupportTransferAudit::Battery;
+  in.goal_current_ma = predictCurrentGoalMa(1200, battery.volts);
+  if (!tel.speed_valid || !tel.speed_sample_time_us || s.captured_us - tel.speed_sample_time_us > 50000 ||
+      !std::isfinite(tel.speed_rpm)) s.gate_mask |= SupportTransferAudit::WheelSpeed;
+  const uint16_t timing_cap = tilt_priority_.timingCap(side, t, 80);
+  const uint16_t remaining = walking_half_cycle_budget_.cap(s.peak_ms, timing_cap);
+  auto wheel_guard = wheel_cycle_guard_;
+  in.cap_ms = wheel_guard.limit(side, tel.speed_rpm, tel.speed_valid, t, remaining);
+  // Shadow replans across a mechanical ZERO. A v19 zero-width coast reserves
+  // no energy. Actual elapsed/reserved output still consumes the shared cap.
+  if (!in.cap_ms) s.gate_mask |= SupportTransferAudit::NoBudget;
+  transfer_audit_.submit(s);
+}
+#endif
+
 void ExperimentRunner::updateEnergyControlAutonomousMotion(uint32_t now_ms) {
   if (!energy_control_autonomous_mode_ ||
       energy_control_autonomous_phase_ == EnergyControlAutonomousPhase::IDLE ||
@@ -3885,6 +3962,11 @@ void ExperimentRunner::updateEnergyControlAutonomousMotion(uint32_t now_ms) {
     updateEnergyControlAutonomousPeakTracker(now_ms, peak_relative_angle_deg, rate_dps);
   }
   const int8_t peak_side = energy_control_autonomous_last_peak_side_;
+#if SUPPORT_TRANSFER_V39
+  // Snapshot before any existing decision on this sample. The planner itself
+  // is on Core 0; it has no path back into the physical event or output state.
+  observeSupportTransfer(t_test_ms, sample_us, detector_relative_angle_deg, rate_dps);
+#endif
   float threshold_deg = peak_side * energy_control_autonomous_last_peak_amplitude_deg_ *
       (energy_control_autonomous_input_peak_percent_ * 0.01f);
   // Normal 0% timing stays at centre even if asymmetry grows. The former
@@ -8184,21 +8266,10 @@ void ExperimentRunner::updateIdentificationPeak(uint32_t now_ms, float angle_deg
   if (rate_dps*identification_outbound_rate_sign_<=-Config::ZERO_CROSS_MIN_RATE_DPS) { if (++identification_reverse_samples_>=Config::ZERO_CROSS_IDENTIFICATION_PEAK_CONFIRM_SAMPLES) { logger_->finishIdentificationEvent(identification_event_id_, now_ms-trial_start_ms_, centi(identification_peak_angle_deg_)); identification_peak_waiting_=false; } } else identification_reverse_samples_=0;
 }
 void ExperimentRunner::updatePulseModelPrediction() {
-  uint16_t source_vbat_mV = status_.roller_battery_mV;
-  float model_vbat_v = Config::MODEL_VBAT_REFERENCE_V;
-  status_.beta_model_vbat_status = 0;
-  if (source_vbat_mV < 1000) {
-    status_.beta_model_vbat_status = 2;
-  } else {
-    model_vbat_v = static_cast<float>(source_vbat_mV) / 1000.0f;
-    if (model_vbat_v < Config::MODEL_VBAT_MIN_V) {
-      model_vbat_v = Config::MODEL_VBAT_MIN_V;
-      status_.beta_model_vbat_status = 1;
-    } else if (model_vbat_v > Config::MODEL_VBAT_MAX_V) {
-      model_vbat_v = Config::MODEL_VBAT_MAX_V;
-      status_.beta_model_vbat_status = 1;
-    }
-  }
+  const auto battery = control_math::modelVoltage(status_.roller_battery_mV, Config::MODEL_VBAT_REFERENCE_V,
+                                                   Config::MODEL_VBAT_MIN_V, Config::MODEL_VBAT_MAX_V);
+  const float model_vbat_v = battery.volts;
+  status_.beta_model_vbat_status = battery.status;
   status_.beta_model_vbat_mV = static_cast<uint16_t>(lroundf(model_vbat_v * 1000.0f));
   const float goal_mA = predictCurrentGoalMa(status_.current_mA_setting, model_vbat_v);
   const float tau_rise_s = predictRiseTauS(status_.current_mA_setting);

@@ -1,4 +1,4 @@
-"""Prepare or check the v38 Web Serial installer without contacting the walker."""
+"""Prepare or check the current Web Serial installer without contacting the walker."""
 import argparse
 import copy
 import errno
@@ -15,8 +15,8 @@ import webbrowser
 
 ROOT = Path(__file__).resolve().parents[1]
 ENVIRONMENT = "atoms3cam-foot-periodic40"
-BUILD_ID = "walking-foot-periodic40-v38"
-PAGE = "foot-periodic40"
+BUILD_ID = "walking-support-transfer-v39"
+PAGE = "support-transfer"
 URL = f"http://127.0.0.1:8767/{PAGE}/"
 PARTS = {"bootloader.bin": 0, "partitions.bin": 0x8000,
          "boot_app0.bin": 0xe000, "firmware.bin": 0x10000}
@@ -28,21 +28,21 @@ def check_page(root):
     directory = flasher / PAGE
     html = (directory / "index.html").read_text(encoding="utf-8")
     if BUILD_ID not in html or 'manifest="manifest.json"' not in html:
-        raise ValueError("Installer page does not identify the v38 package")
+        raise ValueError(f"Installer page does not identify {BUILD_ID}")
     if any(f'src="{name}"' not in html for name in SCRIPTS):
         raise ValueError("Installer page is missing a helper script")
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     parts = [{"path": "firmware/" + name, "offset": offset} for name, offset in PARTS.items()]
     if (manifest.get("version") != BUILD_ID or manifest.get("new_install_improv_wait_time") != 0
             or manifest.get("builds") != [{"chipFamily": "ESP32-S3", "parts": parts}]):
-        raise ValueError("Unexpected v38 installer identity or flash layout")
+        raise ValueError("Unexpected installer identity or flash layout")
     # Older consumers can still open /manifest.json from the root. Both
     # manifests point at the same four firmware files.
     alias = copy.deepcopy(manifest)
     for part in alias["builds"][0]["parts"]:
         part["path"] = PAGE + "/" + part["path"]
     if json.loads((flasher / "manifest.json").read_text(encoding="utf-8")) != alias:
-        raise ValueError("Root manifest differs from the dedicated v38 manifest")
+        raise ValueError("Root manifest differs from the dedicated manifest")
     return directory
 
 
@@ -68,8 +68,8 @@ def validate_parts(parts):
         if magic == 0x50aa:
             layouts[kind, subtype] = offset, size
     if layouts.get((0, 0x10)) != (0x10000, 0x330000) or layouts.get((1, 0)) != (0xe000, 0x2000):
-        raise ValueError("Partition table does not match the v38 app0 and OTA regions")
-    # All builds can contain the v38 string in the embedded *browser* code.
+        raise ValueError("Partition table does not match the app0 and OTA regions")
+    # Builds can contain multiple version strings in the embedded browser code.
     # The firmware's RWLOG metadata serializer emits this independent literal.
     identity = b'"diagnostic_build_id":"' + BUILD_ID.encode() + b'",\x00'
     if identity not in parts["firmware.bin"]:
@@ -167,7 +167,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="Verify the currently staged files without replacing them")
-    mode.add_argument("--serve", action="store_true", help="Verify and open the local v38 page in a browser")
+    mode.add_argument("--serve", action="store_true", help="Verify and open the current installer in a browser")
     args = parser.parse_args()
     try:
         if args.serve:

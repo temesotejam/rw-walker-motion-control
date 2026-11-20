@@ -1,11 +1,11 @@
 # RW Walker Motion Control
 
-リアクションホイールで左右に揺動し、受動脚を交互に振り出す歩行器のファームウェアと実験用ツールです。現在の実機版は **v38**（`walking-foot-periodic40-v38`）。エネルギー制御はv19、胴体姿勢はMEKF、足角度はカメラ観測を基に制御側が25 ms周期で推定・発行します。
+リアクションホイールで左右に揺動し、受動脚を交互に振り出す歩行器のファームウェアと実験用ツールです。実機確認済みの基準版は **v38**。次の試験用の **v39**（`walking-support-transfer-v39`）は、同じv19エネルギー制御で歩行しながら、次の支持側へ移る前の通電時点・幅を予測し、RWLOGに記録します。胴体姿勢はMEKF、左右足角はカメラ観測から25 ms周期で推定します。[予測方法と検証手順](docs/SUPPORT_TRANSFER_V39.md)
 
 ## ビルドと書き込み
 
 1. PlatformIOでこのフォルダーを開き、**Build** を選ぶか、ルートで `pio run` を実行します。[platformio.ini](platformio.ini) のビルド環境は `atoms3cam-foot-periodic40` の1つです。
-2. このPCで実機確認済みの版を書き込むには、[open-flasher.cmd](open-flasher.cmd) を開きます。書き込みページは `http://127.0.0.1:8767/foot-periodic40/` です。機体にWi-Fiで接続して開く測定画面は `http://192.168.4.1/` です。
+2. このPCでは [open-flasher.cmd](open-flasher.cmd) を開くと、v39の書き込みページ `http://127.0.0.1:8767/support-transfer/` を表示します。実機確認済みのv38へ戻すリンクもページ内にあります。機体のWi-Fiに接続した後の測定画面は `http://192.168.4.1/` です。
 3. **自分でビルドした版を配布する場合**は、ビルド成功後に `python tools/prepare_foot_periodic40_flasher.py` を実行して、書き込みページに4個のバイナリを用意します。新しくクローンしたPCでもこの手順でページを準備できます。
 
 ## プログラムの入口
@@ -16,7 +16,7 @@
 | 必要仕事の算定、電流パルスの採否と開始 | [歩行時の入力処理](src/walking_energy_runner.inc)、[v19の判断条件](docs/ENERGY_ADMISSION_V19.md) |
 | カメラの足角と40 Hzの定周期推定 | [足角観測](src/foot_observer.cpp)、[定周期の推定器](src/periodic_foot_state.h) |
 | 測定画面とRWLOG保存 | [Web画面](web/index.html)、[画面の処理](web/runtime.js)、[RWLOG変換](tools/convert_rwlog_to_csv.py) |
-| 次の荷重移行を見越した制御の研究 | [研究の現在地](CURRENT_STATUS_20261109.md)、[足姿勢とエネルギー中立点](docs/ENERGY_NEUTRAL_V14.md)、[イベント単位の再生結果](docs/EVENT_FOOT_ENERGY_REPLAY_20261119.md) |
+| 次の荷重移行を見越した制御の研究 | [v39のイベント予測](docs/SUPPORT_TRANSFER_V39.md)、[研究の現在地](CURRENT_STATUS_20261109.md)、[足姿勢とエネルギー中立点](docs/ENERGY_NEUTRAL_V14.md) |
 
 測定画面のソースを編集した場合は、`python tools/embed_runtime_web.py` でファームウェア用ヘッダーを更新し、`python tools/embed_runtime_web.py --check` で一致を確認します。
 
@@ -29,7 +29,7 @@ python tools/convert_rwlog_to_csv.py run.rwlog --out analysis/my-run
 python tools/replay_event_foot_energy.py run1.rwlog run2.rwlog --out analysis/my-replay
 ```
 
-前者は元ログのCRCを確認して時系列と診断値を展開します。後者は、v19の戻り補助を判断した時点で入手済みの足角・姿勢・過去のZERO記録を使って入力候補を比較します。荷重移行前の最適な開始位相を選ぶMPCは研究段階です。
+前者は元ログのCRCを確認して時系列と診断値を展開します。後者は、v19の戻り補助を判断した時点で入手済みの情報を使い、開始時刻を固定して幅を比較します。開始時刻も選ぶv39の再生には `python tools/replay_support_transfer.py run1.rwlog run2.rwlog --out analysis/my-transfer` を使います。
 
 ## 旧版・実験データの保管先
 

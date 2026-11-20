@@ -1313,6 +1313,27 @@ def write_walking_energy_diagnostics(metadata: dict, out_dir: Path) -> int:
     return len(rows)
 
 
+def write_support_transfer_shadow(metadata: dict, out_dir: Path) -> int:
+    block = metadata.get("support_transfer_shadow")
+    if block is None:
+        return 0
+    columns = block["columns"]
+    rows = block["rows"]
+    if (block["revision"] != 1 or block["output_enabled"] is not False or
+            not all(isinstance(key, str) for key in columns) or len(set(columns)) != len(columns) or
+            not {"time_ms", "packet", "side", "reason", "delay_ms", "width_ms",
+                 "ready_after_us", "gate_mask"}.issubset(columns) or
+            block["submitted"] != sum(block[name] for name in ("unavailable", "abandoned", "completed", "replaced")) or
+            not 0 <= len(rows) == block["exported"] <= block["stored"] <= block["completed"] or
+            any(len(row) != len(columns) for row in rows)):
+        raise ValueError("Invalid support transfer shadow archive")
+    with (out_dir / "support_transfer_shadow.csv").open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(columns)
+        writer.writerows(rows)
+    return len(rows)
+
+
 def convert(path: Path, out_dir: Path) -> None:
     data = path.read_bytes()
     header = parse_header(data)
@@ -1356,6 +1377,7 @@ def convert(path: Path, out_dir: Path) -> None:
     cad_count = write_cad_support_shadow(metadata, out_dir)
     support_count = write_foot_support_diagnostics(metadata, out_dir)
     walking_energy_count = write_walking_energy_diagnostics(metadata, out_dir)
+    write_support_transfer_shadow(metadata, out_dir)
     e2_shadow_peak_count = write_e2_shadow_peaks(metadata, out_dir)
     q1_shadow_event_count = write_q1_shadow_events(metadata, out_dir)
     q_ident_event_count = write_q_ident_events(metadata, out_dir)

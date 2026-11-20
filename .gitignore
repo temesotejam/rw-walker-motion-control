@@ -11,6 +11,9 @@ madgwick-build-patch.json
 flasher/foot-periodic40/firmware/
 flasher/foot-periodic40/soft-boot.js
 flasher/foot-periodic40/flasher-completion.js
+flasher/support-transfer/firmware/
+flasher/support-transfer/soft-boot.js
+flasher/support-transfer/flasher-completion.js
 
 # Local measurements and their expanded frames. Tracked reports are kept separately.
 *.rwlog

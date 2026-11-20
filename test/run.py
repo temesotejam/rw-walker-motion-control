@@ -40,9 +40,10 @@ def main():
         checked(*py, "-m", "unittest", "discover", "-s", "test", "-p", "test_event_foot*.py", env=event_env)
         for test in ("energy_admission_runner_v19", "energy_admission_metadata_v19", "half_cycle_energy_budget",
                      "foot_pipeline", "foot_native_geometry", "foot_cadence", "rwlog_v46_converter",
-                     "foot_periodic40_flasher"):
+                     "foot_periodic40_flasher", "observed_transfers", "support_transfer_audit",
+                     "support_transfer_replay"):
             checked(*py, ROOT / "test" / f"test_{test}.py")
-        for test in ("periodic_foot", "mekf_host", "fore_aft_motion_guard"):
+        for test in ("periodic_foot", "mekf_host", "fore_aft_motion_guard", "support_transfer_plan"):
             binary = tmp / (test + ".exe")
             source = [ROOT / "test" / f"test_{test}.cpp"]
             if test == "mekf_host":

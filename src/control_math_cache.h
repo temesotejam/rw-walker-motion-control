@@ -3,6 +3,15 @@
 
 namespace control_math {
 
+struct ModelVoltage { float volts; uint8_t status; };
+inline ModelVoltage modelVoltage(uint16_t measured_mv, float reference, float minimum, float maximum) {
+  if (measured_mv < 1000) return {reference, 2};
+  const float volts = static_cast<float>(measured_mv) / 1000.0f;
+  if (volts < minimum) return {minimum, 1};
+  if (volts > maximum) return {maximum, 1};
+  return {volts, 0};
+}
+
 // Owned exclusively by ExperimentRunner's control task. Model coefficients are
 // immutable; only exactly equal inputs may reuse a result. Voltage is not
 // rounded here, so updatePulseModelPrediction's fresh voltage still takes effect.

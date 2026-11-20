@@ -1,14 +1,28 @@
 {
-  "name": "RW Walker v38 periodic foot state",
-  "version": "walking-foot-periodic40-v38",
+  "name": "RW Walker v39 support transfer prediction",
+  "version": "walking-support-transfer-v39",
   "new_install_improv_wait_time": 0,
-  "builds": [{
-    "chipFamily": "ESP32-S3",
-    "parts": [
-      {"path": "foot-periodic40/firmware/bootloader.bin", "offset": 0},
-      {"path": "foot-periodic40/firmware/partitions.bin", "offset": 32768},
-      {"path": "foot-periodic40/firmware/boot_app0.bin", "offset": 57344},
-      {"path": "foot-periodic40/firmware/firmware.bin", "offset": 65536}
-    ]
-  }]
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "support-transfer/firmware/bootloader.bin",
+          "offset": 0
+        },
+        {
+          "path": "support-transfer/firmware/partitions.bin",
+          "offset": 32768
+        },
+        {
+          "path": "support-transfer/firmware/boot_app0.bin",
+          "offset": 57344
+        },
+        {
+          "path": "support-transfer/firmware/firmware.bin",
+          "offset": 65536
+        }
+      ]
+    }
+  ]
 }

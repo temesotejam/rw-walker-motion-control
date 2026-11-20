@@ -86,7 +86,8 @@ function walkingAdmissionTrial(s = latest) {
   return walkingFootFastTrial(s) || /^walking-energy-admission-v19(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function walkingFootFastTrial(s = latest) {
-  return /^walking-foot-fast-v20(?:-|$)/.test(s?.diagnostic_build_id || '') || s?.diagnostic_build_id === 'walking-foot-periodic40-v38';
+  const id = s?.diagnostic_build_id || '';
+  return /^walking-foot-fast-v20(?:-|$)/.test(id) || id === 'walking-foot-periodic40-v38' || id === 'walking-support-transfer-v39';
 }
 function foreAftStopText(reason) {
   return ({
@@ -289,10 +290,13 @@ function render(s) {
   if (walkingAdmissionTrial(s)) {
     const fast = walkingFootFastTrial(s);
     $('work-title').textContent = s.foot_periodic ? '歩行のエネルギー制御（v38・足角度40 Hz・30秒）' : fast ? '歩行のエネルギー制御（v20・足角度低遅延版・30秒）' : '歩行のエネルギー制御（v19・30秒）';
+    const predictTransfer = s.diagnostic_build_id === 'walking-support-transfer-v39';
+    if (predictTransfer) $('work-title').textContent = '歩行のエネルギー制御（v39・荷重移行予測の記録・30秒）';
     $('work-description').textContent = (s.foot_periodic ? '測定中も足角度と更新回数を約2秒ごとに表示します。' : fast ? '今回のv20は足角度低遅延版です。±8°の制御方式はv19を継承します。' : '今回のv19は±8°を使用します。') +
       '戻りの救済後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。前倒し候補のモデル支持を確認し、範囲外はZEROで再評価します。前後の持続逸脱では入力を停止します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
       (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '') +
       (fast ? ' 最初はモータを開始せず、足角度と画像の更新を確認してください。画像更新は目標' + format(s.foot?.target_fps ?? 15,0) + 'fpsで、実際の更新速度と遅延は下に表示します。時刻差はdriver基準で、露光時刻との対応は未校正です。' : '');
+    if (predictTransfer) $('work-description').textContent += ' ±8°では荷重移行を予測し、惰性と通電の開始・幅を比較してRWLOGに記録します。実際の電流指令はv19が決めます。';
   } else if (walkingTransferTrial(s)) {
     $('work-title').textContent = '歩行のエネルギー制御（v18・30秒）';
     $('work-description').textContent = '今回のv18は±8°を使用します。戻りの不足分を救済した後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。足の認識が一時的に欠けたときは、新しい画像と機体の減速条件を確認して救済します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +

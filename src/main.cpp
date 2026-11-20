@@ -173,6 +173,9 @@ static bool controlStep(void*) {
 #if FOOT_PERIODIC_V38
           periodicFeet.startRun(runner.status().run_id);
           runner.observePeriodicFoot(periodic_foot::Packet{});
+#if SUPPORT_TRANSFER_V39
+          runner.startSupportTransferRun();
+#endif
 #endif
           run_control.beginRunAudit(start);
         }

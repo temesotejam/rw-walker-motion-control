@@ -1,4 +1,4 @@
-"""Offline checks for the v38 download paths and wrong-build rejection."""
+"""Offline checks for the current download paths and wrong-build rejection."""
 import json
 from pathlib import Path
 import shutil
@@ -30,7 +30,7 @@ class InstallerTests(unittest.TestCase):
         self.boot_app = self.root / "boot_app0.bin"
         self.boot_app.write_bytes(b"OTA")
         self.image = bytes([0xe9]) + bytes(11) + b"\x09\x00" + bytes(10)
-        self.application = self.image + b'"diagnostic_build_id":"walking-foot-periodic40-v38",\x00'
+        self.application = self.image + b'"diagnostic_build_id":"' + flasher.BUILD_ID.encode() + b'",\x00'
         (self.build / "firmware.bin").write_bytes(self.application)
         (self.build / "bootloader.bin").write_bytes(self.image)
         entry = struct.Struct("<HBBII16sI")
@@ -51,7 +51,7 @@ class InstallerTests(unittest.TestCase):
     def test_web_text_cannot_authorize_the_wrong_firmware(self):
         known = flasher.prepare(self.root, self.boot_app)
         (self.build / "firmware.bin").write_bytes(
-            self.image + b"return id === 'walking-foot-periodic40-v38';")
+            self.image + b'"diagnostic_build_id":"walking-foot-periodic40-v38",\x00' + flasher.BUILD_ID.encode())
         with self.assertRaisesRegex(ValueError, "identity"):
             flasher.prepare(self.root, self.boot_app)
         self.assertEqual(flasher.check(self.root), known)

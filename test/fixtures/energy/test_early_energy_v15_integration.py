@@ -13,7 +13,7 @@ v14=(ROOT/'test/fixtures/energy/test_walking_energy_integration.py').read_text(e
 marker="\nfixture += r'''\n"
 prefix,tail=v14.split(marker,1)
 exec(compile(prefix,str(ROOT/'test/fixtures/energy/test_walking_energy_integration.py'),'exec'),globals())
-fixture='#include "walking_energy_policy_v15.h"\n#include "autonomous_input_current.h"\n'+fixture
+fixture='#include "walking_energy_policy_v15.h"\n#include "autonomous_input_current.h"\n#include "walking_current_direction.h"\n'+fixture
 fixture+=tail.split('int main(){',1)[0].replace('walking_energy_policy::','walking_energy_policy_v15::')
 
 # Retain the real outer entry guard, so a successful early main input cannot

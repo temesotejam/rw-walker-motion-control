@@ -2,6 +2,9 @@
 #if FOOT_PERIODIC_V38
 #include "periodic_foot_state.h"
 #endif
+#if SUPPORT_TRANSFER_V39
+#include "support_transfer_audit.h"
+#endif
 
 #include <Adafruit_AHRS.h>
 #include <Arduino.h>
@@ -98,6 +101,13 @@ public:
 #if FOOT_PERIODIC_V38
   void observePeriodicFoot(const periodic_foot::Packet& packet) { periodic_foot_packet_ = packet; }
 #endif
+#if SUPPORT_TRANSFER_V39
+  void startSupportTransferRun() {
+    transfer_packet_ = transfer_previous_sample_us_ = 0;
+    transfer_previous_rate_dps_ = NAN;
+    transfer_audit_.startRun();
+  }
+#endif
   enum class QRunMode : uint8_t { NONE = 0, VALIDATION = 1, CONTROL = 2 };
   void begin(PsramLogger& logger, ImuManager& imu, Roller485Manager& roller);
   void serviceFast();
@@ -189,6 +199,9 @@ public:
   void clearFinishedOrEstop();
   void sealCompletedLog() {
     if (running() || !logger_) return;
+#if SUPPORT_TRANSFER_V39
+    transfer_audit_.seal();
+#endif
     maybeFinalizeTimingProbe();
     logger_->seal();
   }
@@ -698,6 +711,12 @@ private:
       Config::ENERGY_CONTROL_V0_CG_HEIGHT_M,Config::ENERGY_CONTROL_V0_RADIUS_M,
       Config::ENERGY_CONTROL_V0_INNER_EDGE_X_M,Config::ENERGY_CONTROL_V0_OUTER_EDGE_X_M};
   lateral_energy::CurrentTable lateral_current_table_;
+#if SUPPORT_TRANSFER_V39
+  SupportTransferAudit transfer_audit_;
+  uint32_t transfer_packet_ = 0, transfer_previous_sample_us_ = 0;
+  float transfer_previous_rate_dps_ = NAN;
+  void observeSupportTransfer(uint32_t t, uint32_t sample_us, float angle, float rate);
+#endif
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
   lateral_energy::CurrentTable walking_energy_current_;
 #if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY

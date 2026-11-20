@@ -8,6 +8,9 @@ constexpr uint32_t maximum_age_us = 75000;  // provisional, three control period
 
 struct Side {
   float measured = NAN, estimated = NAN;
+#if SUPPORT_TRANSFER_V39
+  float rate_dps = NAN;  // signed slope used by the existing bounded extrapolator
+#endif
   uint64_t image_us = 0;
   uint32_t sequence = 0;
 };
@@ -28,6 +31,11 @@ class Track {
     rate_ = adjacent && slope * previous_slope_ > 0 && std::fabs(slope) <= 80.f
             && std::fabs(previous_slope_) <= 80.f
         ? std::copysign(std::fmin(std::fabs(slope), std::fabs(previous_slope_)), slope) : 0.f;
+#if SUPPORT_TRANSFER_V39
+    const bool usable = adjacent && std::fabs(slope) <= 80.f;
+    last_.rate_dps = usable && previous_usable_ ? rate_ : NAN;
+    previous_usable_ = usable;
+#endif
     previous_slope_ = slope;
     last_.sequence = sequence;
     last_.image_us = time;
@@ -44,6 +52,9 @@ class Track {
  private:
   Side last_;
   float previous_slope_ = 0, rate_ = 0;
+#if SUPPORT_TRANSFER_V39
+  bool previous_usable_ = false;
+#endif
 };
 
 class Estimator {
