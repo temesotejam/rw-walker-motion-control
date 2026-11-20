@@ -18,6 +18,7 @@ class WebUi {
   void cancelStart();
   bool restoreTransport();
   void transportReady();
+  bool prepareCompletedExport();
   bool quietResponse();
   void status();
 #if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32

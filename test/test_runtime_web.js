@@ -198,9 +198,12 @@ vm.runInContext(code,context);
   vm.runInContext('adoptStatus(gate);render(gate)',context);
   assert.strictEqual(element('work-start').disabled,false);
   assert.match(element('work-start-status').textContent,/開始できます/);
-  vm.runInContext("render({...gate,diagnostic_build_id:'walking-support-transfer-v39'})",context);
-  assert.match(element('work-title').textContent,/v39.*荷重移行予測/);
-  assert.match(element('work-description').textContent,/実際の電流指令はv19/);
+  for (const suffix of ['', '-webfix1']) {
+    context.trialId = 'walking-support-transfer-v39' + suffix;
+    vm.runInContext("render({...gate,diagnostic_build_id:trialId})",context);
+    assert.match(element('work-title').textContent,/v39.*荷重移行予測/);
+    assert.match(element('work-description').textContent,/実際の電流指令はv19/);
+  }
   assert.strictEqual(element('work-start').disabled,false);
   gate.diagnostic_build_id='walking-return-energy-v17-rangefix1';
   Object.assign(gate.foot,{left_in_range:false,left_control_range_ok:true,left_extrapolation_deg:3,control_extension_deg:5});

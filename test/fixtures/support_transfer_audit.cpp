@@ -92,11 +92,38 @@ struct ExperimentRunner {
 };
 #include "runner_snapshot.inc"
 
-void print(const SupportTransferAudit& audit, size_t padding=0) {
-  PsramString json; assert(json.reserve(foot_fast_policy::kMetadataHardBudgetBytes));
-  if (padding) { std::string data(padding,' ');json.append(data.c_str(),data.size()); }
-  audit.append(json); assert(json.ok());
-  std::cout<<"{"<<(json.c_str()+padding+1)<<"}\n";
+bool finishMetadata(PsramString& json) {
+  constexpr size_t kMetadataJsonHardBudgetBytes=foot_fast_policy::kMetadataHardBudgetBytes;
+#include "metadata_footer.inc"
+}
+struct ExportProbe {
+  size_t previous = 0, checkpoints = 0, schema_bytes = 0;
+  static void progress(void* context, size_t length) {
+    auto& p = *static_cast<ExportProbe*>(context);
+    if (length == p.previous) ++p.checkpoints;
+    p.previous = length;
+  }
+};
+ExportProbe print(const SupportTransferAudit& audit, size_t prefix_bytes=0) {
+  PsramString json; assert(json.reserve(foot_fast_policy::kMetadataReserveBytes));
+  json += "{\"sensor_data\":\"";
+  if (prefix_bytes) {
+    assert(prefix_bytes > json.length());
+    const std::string data(prefix_bytes - json.length() - 1, 'x');
+    json.append(data.c_str(), data.size());
+  }
+  json += "\"";
+  const size_t base = json.length();
+  ExportProbe probe; probe.previous = base;
+  json.setProgress(ExportProbe::progress, &probe);
+  audit.append(json);
+  json.setProgress(nullptr);
+  const char* rows = std::strstr(json.c_str() + base, "\"rows\":[");
+  if (rows) probe.schema_bytes = rows - (json.c_str() + base) + std::strlen("\"rows\":[");
+  assert(finishMetadata(json));
+  assert(json.length() <= foot_fast_policy::kMetadataHardBudgetBytes);
+  std::cout << json.c_str() << "\n";
+  return probe;
 }
 int main() {
   ExperimentRunner r;
@@ -127,8 +154,30 @@ int main() {
 
   SupportTransferAudit failed;fail_task=true;failed.begin(.05f);failed.startRun();
   failed.submit(sample);failed.seal();print(failed);
-  audit.startRun();for(unsigned i=1;i<=1210;++i){sample.packet=i;audit.submit(sample);dispatch();}
-  audit.seal();print(audit,foot_fast_policy::kMetadataHardBudgetBytes-16000);
+  audit.startRun();
+  for(unsigned i=1;i<=1210;++i) {
+    sample.packet=i; sample.time_ms=i*25; sample.captured_us=UINT32_MAX-1210+i;
+    sample.input.side=i%2 ? -1 : 1;
+    sample.input.angle_deg=std::sin(i*.02f)*8;
+    sample.input.accel_dps2=std::cos(i*.02f)*123.4567f;
+    sample.input.left_deg=std::sin(i*.05f)*14;
+    sample.input.right_deg=-sample.input.left_deg;
+    sample.input.initial_current_ma=-17.1337f;sample.input.goal_current_ma=320;
+    audit.submit(sample);dispatch();
+  }
+  audit.seal();
+  constexpr size_t limit=foot_fast_policy::kMetadataHardBudgetBytes;
+  const auto limited = print(audit,limit-16000);
+  assert(limited.checkpoints>1 && limited.checkpoints<=2+16000/kMinRowBytes);
+  const size_t sealed_bytes=limited.schema_bytes+kFooterBytes+kClosingBytes;
+  assert(sealed_bytes>512);
+  // Enough room for the schema but no row, one rejected row, or only an omission count.
+  assert(print(audit,limit-sealed_bytes-(kMinRowBytes-1)).checkpoints==1);
+  const auto rejected=print(audit,limit-sealed_bytes-kMinRowBytes);
+  assert(rejected.checkpoints>=2 && rejected.checkpoints<=3);
+  assert(print(audit,limit-250).checkpoints==1);
+  assert(print(audit,limit-kFooterBytes).checkpoints==1);
+  print(audit);
   audit.startRun();
   sample.gate_mask=SupportTransferAudit::NoBudget;
   auto& in=sample.input;in.side=1;in.angle_deg=-2;in.rate_dps=40;in.accel_dps2=0;

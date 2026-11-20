@@ -33,6 +33,12 @@ const state={boot_id:1,run_id:0,input_peak_percent:0,input_current_mA:300,brake_
   assert.equal(vm.runInContext('latest.boot_id',context),1);
   assert.equal(vm.runInContext('diagnosticInFlight',context),false);
   context.fetch=async()=>{throw Error('unreachable');};
+  const lastReceived=vm.runInContext('diagnosticSnapshot().browser_status.last_received_at',context);
+  await vm.runInContext('refresh()',context);
+  const outage=vm.runInContext('diagnosticSnapshot().browser_status',context);
+  assert(lastReceived);assert.equal(outage.last_received_at,lastReceived);assert(outage.age_ms>=0);
+  assert.equal(outage.last_failure.path,'/status.json?view=live');assert.equal(outage.last_failure.message,'unreachable');
+  assert.equal(element('work-start-10').disabled,true);
   const failed=await vm.runInContext('diagnosticSnapshotWithDetails()',context);
   assert.equal(failed.detail_fetch.ok,false);assert.equal(failed.foot.right_deg,7);
   assert.equal(vm.runInContext('diagnosticInFlight',context),false);

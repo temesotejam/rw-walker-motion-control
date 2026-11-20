@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>歩行器 v39 荷重移行予測版</title>
+  <title>歩行器 v39-webfix1 ログ取得修正版</title>
   <script src="flasher-completion.js"></script>
   <script type="module" src="https://unpkg.com/esp-web-tools@10.1.1/dist/web/install-button.js?module"></script>
   <style>body{font:1rem/1.7 system-ui,sans-serif;max-width:42rem;margin:3rem auto;padding:0 1rem;color:#203044}button{font:inherit;background:#175ab1;color:white;border:0;border-radius:.5rem;padding:.6rem 1rem;cursor:pointer}.serial-button{margin-top:1rem;background:#435369}</style>
 </head>
 <body><main>
-  <h1>歩行器 v39 荷重移行予測版</h1>
-  <p><code>walking-support-transfer-v39</code> を書き込みます。±8°の測定では、従来のエネルギー制御で歩行しながら、次の支持足へ移る前の通電候補をRWLOGに記録します。</p>
+  <h1>歩行器 v39-webfix1 ログ取得修正版</h1>
+  <p><code>walking-support-transfer-v39-webfix1</code> を書き込みます。測定終了後は機体がRWLOGの確定を始めます。機体の測定画面で「RWLOGを取得・再開」を押すと保存できます。</p>
   <p>機体を停止し、バッテリーを外してUSBだけでPCにつないでください。PC版のChromeまたはEdgeで操作できます。</p>
   <esp-web-install-button manifest="manifest.json">
-    <button slot="activate">v39を書き込む</button>
+    <button slot="activate">v39-webfix1を書き込む</button>
     <span slot="unsupported">PC版ChromeまたはEdgeで開いてください。</span>
   </esp-web-install-button>
   <p><a href="../foot-periodic40/">実機確認済みのv38を書き込む</a></p>

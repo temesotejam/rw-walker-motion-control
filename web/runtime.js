@@ -3,6 +3,7 @@ const $ = id => document.getElementById(id);
 let previewRunning = false, previewEvidence = null;
 let poseRunning = false, poseCancelled = false, poseSession = null, poseSaved = false;
 let latest = null, lastSeen = 0, refreshInFlight = false, commandInFlight = false;
+let lastPeriodicStatusAt = 0, lastStatusFailure = null;
 let diagnosticInFlight = false;
 let transferRunning = false, cancelTransfer = false, completedFile = null, completedName = '', completedFoot = null;
 let transferAbort = null, transferDiagnostic = null;
@@ -57,8 +58,9 @@ async function request(path, {method = 'GET', kind = 'json', timeout = 3000, sig
   try {
     const response = await fetch(path, {method, signal: controller.signal, cache: 'no-store'});
     if (!response.ok) {
-      const error = new Error(`${response.status}: ${await response.text()}`);
-      error.status = response.status; throw error;
+      const body = await response.text();
+      const error = new Error(`${response.status}: ${body}`);
+      error.status = response.status; error.responseText = body; throw error;
     }
     // Abort remains armed through body consumption, including response.json().
     if (kind === 'bytes') return new Uint8Array(await response.arrayBuffer());
@@ -87,7 +89,10 @@ function walkingAdmissionTrial(s = latest) {
 }
 function walkingFootFastTrial(s = latest) {
   const id = s?.diagnostic_build_id || '';
-  return /^walking-foot-fast-v20(?:-|$)/.test(id) || id === 'walking-foot-periodic40-v38' || id === 'walking-support-transfer-v39';
+  return /^walking-foot-fast-v20(?:-|$)/.test(id) || id === 'walking-foot-periodic40-v38' || supportTransferTrial(s);
+}
+function supportTransferTrial(s) {
+  return /^walking-support-transfer-v39(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function foreAftStopText(reason) {
   return ({
@@ -128,7 +133,7 @@ function footStartBlockReason(s) {
   return '足の検出以外に、ゼロ点・校正範囲・画像時刻・鮮度の開始条件を確認しています。';
 }
 function controls() {
-  const fresh = !offlineMode && latest && Date.now() - lastSeen < 3500;
+  const fresh = !offlineMode && !lastStatusFailure && latest && Date.now() - lastSeen < 3500;
   const busy = commandInFlight || previewRunning || poseRunning || diagnosticInFlight || !!latest?.command?.pending;
   const building = latest?.export_phase === 'building';
   $('start').disabled = !fresh || busy || transferRunning || !latest.ready || !latest.upright_reference?.valid || latest.running || latest.export_phase !== 'empty';
@@ -175,7 +180,7 @@ function controls() {
   $('pose-cancel').disabled = !poseRunning;
   $('pose-save').disabled = !poseSession?.baseline || poseRunning;
   $('pose-reset').disabled = !poseSession || poseRunning || (!!poseSession.baseline && !poseSaved);
-  if ($('usb-diag')) $('usb-diag').disabled = !fresh || commandInFlight;
+  if ($('usb-diag')) $('usb-diag').disabled = !fresh || commandInFlight || transferRunning;
   if ($('reconnect')) $('reconnect').style.display = offlineMode ? 'inline-block' : 'none';
 }
 function setOffline(waitMs) {
@@ -290,7 +295,7 @@ function render(s) {
   if (walkingAdmissionTrial(s)) {
     const fast = walkingFootFastTrial(s);
     $('work-title').textContent = s.foot_periodic ? '歩行のエネルギー制御（v38・足角度40 Hz・30秒）' : fast ? '歩行のエネルギー制御（v20・足角度低遅延版・30秒）' : '歩行のエネルギー制御（v19・30秒）';
-    const predictTransfer = s.diagnostic_build_id === 'walking-support-transfer-v39';
+    const predictTransfer = supportTransferTrial(s);
     if (predictTransfer) $('work-title').textContent = '歩行のエネルギー制御（v39・荷重移行予測の記録・30秒）';
     $('work-description').textContent = (s.foot_periodic ? '測定中も足角度と更新回数を約2秒ごとに表示します。' : fast ? '今回のv20は足角度低遅延版です。±8°の制御方式はv19を継承します。' : '今回のv19は±8°を使用します。') +
       '戻りの救済後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。前倒し候補のモデル支持を確認し、範囲外はZEROで再評価します。前後の持続逸脱では入力を停止します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
@@ -425,18 +430,24 @@ function render(s) {
     : 'MEKFの更新を待っています。';
   drawMarkers(f); controls();
 }
-async function refresh(force = false) {
+function refresh(force = false) {
+  if (transferRunning || diagnosticInFlight) return;
+  if (refreshInFlight) return refreshInFlight;
   if (offlineMode && Date.now() < offlineUntil && !force) { renderOffline(); return; }
-  if (refreshInFlight || diagnosticInFlight) return;
-  refreshInFlight = true;
+  refreshInFlight = refreshStatus(force).finally(() => { refreshInFlight = false; });
+  return refreshInFlight;
+}
+async function refreshStatus(force) {
   const generation = offlineGeneration;
+  const path = statusRequestPath(force);
   let received = false;
   try {
-    const s = await request(statusRequestPath(force), {timeout: 2500}); received = true;
+    const s = await request(path, {timeout: 2500}); received = true;
     // A pre-START poll can arrive after START entered quiet mode. Do not let
     // that old READY response restart automatic polling during the run.
     if (generation !== offlineGeneration) { if (offlineMode) renderOffline(); return; }
     if (s?.periodic_run && s.foot_periodic) {
+      lastPeriodicStatusAt = Date.now(); lastStatusFailure = null;
       periodicSession = true;
       setOffline(0);
       $('connection').textContent = '接続中 · 測定状態を自動更新';
@@ -464,13 +475,14 @@ async function refresh(force = false) {
       $('message').textContent = foreAftStopText(message) || message;
     }
   } catch (error) {
-    lastSeen = 0;
+    lastStatusFailure = {path, name:error.name, code:error.code ?? null, status:error.status ?? null,
+      message:error.message, at:new Date().toISOString()};
     if (offlineMode) { renderOffline(); return; }
     $('connection').textContent = received || error instanceof SyntaxError
       ? '状態データ・画面更新のエラー（自動再試行）'
       : '装置から応答がありません（自動再試行）';
     controls();
-  } finally { refreshInFlight = false; }
+  }
 }
 function statusRequestPath(full = false) {
   return !full && latest?.live_status_supported === true ? '/status.json?view=live' : '/status.json';
@@ -489,7 +501,7 @@ function adoptStatus(s) {
       !Number.isInteger(s.command.completed) || !Number.isInteger(s.command.submitted) ||
       ['running', 'ready', 'downloadable', 'controller_fresh'].some(key => typeof s[key] !== 'boolean'))
     throw new Error('装置の状態データが不完全です');
-  latest = s; lastSeen = Date.now();
+  latest = s; lastSeen = Date.now(); lastStatusFailure = null;
   if (poseSession && !poseSaved) {
     poseSession.trace.push(JSON.parse(JSON.stringify({client_time_ms:Date.now(), boot_id:s.boot_id,
       run_id:s.run_id, revision:s.revision, state:s.state, mekf:s.mekf, controller_fresh:s.controller_fresh,
@@ -501,7 +513,7 @@ function adoptStatus(s) {
 function statusPollDelayMs() {
   if (latest?.foot_periodic || periodicSession) return 2000;
   const idleFast = walkingFootFastTrial(latest) && latest?.state === 'READY_TO_MEASURE' &&
-    latest?.ready && !latest.running && lastSeen && Date.now() - lastSeen < 2000 &&
+    latest?.ready && !latest.running && !lastStatusFailure && lastSeen && Date.now() - lastSeen < 2000 &&
     !offlineMode && !transferRunning && !previewRunning && !poseRunning && !commandInFlight;
   return idleFast ? 100 : 800;
 }
@@ -687,13 +699,24 @@ function expandFootTable(value, observations = null) {
 function transferCheck() {
   if (cancelTransfer) throw new Error('一時停止しました。取得・再開で続けられます。');
 }
+function waitForTransfer(ms) {
+  const signal = transferAbort.signal;
+  if (signal.aborted) return;
+  return new Promise(resolve => {
+    const done = () => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve(); };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener('abort', done, {once:true});
+  });
+}
 function transferNote(values) {
   if (transferDiagnostic) Object.assign(transferDiagnostic, values, {updated_at:new Date().toISOString()});
 }
 function diagnosticSnapshot() {
   const now = Date.now();
   return {...latest, browser_status:{last_received_at:lastSeen ? new Date(lastSeen).toISOString() : null,
-    age_ms:lastSeen ? Math.max(0, now-lastSeen) : null, snapshot_is_cached:true},
+    age_ms:lastSeen ? Math.max(0, now-lastSeen) : null, snapshot_is_cached:true,
+    last_periodic_received_at:lastPeriodicStatusAt ? new Date(lastPeriodicStatusAt).toISOString() : null,
+    last_failure:lastStatusFailure},
     browser_transfer:transferDiagnostic, browser_saved_at:new Date(now).toISOString()};
 }
 async function diagnosticSnapshotWithDetails() {
@@ -702,6 +725,7 @@ async function diagnosticSnapshotWithDetails() {
     return snapshot;
   diagnosticInFlight = true; controls();
   try {
+    if (refreshInFlight) await refreshInFlight;
     const detail = await request('/status.json', {timeout:2500});
     // Preserve the cached snapshot and its original age; never mix a later
     // full response (possibly another boot/run) into its dynamic fields.
@@ -725,24 +749,33 @@ async function exportRequest(path, options, label, validate = value => value) {
       transferNote({last_failure:{path, attempt, name:error.name, code:error.code ?? null,
         status:error.status ?? null, message:error.message, at:new Date().toISOString()}});
       transferCheck();
-      const permanent = Number.isInteger(error.status) && error.status >= 400 && error.status < 500 &&
+      const preparingRun = path === '/export/prepare' && error.status === 409 && error.responseText === 'run_preparing';
+      const permanent = !preparingRun && Number.isInteger(error.status) && error.status >= 400 && error.status < 500 &&
         ![408,429].includes(error.status);
       if (permanent || attempt === exportPolicy.maxAttempts) throw error;
       transferNote({retries:transferDiagnostic.retries + 1});
       $('transfer').textContent = `${label} · 通信を再試行 ${attempt}/${exportPolicy.maxAttempts - 1}`;
-      await nap(250 * attempt);
+      await waitForTransfer(1000 * 2 ** (attempt - 1));
     }
   }
 }
 async function download() {
-  if (transferRunning) return;
+  if (transferRunning || diagnosticInFlight || commandInFlight || previewRunning || poseRunning) return;
   transferRunning = true; cancelTransfer = false; controls();
   transferAbort = new AbortController();
-  transferDiagnostic = {revision:'resumable_export_retry_v1', phase:'prepare',
+  transferDiagnostic = {revision:'resumable_export_retry_v2', phase:'prepare',
     started_at:new Date().toISOString(), boot_id:latest?.boot_id ?? null, run_id:latest?.run_id ?? null,
     confirmed_bytes:0, cached_bytes:0, received_bytes:0, retries:0, manifest:null, last_failure:null};
   try {
     $('transfer').textContent = 'ログを確定中…';
+    // A poll may already hold the device's single HTTP client when clicked.
+    if (refreshInFlight) await refreshInFlight;
+    transferCheck();
+    if ((transferDiagnostic.boot_id != null && latest?.boot_id !== transferDiagnostic.boot_id) ||
+        (transferDiagnostic.run_id != null && latest?.run_id !== transferDiagnostic.run_id)) {
+      transferNote({source_lost:true});
+      throw new Error('選択した測定から本体または測定番号が変わりました。');
+    }
     await exportRequest('/export/prepare', {method:'POST', kind:'text'}, 'ログ確定の開始');
     transferNote({phase:'manifest'});
     const waitStarted = Date.now();
@@ -753,15 +786,17 @@ async function download() {
         throw new Error('本体のログ確定が120秒以内に完了しませんでした。診断JSONを保存してください。');
       m = await exportRequest('/export/manifest', {}, 'ログ確定状況の確認');
       transferNote({manifest:m});
-      if ((m.boot_id != null && transferDiagnostic.boot_id != null && m.boot_id !== transferDiagnostic.boot_id) || m.phase === 'empty') {
-        transferNote({source_lost:true, observed_boot_id:m.boot_id ?? null});
-        throw new Error('取得元のログが失われています。本体の再起動・接続先の変更・ログ消去の可能性があります。診断JSONを保存してください。');
+      if ((m.boot_id != null && transferDiagnostic.boot_id != null && m.boot_id !== transferDiagnostic.boot_id) ||
+          (m.run_id != null && transferDiagnostic.run_id != null && m.run_id !== transferDiagnostic.run_id) ||
+          m.phase === 'empty') {
+        transferNote({source_lost:true, observed_boot_id:m.boot_id ?? null, observed_run_id:m.run_id ?? null});
+        throw new Error('取得元のログが一致しません。本体の再起動・接続先や測定番号の変更・ログ消去の可能性があります。診断JSONを保存してください。');
       }
       if (m.phase === 'error') throw new Error(m.error);
       if (m.phase !== 'ready') {
         $('transfer').textContent = m.bytes ? `ログCRC計算中 ${m.hashed_bytes} / ${m.bytes} bytes` :
           `ログ付加情報を作成中 ${m.metadata_bytes ?? 0} bytes`;
-        await nap(exportPolicy.pollMs);
+        await waitForTransfer(exportPolicy.pollMs);
       }
     } while (m.phase !== 'ready');
     if (!/^[a-f0-9]{16}$/.test(m.token) || !Number.isInteger(m.bytes) || m.bytes < 114 || m.bytes > 9 * 1024 * 1024 || m.chunk_bytes !== 4096)
@@ -798,12 +833,15 @@ async function download() {
     $('transfer').textContent = `CRC検証完了 · ${m.bytes} bytes · 足角度 ${completedFoot?.length ?? 0}行`;
     calculateWheelWork();
   } catch (error) {
-    transferNote({phase:cancelTransfer ? 'paused' : 'error', error:error.message});
+    const failedPhase = transferDiagnostic.phase;
+    transferNote({phase:cancelTransfer ? 'paused' : 'error', failed_phase:failedPhase, error:error.message});
     const retained = transferDiagnostic.confirmed_bytes;
-    const progress = retained ? `今回の取得・再開で検証済み${retained} bytes。` : 'ログ確定または最初のチャンクの取得が未完了です。';
+    const stage = {prepare:'本体へのログ確定要求', manifest:'ログ確定状況の確認',
+      chunks:`ログデータの取得（${retained} bytesから）`, verifying:'取得データの検証'}[failedPhase];
+    const progress = retained ? `今回の取得・再開で検証済み${retained} bytes。` : '';
     $('transfer').textContent = transferDiagnostic.source_lost ?
       `${error.message}（端末に取得済みの部分は保持しますが、失われた本体ログの続きは取得できません。）` :
-      `${error.message}（${progress}取得済みの部分は再開に利用します。）`;
+      `${stage} · ${error.message}（${progress}取得済みの部分は再開に利用します。）`;
   } finally { transferAbort = null; transferRunning = false; controls(); }
 }
 function footCsv(rows) {
@@ -914,7 +952,7 @@ async function capturePose(baseline) {
     for (let i=0;i<PoseComparison.limits.samples;i++) {
       if (i) await nap(PoseComparison.limits.interval_ms);
       if (poseCancelled) throw Error('取得を中止しました');
-      if (Date.now()-lastSeen >= 3500 || latest?.running || latest?.state !== 'READY_TO_MEASURE' ||
+      if (lastStatusFailure || Date.now()-lastSeen >= 3500 || latest?.running || latest?.state !== 'READY_TO_MEASURE' ||
           !latest.controller_fresh || latest.command.pending) throw Error('接続と待機状態を確認してください');
       $('pose-status').textContent = `その姿勢を保ってください… ${i+1}/${PoseComparison.limits.samples}`;
       const m = await request('/vision/capture', {method:'POST'});

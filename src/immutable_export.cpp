@@ -18,8 +18,10 @@ bool ImmutableExport::prepare() {
   const auto s = status();
   if (s.phase == Phase::Building || s.phase == Phase::Ready) return true; // idempotent retry
   if (!task_ || !logger_->rwlogDownloadable()) return false;
+  const auto run_id = logger_->currentRunId();
   portENTER_CRITICAL(&mux_);
   status_ = Status{}; status_.phase = Phase::Building;
+  status_.run_id = run_id;
   portEXIT_CRITICAL(&mux_);
   xTaskNotifyGive(task_); return true;
 }
@@ -85,6 +87,7 @@ void ImmutableExport::build() {
   // Publish only after the complete CRC and every byte/offset are immutable.
   RuntimeDiag::phase(RuntimeDiag::Lane::Export, RuntimeDiag::Phase::Publish);
   Status complete;
+  complete.run_id = header_.run_id;
   complete.metadata_bytes = metadata_.length();
   complete.bytes = header_.crc_offset + 4; complete.hashed_bytes = complete.bytes;
   complete.crc = crc_;

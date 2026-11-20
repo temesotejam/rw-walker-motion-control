@@ -1,14 +1,15 @@
 'use strict';
-// Actual browser transfer code + synthetic v56 export fixture. Network failures are
+// Actual browser transfer code + a recording or synthetic v56 fixture. Network failures are
 // injected here; this does not simulate the ESP32 radio or desktop Wi-Fi stack.
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const file=fs.readFileSync(process.argv[2]),elements=new Map();
+const recorded = process.argv[3] === '--recorded';
 const element=id=>{if(!elements.has(id))elements.set(id,{textContent:'',style:{}});return elements.get(id);};
 const manifest={phase:'ready',token:'0123456789abcdef',bytes:file.length,chunk_bytes:4096,
   crc32:file.readUInt32LE(file.length-4),filename:'review.rwlog'};
 let disconnected=true,saved=0,offsets=[];
 const context=vm.createContext({document:{getElementById:element,createElement:()=>({click:()=>++saved})},
-  setTimeout:(fn,ms)=>{const t=setTimeout(fn,ms<3000?0:ms);if(ms>=3000)t.unref();return t;},clearTimeout,
+  setTimeout:(fn,ms)=>{const t=setTimeout(fn,ms===60000?ms:0);if(ms===60000)t.unref();return t;},clearTimeout,
   AbortController,Date,DataView,Uint8Array,TextDecoder,Map,Blob,URL,
   fetch:async path=>{
     if(path==='/export/prepare')return {ok:true,text:async()=>'preparing'};
@@ -35,11 +36,17 @@ vm.runInContext("latest={state:'ESTOP',export_phase:'ready',running:false,ready:
   disconnected=false;offsets=[];await vm.runInContext('download()',context);
   assert.equal(offsets[0],8192);assert(!offsets.includes(0)&&!offsets.includes(4096));
   assert(Buffer.from(vm.runInContext('completedFile',context)).equals(file));assert.equal(saved,1);
-  assert.equal(vm.runInContext('completedFoot.length',context),768);assert.equal(element('csv').disabled,false);
+  const metadataStart = file.readUInt16LE(10);
+  const metadata = JSON.parse(file.toString('utf8', metadataStart, metadataStart + file.readUInt32LE(24)));
+  const frameCount = (metadata.foot_frames.rows ?? metadata.foot_frames).length;
+  assert.equal(vm.runInContext('completedFoot.length',context),frameCount);assert.equal(element('csv').disabled,false);
   assert.match(element('transfer').textContent,/CRC検証完了/);
-  assert.equal(vm.runInContext('wheelWorkReport.speed_attempts',context),1);
-  assert.equal(vm.runInContext('wheelWorkReport.measurement.observed_net_j',context),null);
+  if (!recorded) {
+    assert.equal(frameCount,768);
+    assert.equal(vm.runInContext('wheelWorkReport.speed_attempts',context),1);
+    assert.equal(vm.runInContext('wheelWorkReport.measurement.observed_net_j',context),null);
+  }
   assert.match(element('work-result').textContent,/review.rwlog/);
-  assert.equal(vm.runInContext('footCsv(completedFoot)',context).split('\r\n').filter(Boolean).length,769);
-  console.log(`RWLOG ${file.length} bytes: 8192-byte interruption/resume, exact content/CRC, 768 foot CSV rows PASS`);
+  assert.equal(vm.runInContext('footCsv(completedFoot)',context).split('\r\n').filter(Boolean).length,frameCount+1);
+  console.log(`RWLOG ${file.length} bytes: 8192-byte interruption/resume, exact content/CRC, ${frameCount} foot CSV rows PASS`);
 })().catch(e=>{console.error(e);process.exitCode=1;});

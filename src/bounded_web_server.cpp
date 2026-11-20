@@ -4,6 +4,20 @@
 #include <errno.h>
 #include <lwip/sockets.h>
 
+void BoundedWriteWebServer::handleClient() {
+  // The Arduino server gives one TCP client up to 5 s to send its first byte.
+  // A browser can preconnect an empty socket ahead of the 2.5 s status poll.
+  // Give that client a grace period, then let a queued connection use the slot.
+  const uint32_t now = millis();
+  if (_currentStatus == HC_WAIT_READ &&
+      static_cast<uint32_t>(now - _statusChange) >= 250 &&
+      static_cast<uint32_t>(now - last_queue_probe_ms_) >= 50) {
+    last_queue_probe_ms_ = now;
+    if (_server.hasClient() && !_currentClient.available()) _currentClient.stop();
+  }
+  WebServer::handleClient();
+}
+
 size_t BoundedWriteWebServer::pacedWrite(const uint8_t* buffer, size_t length, const char*) {
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpSend);
   const int fd = _currentClient.fd();

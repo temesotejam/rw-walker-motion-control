@@ -10,6 +10,7 @@ class ImmutableExport {
   enum class Phase : uint8_t { Empty, Building, Ready, Error };
   struct Status {
     Phase phase = Phase::Empty;
+    uint16_t run_id = 0;
     uint32_t bytes = 0, hashed_bytes = 0, crc = 0;
     uint32_t metadata_bytes = 0;
     char token[24] = {}, filename[80] = {}, error[80] = {};

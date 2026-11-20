@@ -29,13 +29,15 @@ class PsramString {
   void append(const char* s, size_t n) {
     if (failed_ || !data_ || n > capacity_ - length_) { failed_ = true; return; }
     memcpy(data_ + length_, s, n); length_ += n; data_[length_] = 0;
-    if (progress_) progress_(progress_context_, length_);
+    checkpoint();
   }
   // Export owner only, outside application locks; disabled for other users.
   using Progress = void (*)(void*, size_t);
   void setProgress(Progress progress, void* context = nullptr) {
     progress_ = progress; progress_context_ = context;
   }
+  // Formatting or rejecting an optional row may consume time without appending bytes.
+  void checkpoint() const { if (progress_) progress_(progress_context_, length_); }
   size_t length() const { return length_; }
   const char* c_str() const { return data_ ? data_ : ""; }
   bool ok() const { return data_ && !failed_; }

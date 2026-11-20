@@ -41,9 +41,10 @@ def main():
         for test in ("energy_admission_runner_v19", "energy_admission_metadata_v19", "half_cycle_energy_budget",
                      "foot_pipeline", "foot_native_geometry", "foot_cadence", "rwlog_v46_converter",
                      "foot_periodic40_flasher", "observed_transfers", "support_transfer_audit",
-                     "support_transfer_replay"):
+                     "support_transfer_replay", "http_client_queue"):
             checked(*py, ROOT / "test" / f"test_{test}.py")
-        for test in ("periodic_foot", "mekf_host", "fore_aft_motion_guard", "support_transfer_plan"):
+        for test in ("periodic_foot", "mekf_host", "fore_aft_motion_guard", "support_transfer_plan",
+                     "offline_run_export"):
             binary = tmp / (test + ".exe")
             source = [ROOT / "test" / f"test_{test}.cpp"]
             if test == "mekf_host":
@@ -57,6 +58,8 @@ def main():
             checked(node, ROOT / "test" / f"test_{test}.js", *extra)
         for converted in converted_trials:
             checked(*py, ROOT / "tools/replay_periodic_foot.py", tmp / "periodic_foot.exe", converted)
+        for rwlog in logs:
+            checked(node, ROOT / "test/test_runtime_download.js", rwlog, "--recorded")
     print("Active host checks passed.")
 
 

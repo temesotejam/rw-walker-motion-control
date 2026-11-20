@@ -9,11 +9,13 @@ class BoundedWriteWebServer : public WebServer {
  public:
   explicit BoundedWriteWebServer(int port = 80) : WebServer(port) {}
   bool listening() { return static_cast<bool>(_server); }
+  void handleClient() override;
 
  protected:
   size_t _currentClientWrite(const char* buffer, size_t length) override;
   size_t _currentClientWrite_P(PGM_P buffer, size_t length) override;
 
  private:
+  uint32_t last_queue_probe_ms_ = 0;
   size_t pacedWrite(const uint8_t* buffer, size_t length, const char* source_tag);
 };

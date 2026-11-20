@@ -68,8 +68,7 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
   s.on("/export/prepare", HTTP_POST, [this]() {
     if (offline_.busy()) { server_->send(409, "text/plain", "run_preparing"); return; }
     RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpCommand);
-    const auto st = control_->snapshot();
-    const bool ok = !st.running && st.downloadable && !control_->commandState().pending && export_->prepare();
+    const bool ok = prepareCompletedExport();
     server_->send(ok ? 202 : 409, "text/plain", ok ? "preparing" : "completed_run_required");
   });
   s.on("/export/manifest", HTTP_GET, [this]() { manifest(); });
@@ -142,6 +141,12 @@ bool WebUi::restoreTransport() {
   return server_->listening();
 }
 void WebUi::transportReady() { RuntimeDiag::setRunActive(false); }
+bool WebUi::prepareCompletedExport() {
+  const auto cmd = control_->commandState();
+  if (cmd.pending || !control_->commandPublished(cmd.completed)) return false;
+  const auto st = control_->snapshot();
+  return !st.running && st.downloadable && export_->prepare();
+}
 bool WebUi::quietResponse() {
   if (!offline_.busy()) return false;
   char json[160];
@@ -184,9 +189,6 @@ void WebUi::command(RunControlWorker::Command cmd) {
     }
     const bool ok=control_->request(cmd,mm);
     server_->send(ok ? 202 : 409,"text/plain",ok ? "command_queued" : "command_busy");return;
-  }
-  if (cmd == RunControlWorker::Command::Clear && !export_->reset()) {
-    server_->send(409, "text/plain", "export_preparing"); return;
   }
   if (cmd == RunControlWorker::Command::Start) {
     float target_deg;
@@ -257,6 +259,9 @@ void WebUi::command(RunControlWorker::Command cmd) {
     server_->send(ok ? 202 : 409, "text/plain", ok ? "offline_run_queued" : "command_busy");
   } else {
     const bool ok = control_->request(cmd);
+    // Only this HTTP owner can start an export, and Building was excluded
+    // above. A refused Clear must leave the download token usable.
+    if (ok && cmd == RunControlWorker::Command::Clear) export_->reset();
     server_->send(ok ? 202 : 409, "text/plain", ok ? "command_queued" : "command_busy");
   }
 }
@@ -550,11 +555,11 @@ void WebUi::manifest() {
   char body[800];
   snprintf(body, sizeof(body),
       "{\"phase\":\"%s\",\"token\":\"%s\",\"bytes\":%lu,\"hashed_bytes\":%lu,\"crc32\":%lu,"
-      "\"chunk_bytes\":4096,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"metadata_bytes\":%lu,"
+      "\"chunk_bytes\":4096,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"run_id\":%u,\"metadata_bytes\":%lu,"
       "\"export_memory\":{\"sampled_ms\":%lu,\"internal_free\":%lu,\"internal_min_free\":%lu,\"internal_largest\":%lu}}",
       phase(s.phase), s.token, static_cast<unsigned long>(s.bytes), static_cast<unsigned long>(s.hashed_bytes),
       static_cast<unsigned long>(s.crc), s.filename, s.error,
-      static_cast<unsigned long>(boot_id_), static_cast<unsigned long>(s.metadata_bytes),
+      static_cast<unsigned long>(boot_id_), static_cast<unsigned>(s.run_id), static_cast<unsigned long>(s.metadata_bytes),
       static_cast<unsigned long>(millis()),
       static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
       static_cast<unsigned long>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),

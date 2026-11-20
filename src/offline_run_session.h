@@ -32,7 +32,11 @@ class OfflineRunSession {
     const uint32_t elapsed = now - queued_ms_;
     return elapsed < kDisplayWaitMs ? kDisplayWaitMs - elapsed : 0;
   }
-  void cancel(uint32_t now) { if (busy()) { phase_ = Phase::Cancelling; since_ms_ = now; } }
+  void cancel(uint32_t now) {
+    if (phase_ == Phase::Draining || phase_ == Phase::Starting || phase_ == Phase::Running) {
+      phase_ = Phase::Cancelling; since_ms_ = now;
+    }
+  }
   template<class Host> void update(uint32_t now, Host& h) {
     switch (phase_) {
       case Phase::Online: break;
@@ -51,7 +55,7 @@ class OfflineRunSession {
         else if (result == StartResult::Started) {
           // A short failed run may already be sealed before this observer runs.
           if (h.runActive()) phase_ = Phase::Running;
-          else restore(now, "");
+          else finishRun(now, "", h);
         } else if (now - since_ms_ >= 5000) {
           error_ = "start_timeout"; phase_ = Phase::Cancelling;
         }
@@ -59,12 +63,16 @@ class OfflineRunSession {
       }
       case Phase::Running:
         // active becomes false only AFTER control seals logs and foot frames.
-        if (!h.runActive()) restore(now, "");
+        if (!h.runActive()) finishRun(now, "", h);
         break;
-      case Phase::Cancelling:
+      case Phase::Cancelling: {
         h.cancelStart();
-        if (h.startResult() != StartResult::Pending && !h.runActive()) restore(now, error_);
+        const auto result = h.startResult();
+        // STOP can overwrite the START acknowledgement even for a real run.
+        // The published, sealed log determines whether there is data to export.
+        if (result != StartResult::Pending && !h.runActive()) finishRun(now, error_, h);
         break;
+      }
       case Phase::Restoring:
         if (!attempted_restore_ || now - since_ms_ >= 1000) {
           attempted_restore_ = true; since_ms_ = now;
@@ -74,6 +82,12 @@ class OfflineRunSession {
     }
   }
  private:
+  template<class Host> void finishRun(uint32_t now, const char* error, Host& h) {
+    // Queue only sealed data. Preparation continues even when the browser is
+    // disconnected or the listener takes several attempts to come back.
+    h.prepareCompletedExport();
+    restore(now, error);
+  }
   void restore(uint32_t now, const char* error) {
     error_ = error; phase_ = Phase::Restoring; since_ms_ = now; attempted_restore_ = false;
   }

@@ -19,12 +19,19 @@ def main():
     with tempfile.TemporaryDirectory() as temp:
         folder = Path(temp)
         (folder / "runner_snapshot.inc").write_text(runner[begin:end], encoding="utf-8")
+        logger = (ROOT / "src/psram_logger.cpp").read_text(encoding="utf-8")
+        footer_start = logger.index("  const String final_size_key")
+        footer_end = logger.index("\n}", footer_start)
+        (folder / "metadata_footer.inc").write_text(logger[footer_start:footer_end], encoding="utf-8")
         exe = folder / "audit.exe"
         subprocess.run(["g++", "-std=c++17", "-O2", "-DSUPPORT_TRANSFER_V39=1", "-DFOOT_STABLE40_V36=1",
                         "-I", str(folder), "-I", str(ROOT / "src"), "-I", str(ROOT / "test/fixtures/arduino"),
                         str(ROOT / "test/fixtures/support_transfer_audit.cpp"), "-o", str(exe)], check=True)
-        blocks = [json.loads(line) for line in subprocess.check_output([exe], text=True).splitlines()]
-        assert len(blocks) == 6
+        lines = subprocess.check_output([exe]).splitlines()
+        blocks = [json.loads(line) for line in lines]
+        assert len(blocks) == 11
+        for block, line in zip(blocks, lines):
+            assert block["metadata_json_final_bytes"] == len(line) <= 1408 * 1024
         expected = [(5, 1, 3, 1), (1, 0, 0, 1), (1, 0, 1, 0), (1, 0, 0, 0)]
         for metadata, counts in zip(blocks, expected):
             b = metadata["support_transfer_shadow"]
@@ -49,12 +56,12 @@ def main():
         assert rows[2]["reason"] == 0 and rows[2]["width_ms"] == 0
         assert rows[0]["ready_after_us"] >= 7000 and rows[0]["accel_dps2"] == 400
         assert blocks[3]["support_transfer_shadow"]["unavailable"] == 1
-        zero_cap = blocks[5]["support_transfer_shadow"]
+        zero_cap = blocks[10]["support_transfer_shadow"]
         zero_rows = [dict(zip(zero_cap["columns"], row)) for row in zero_cap["rows"]]
         assert [r["reason"] for r in zero_rows] == [2,5] and all(r["width_ms"] == 0 for r in zero_rows)
         assert [r["capture_us32"] for r in zero_rows] == [2**32 - 4, 4]
         assert [r["ready_after_us"] for r in zero_rows] == [7, 2]
-        write_fixture(raw, blocks[5])
+        write_fixture(raw, blocks[10])
         convert(raw, expanded)
         with (expanded / "support_transfer_shadow.csv").open() as stream:
             assert [int(r["capture_us32"]) for r in csv.DictReader(stream)] == [2**32 - 4, 4]
@@ -65,7 +72,18 @@ def main():
         count = write_support_transfer_shadow(under_pressure, folder)
         with (folder / "support_transfer_shadow.csv").open() as stream:
             exported = list(csv.DictReader(stream))
-        assert count == len(exported) and int(exported[-1]["packet"]) > 1000
+        packets = [int(row["packet"]) for row in exported]
+        assert count == len(packets) and packets[0] == 1 and packets[-1] == 1201
+        assert max(b - a for a, b in zip(packets, packets[1:])) < 50
+        empty, rejected = (block["support_transfer_shadow"] for block in blocks[5:7])
+        assert all(b["stored"] == 1201 and b["exported"] == 0 and b["rows"] == [] for b in (empty, rejected))
+        assert blocks[7]["support_transfer_shadow_omitted"] == {"stored": 1201, "exported": 0}
+        assert all("support_transfer_shadow" not in block for block in blocks[7:9])
+        assert len(blocks[8]["sensor_data"]) > 1400 * 1024
+        full = blocks[9]["support_transfer_shadow"]
+        assert full["exported"] == full["stored"] == 1201
+        assert [row[2] for row in full["rows"]] == list(range(1, 1202))
+        assert [row[-1] for row in full["rows"]] == list(range(2**32 - 1210, 2**32 - 9))
         damaged = dict(b, completed=0)
         try:
             write_support_transfer_shadow({"support_transfer_shadow": damaged}, folder)

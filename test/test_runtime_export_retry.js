@@ -31,6 +31,7 @@ function harness(scenario={}) {
       requests.push(path);
       if(path==='/export/prepare'){
         ++prepareCount;
+        if(scenario.transientPrepare && prepareCount===1)return {ok:false,status:409,text:async()=>'run_preparing'};
         if(scenario.prepareAbort && prepareCount===1)return abort(opts.signal);
         if(scenario.prepareStatus)return {ok:false,status:scenario.prepareStatus,text:async()=>'blocked'};
         return {ok:true,text:async()=>'preparing'};
@@ -65,7 +66,7 @@ function harness(scenario={}) {
 (async()=>{
   // The recorded failure: after reboot the manifest becomes empty. Do not wait
   // 120 seconds or promise resumption of data that no longer exists on device.
-  for (const changed of [{phase:'empty'}, {boot_id:999}, {boot_id:999,phase:'ready'}]) {
+  for (const changed of [{phase:'empty'}, {boot_id:999}, {boot_id:999,phase:'ready'}, {boot_id:123, run_id:2}]) {
     const lost=harness({manifest:changed});await lost.run();
     assert.equal(lost.manifestCount,1);assert.equal(lost.saves.length,0);
     assert.equal(lost.diagnostic().browser_transfer.source_lost,true);
@@ -102,6 +103,7 @@ function harness(scenario={}) {
   assert.equal(h.manifestCount-before,5);assert.equal(vm.runInContext('memoryCache.size',h.context),2);
   assert.deepEqual(Array.from(vm.runInContext('completedFile',h.context)),[1,2,3]);
   d=h.diagnostic().browser_transfer;assert.equal(d.phase,'error');assert.equal(d.retries,4);
+  assert.equal(d.failed_phase,'manifest');assert.match(h.element('transfer').textContent,/ログ確定状況の確認/);
   assert.equal(d.last_failure.path,'/export/manifest');assert.match(d.error,/8秒/);
   assert(!h.element('transfer').textContent.includes('signal is aborted'));
   h.scenario.manifestAbort=false;const resumeStart=h.requests.length;await h.run();
@@ -113,7 +115,52 @@ function harness(scenario={}) {
   for(const scenario of [{prepareStatus:409},{prepareStatus:400}]){
     h=harness(scenario);await h.run();assert.equal(h.prepareCount,1);
     assert.equal(h.diagnostic().browser_transfer.phase,'error');assert.equal(h.saves.length,0);
+    assert.equal(h.diagnostic().browser_transfer.failed_phase,'prepare');
+    assert.match(h.element('transfer').textContent,/本体へのログ確定要求/);
   }
+  h=harness({transientPrepare:true});await h.run();assert.equal(h.prepareCount,2);
+  assert.equal(h.diagnostic().browser_transfer.phase,'complete');
+
+  h=harness({transientPrepare:true});
+  const shortTimer=h.context.setTimeout;
+  let waitingForRetry;
+  const retryStarted=new Promise(resolve=>{waitingForRetry=resolve;});
+  h.context.setTimeout=(fn,ms)=>{
+    if(ms!==1000)return shortTimer(fn,ms);
+    waitingForRetry();
+    return setTimeout(fn,20000);
+  };
+  const cancellable=h.run();
+  await retryStarted;h.element('cancel').onclick();await cancellable;
+  assert.equal(h.prepareCount,1);assert.equal(h.manifestCount,0);
+  assert.equal(h.diagnostic().browser_transfer.phase,'paused');
+
+  // An in-flight browser poll owns the only client until its body settles.
+  // Even a forced refresh while downloading must not start a second request.
+  h=harness();
+  const productionFetch=h.context.fetch;
+  let releaseStatus, releasePrepare, enterPrepare, statusCount=0;
+  const prepareEntered=new Promise(resolve=>{enterPrepare=resolve;});
+  h.context.fetch=async (path,options)=>{
+    if(path==='/status.json'){
+      ++statusCount;
+      if(statusCount===1)await new Promise(resolve=>{releaseStatus=resolve;});
+      throw new TypeError('Failed to fetch');
+    }
+    if(path==='/export/prepare'){
+      enterPrepare();
+      await new Promise(resolve=>{releasePrepare=resolve;});
+    }
+    return productionFetch(path,options);
+  };
+  const pendingPoll=vm.runInContext('refresh()',h.context);
+  const downloading=h.run();
+  assert.equal(h.prepareCount,0);assert.equal(releasePrepare,undefined);
+  await vm.runInContext('refresh(true)',h.context);assert.equal(statusCount,1);
+  releaseStatus();await pendingPoll;await prepareEntered;
+  await vm.runInContext('refresh(true)',h.context);assert.equal(statusCount,1);
+  releasePrepare();await downloading;assert.equal(h.saves.length,1);
+  await vm.runInContext('refresh()',h.context);assert.equal(statusCount,2);
   h=harness({exportError:true});await h.run();assert.equal(h.manifestCount,1);
   assert.match(h.element('transfer').textContent,/metadata_build_failed/);
   h=harness({buildForever:true});await h.run();
