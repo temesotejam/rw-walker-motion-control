@@ -1333,7 +1333,9 @@ def write_gait_turn(metadata: dict, out_dir: Path) -> int:
     columns = ["start_ms", "mid_ms", "end_ms", "samples", "left_deg", "right_deg",
                "left_swing_deg", "right_swing_deg", "yaw_delta_deg", "pair_yaw_delta_deg",
                "weak_side", "turn_sign", "streak", "reason"]
-    if (not isinstance(block, dict) or block.get("revision") != 1 or block.get("columns") != columns or
+    if isinstance(block, dict) and block.get("revision") == 2:
+        columns.append("paired_swing_asymmetry")
+    if (not isinstance(block, dict) or block.get("revision") not in (1, 2) or block.get("columns") != columns or
             not isinstance(block.get("rows"), list) or type(block.get("enabled")) is not bool or
             type(block.get("archive_available")) is not bool or
             not all(type(block.get(k)) is int for k in ("exported", "stored", "total")) or

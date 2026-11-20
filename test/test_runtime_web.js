@@ -213,6 +213,8 @@ vm.runInContext(code,context);
   vm.runInContext("render({...gate,diagnostic_build_id:'walking-support-transfer-v39-turn1', gait_turn:{end_ms:6901,reason:'confirmed',left_deg:6.6,right_deg:.3,pair_yaw_delta_deg:-5.7,weak_side:1,confirmed_side:1,confirmed_ms:6901}})",context);
   assert.match(element('work-title').textContent,/turn1/);
   assert.match(element('gait-turn').textContent,/6.90秒.*右足.*旋回を確認.*2周期.*-5.7°/);
+  vm.runInContext("render({...gate,diagnostic_build_id:'walking-support-transfer-v39-turn2'})",context);
+  assert.match(element('work-title').textContent,/turn2/);
   vm.runInContext("renderGaitTurn({end_ms:9550,reason:'coverage',confirmed_side:1,confirmed_ms:6901})",context);
   assert.match(element('gait-turn').textContent,/観測が不足.*前回.*6.90秒/);
   vm.runInContext("renderOffline()",context);

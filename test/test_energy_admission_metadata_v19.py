@@ -45,6 +45,10 @@ fixture = fixture.replace(marker, marker + r'''
     if(a.return_event){
       a.arc_aid.reason=receiving_arc_aid::Reason::Applied;a.arc_aid.extra_j=.00004f;
       a.arc_foot_source=2;a.base_aid_ms=28;a.arc_candidate_ms=33;a.main_reserve_ms=50;
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+      a.arc_feedback_peak_ms=1250;a.arc_feedback_base_ms=30;
+      a.arc_feedback_available_j=.000013f;a.arc_feedback_added_j=.000013f;
+#endif
     }
 #endif
 #if WALKING_TURN_OBSERVER
@@ -79,7 +83,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
         exe = temp / ('v19.exe' if admission else 'v18.exe')
         subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror'] + flags +
                        ['-DWALKING_ADMISSION_V19=' + str(int(admission)), '-DSUPPORT_TRANSFER_CARRY2=' + str(int(carry)),
-                        '-DWALKING_TURN_OBSERVER=' + str(int(turn)),
+                        '-DWALKING_TURN_OBSERVER=' + str(int(turn)), '-DSUPPORT_TRANSFER_ARC_FEEDBACK=' + str(int(turn)),
                         '-I' + str(ROOT / 'test/fixtures/arduino'),
                         '-I' + str(ROOT / 'src'), str(temp / 'test.cpp'), '-o', str(exe)], check=True)
         for mode, count in [('', 7), ('empty', 0)]:
@@ -127,6 +131,10 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                     assert aids[0]['row_index'] == 1 and aids[0]['arc_foot_source'] == 2
                     assert block['arc_aid_reason_names'][aids[0]['arc_aid_reason']] == 'applied'
                     assert block['arc_aid_reason_names'][10] == 'command_veto'
+                    if turn:
+                        assert aids[0]['arc_feedback_peak_ms']==1250 and aids[0]['arc_feedback_base_ms']==30
+                        assert abs(aids[0]['arc_feedback_available_j']-.000013)<1.e-10
+                        assert aids[0]['arc_feedback_command_j']==(aids[0]['arc_feedback_available_j'] if block['records']['rows'][1][block['records']['fields'].index('executed')] else 0)
             else:
                 assert 'arc_aids' not in block
             assert block['revision'] == block['selector_revision'] == revision and block['branch'] == 24

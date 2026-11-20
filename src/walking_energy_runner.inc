@@ -69,6 +69,15 @@ void ExperimentRunner::finishWalkingEnergyPulse(uint32_t now_ms,uint8_t reason){
 #if SUPPORT_TRANSFER_CARRY2
   if (!a.return_event && reason==1 && a.completion.valid)
     walking_main_reserve_.observe(a.side,a.assisted_cycle,in.actual_elapsed_ms);
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+  if (a.return_event) {
+    // Every executed aid consumes the previous credit, including an interrupted aid.
+    const bool observed=a.side==-1 && a.arc_aid.reason==receiving_arc_aid::Reason::Applied &&
+        reason==1 && a.completion.work_valid && a.completion.charge_supported;
+    walking_arc_feedback_.completedAid(a.peak_ms,a.output_end_ms,a.arc_aid.terminal_deg,
+        in.actual_elapsed_ms,observed?a.completion.work_j:0.f);
+  }
+#endif
 #endif
 #endif
   if(index>=0 && static_cast<uint32_t>(index)<walking_energy_count_
@@ -296,6 +305,33 @@ bool ExperimentRunner::tryWalkingEnergy(
       }
       if (a.arc_aid.reason==receiving_arc_aid::Reason::Eligible)
         a.arc_aid.reason=a.arc_candidate_ms>width ? receiving_arc_aid::Reason::NoMainRoom : receiving_arc_aid::Reason::NoWidthGain;
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+      // The present foot geometry must already justify a real arc extension.
+      // Its ordinary wheel limit and the later main-input reserve still apply.
+      const auto* credit=walking_arc_feedback_.recent(t);
+      if (credit && a.arc_aid.reason==receiving_arc_aid::Reason::Applied) {
+        a.arc_feedback_peak_ms=credit->peak_ms;a.arc_feedback_base_ms=width;
+        a.arc_feedback_available_j=credit->missing_j;
+        auto adjusted=calculation;
+        adjusted.return_work_j=std::fmin(.5f*selected.target_j,calculation.return_work_j+credit->missing_j);
+        const auto inverse=half_cycle_energy_budget::decideReturnAid(lateral_energy_geometry_,walking_energy_current_,adjusted);
+        if (inverse.valid && inverse.width_ms>selected.width_ms) {
+          auto limited_guard=wheel_cycle_guard_;
+          const auto guarded=limited_guard.limit(side,e.pre_input_wheel_speed_rpm,true,t,inverse.width_ms);
+          const uint16_t limited=receiving_arc_aid::boundWidth(width,guarded,a.envelope_before_ms,a.main_reserve_ms);
+          if (limited>width && limited<=credit->elapsed_ms) {
+            const auto checked=half_cycle_energy_budget::evaluateReturnAidWidth(
+                lateral_energy_geometry_,walking_energy_current_,adjusted,limited);
+            if (checked.valid && checked.charge_supported && checked.predicted_work_j>0 &&
+                checked.predicted_work_j<=credit->previous_work_j) {
+              a.arc_feedback_added_j=adjusted.return_work_j-calculation.return_work_j;
+              calculation=adjusted;selected=inverse;guard=limited_guard;width=limited;
+              a.requested_ms=selected.width_ms;
+            }
+          }
+        }
+      }
+#endif
     }
   }
 #endif
@@ -732,6 +768,9 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     if(!table.append(row)){json.fail();return;}++stored;
 #if SUPPORT_TRANSFER_CARRY2
     if(a.return_event) extra_table_bytes+=128; // Reserve this compact audit row in the same log budget.
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+    if(a.return_event) extra_table_bytes+=64;
+#endif
 #endif
   }
   if(!table.finish()){json.fail();return;}
@@ -744,7 +783,12 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     String row="{\"row_index\":"+String(i)+",\"arc_aid_reason\":"+String(static_cast<unsigned>(a.arc_aid.reason));
     row+=",\"arc_foot_source\":"+String(a.arc_foot_source)+",\"arc_base_guarded_ms\":"+String(a.base_aid_ms);
     row+=",\"arc_candidate_guarded_ms\":"+String(a.arc_candidate_ms)+",\"arc_main_reserve_ms\":"+String(a.main_reserve_ms);
-    row+=",\"arc_extra_request_j\":"+n(a.arc_aid.extra_j)+",\"arc_terminal_deg\":"+n(a.arc_aid.terminal_deg)+",\"arc_local_s\":"+n(a.arc_aid.horizon_s)+"}";
+    row+=",\"arc_extra_request_j\":"+n(a.arc_aid.extra_j)+",\"arc_terminal_deg\":"+n(a.arc_aid.terminal_deg)+",\"arc_local_s\":"+n(a.arc_aid.horizon_s);
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+    row+=",\"arc_feedback_peak_ms\":"+String(a.arc_feedback_peak_ms)+",\"arc_feedback_base_ms\":"+String(a.arc_feedback_base_ms);
+    row+=",\"arc_feedback_available_j\":"+n(a.arc_feedback_available_j)+",\"arc_feedback_command_j\":"+n(a.executed?a.arc_feedback_added_j:0.f);
+#endif
+    row+="}";
     if(!arc_table.append(row)){json.fail();return;}
   }
   if(!arc_table.finish()){json.fail();return;}

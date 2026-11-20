@@ -28,6 +28,7 @@ int main() {
       cycle.turn_sign = turn;
       cycle.left_swing_deg = number();
       cycle.right_swing_deg = number();
+      cycle.paired_swing_asymmetry = number();
     } else if (event == 'E') {
       // The original command, even if replay selected a different pulse. Each
       // new decision is conditional on the physical state that actually occurred.

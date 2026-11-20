@@ -84,6 +84,46 @@ class MainReserve {
   struct History { uint16_t assisted=0,any=0; };
   History left_,right_;
 };
+
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+// Compare the endpoint of a completed leftward assisted transfer with its
+// own predicted arc entry. A new real aid replaces the previous evidence.
+class ArrivalFeedback {
+ public:
+  struct Credit {
+    uint32_t peak_ms=0, elapsed_ms=0;
+    float missing_j=0, previous_work_j=0;
+  };
+  void completedAid(uint32_t departure, uint32_t end, float terminal,
+                    uint32_t elapsed, float work) {
+    *this=ArrivalFeedback{};
+    if (!(departure && end>departure && end-departure<=1500 && elapsed && elapsed<=80 &&
+          terminal<0 && std::isfinite(terminal) && work>0 && std::isfinite(work))) return;
+    departure_ms_=departure; aid_end_ms_=end; terminal_deg_=terminal;
+    credit_.elapsed_ms=elapsed; credit_.previous_work_j=work;
+  }
+  void peak(const lateral_energy::Geometry& geometry, int side, uint32_t time,
+            float magnitude, uint32_t main_departure, uint32_t zero, bool matched_main) {
+    if (!departure_ms_) return;
+    const bool matched=matched_main && side==-1 && departure_ms_==main_departure &&
+        zero>=aid_end_ms_ && time>zero && time-departure_ms_<=1500;
+    departure_ms_=0;
+    if (!matched || !(magnitude>=0 && magnitude<std::fabs(terminal_deg_))) return;
+    const float delta=lateral_energy::potential(geometry,terminal_deg_)-lateral_energy::potential(geometry,magnitude);
+    if (std::isfinite(delta) && delta>0) {
+      credit_.missing_j=std::fmin(credit_.previous_work_j,delta);
+      credit_.peak_ms=time;
+    }
+  }
+  const Credit* recent(uint32_t now) const {
+    return credit_.peak_ms && now>=credit_.peak_ms && now-credit_.peak_ms<=3000 ? &credit_ : nullptr;
+  }
+ private:
+  uint32_t departure_ms_=0,aid_end_ms_=0;
+  float terminal_deg_=NAN;
+  Credit credit_;
+};
+#endif
 inline uint16_t boundWidth(uint16_t baseline,uint16_t candidate,uint16_t envelope,uint16_t reserve) {
   const uint16_t room=envelope>reserve ? envelope-reserve : 0;
   const uint16_t limited=candidate<room ? candidate : room;

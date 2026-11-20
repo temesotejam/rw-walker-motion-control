@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 from score_observed_transfers import measurement_epoch
 
 FIELDS = ("start_ms mid_ms end_ms samples left_deg right_deg left_swing_deg right_swing_deg "
-          "yaw_delta_deg pair_yaw_delta_deg weak_side turn_sign streak reason").split()
+          "yaw_delta_deg pair_yaw_delta_deg weak_side turn_sign streak reason paired_swing_asymmetry").split()
 
 
 def trial_id(folder):

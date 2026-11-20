@@ -219,7 +219,25 @@ int main(){
  }
  // Same mechanical event with a recent slot, an expired slot with a newer
  // causal paired image, missing identity, no main history, or no shape.
- for(unsigned mode=0;mode<9;++mode){
+ unsigned arc_cases=9;
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+ arc_cases=15;
+ {
+  receiving_arc_aid::ArrivalFeedback feedback;
+  lateral_energy::Geometry geometry;
+  for (int invalid=0;invalid<4;++invalid) {
+   feedback.completedAid(200,290,-1.89f,32,.000058f);
+   feedback.peak(geometry,invalid==0?1:-1,450,invalid==1?2.f:1.59f,invalid==2?201:200,310,invalid!=3);
+   assert(!feedback.recent(500));
+  }
+  feedback.completedAid(200,290,-1.89f,32,.000058f);
+  feedback.peak(geometry,-1,450,1.59f,200,310,true);
+  assert(!feedback.recent(449) && feedback.recent(3450) && !feedback.recent(3451));
+  feedback.completedAid(500,590,-1.89f,32,0);
+  assert(!feedback.recent(591));
+ }
+#endif
+ for(unsigned mode=0;mode<arc_cases;++mode){
   ExperimentRunner r;ready19(r);r.energy_control_autonomous_last_peak_side_=1;
 #if WALKING_TURN_OBSERVER
   confirmed_right_weak(r);
@@ -238,19 +256,50 @@ int main(){
   raw.image_us=mock_us-36000;raw.received_us=mock_us-18000;raw.sequence=103;
   if(mode==0 || mode==3 || mode==4 || mode==6)assert(est.publish(mock_us-900));
   r.periodic_foot_packet_=est.packet;
-  if(mode!=3)r.walking_main_reserve_.observe(-1,true,40);
+  if(mode!=3)r.walking_main_reserve_.observe(-1,true,mode>=9?10:40);
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+  if(mode>=9) {
+   r.walking_arc_feedback_.completedAid(350,500,-1.89f,mode==12?12:72,mode==11?.000012f:.0003f);
+   r.walking_arc_feedback_.peak(r.lateral_energy_geometry_,-1,600,1.45f,350,560,mode!=13);
+   if(mode==14)r.walking_main_reserve_.observe(-1,true,78);
+  }
+#endif
   if(mode==2)++raw.sequence;
   if(mode==4)r.walking_return_observation_.evidence=return_observation_policy::Evidence::RecognitionDropout;
   if(mode==5)r.periodic_foot_packet_.epoch_us++;
   if(mode==8)raw.run_id=4;
-  if(mode==6)r.roller_obj.write_ok=false;
+  if(mode==6 || mode==10)r.roller_obj.write_ok=false;
   r.acceptMotionCrossing(true,1200,-15,4.05f,4.f,1,1200);
   const auto& a=r.walking_energy_audit_[0];
 #if WALKING_TURN_OBSERVER
   assert(a.turn_cycle_end_ms==0 && a.turn_adjustment_j==0);
 #endif
-  if(mode==6){assert(!a.executed && a.arc_aid.reason==receiving_arc_aid::Reason::CommandVeto);continue;}
+  if(mode==6 || mode==10){
+   assert(!a.executed && a.arc_aid.reason==receiving_arc_aid::Reason::CommandVeto);
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+   if(mode==10)assert(a.arc_feedback_added_j>0 && r.walking_arc_feedback_.recent(1200));
+#endif
+   continue;
+  }
   assert(a.executed && r.status_.pulse_active);
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+  if(mode>=9) {
+   if(mode==9) {
+    assert(a.arc_feedback_peak_ms==600 && a.arc_feedback_added_j>0);
+    assert(a.guarded_ms>a.arc_feedback_base_ms && a.guarded_ms<=70);
+    assert(near(a.decision.request_j,a.return_work_j+a.arc_aid.extra_j+a.arc_feedback_added_j));
+    assert(a.decision.predicted_work_j<=.0003f);
+   } else {
+    assert(a.arc_feedback_added_j==0);
+    assert((a.arc_feedback_peak_ms==600)==(mode==11 || mode==12));
+   }
+   const unsigned end=a.output_start_ms+a.guarded_ms;
+   clock19(r,end);r.updateEnergyControlAutonomousPulse(mock_ms);
+   assert(!r.walking_arc_feedback_.recent(end));
+   assert(r.walking_half_cycle_budget_.spentMs()==a.guarded_ms);
+   continue;
+  }
+#endif
   if(mode<2 || mode==7){
    assert(a.arc_foot_source==(mode==0?1:2));
    assert(a.arc_aid.reason==receiving_arc_aid::Reason::Applied && a.arc_aid.extra_j>0);
@@ -406,9 +455,10 @@ int main(){
 '''
 with tempfile.TemporaryDirectory(prefix='energy_admission_runner_v19_') as folder:
     temp = Path(folder);(temp/'fixture.cpp').write_text(fixture, encoding='utf8')
-    for carry, turn in ((0,0),(1,0),(1,1)):
+    for carry, turn, feedback in ((0,0,0),(1,0,0),(1,1,0),(1,1,1)):
         subprocess.run(['g++','-std=c++11','-O2','-Wall','-Wextra','-Werror',
         '-DSUPPORT_TRANSFER_CARRY2='+str(carry),'-DSUPPORT_TRANSFER_V39='+str(carry),'-DWALKING_TURN_OBSERVER='+str(turn),
+        '-DSUPPORT_TRANSFER_ARC_FEEDBACK='+str(feedback),
         '-DFOOT_SUPPORT_ASSIST=1','-DFOOT_SUPPORT_LOCAL=1','-DFOOT_SUPPORT_TRANSFER=1',
         '-DFOOT_SUPPORT_ENERGY=1','-DEARLY_ENERGY_MAIN=1','-DPULSE_LIFECYCLE_FIX=1',
         '-DSWAY_BALANCE_TRIAL=1','-DWALKING_RETURN_ENERGY=1','-DWALKING_TRANSFER_V18=1',

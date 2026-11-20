@@ -33,8 +33,9 @@ inline float adjustment(const gait_turn::Status& state, int side, uint32_t now,
   if (side == 1 && (!base.passive_rate_supported || in.same_side_peak_deg < in.target_deg ||
                    base.unmet_j > walking_energy_policy_v15::kEnergyRoundoffJ)) return 0;
   if (!(cycle.left_swing_deg > cycle.right_swing_deg && cycle.right_swing_deg >= 0)) return 0;
-  const float asymmetry = (cycle.left_swing_deg-cycle.right_swing_deg) /
-                          (cycle.left_swing_deg+cycle.right_swing_deg);
+  const float asymmetry = std::isfinite(cycle.paired_swing_asymmetry) ? cycle.paired_swing_asymmetry :
+      (cycle.left_swing_deg-cycle.right_swing_deg)/(cycle.left_swing_deg+cycle.right_swing_deg);
+  if (!(asymmetry > 0 && asymmetry <= 1)) return 0;
   const float delta_u = lateral_energy::potential(geometry, in.target_deg - side*equivalent_target_step_deg)
                       - lateral_energy::potential(geometry, in.target_deg);
   if (!std::isfinite(delta_u) || side*delta_u >= 0) return 0;

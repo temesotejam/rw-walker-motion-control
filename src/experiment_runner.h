@@ -763,6 +763,9 @@ private:
   uint32_t walking_energy_peak_ms_[2]={0,0};
 #if SUPPORT_TRANSFER_CARRY2
   receiving_arc_aid::MainReserve walking_main_reserve_;
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+  receiving_arc_aid::ArrivalFeedback walking_arc_feedback_;
+#endif
 #endif
   struct WalkingEnergyAudit {
 #if WALKING_TURN_OBSERVER
@@ -774,6 +777,11 @@ private:
     receiving_arc_aid::Result arc_aid;
     uint8_t arc_foot_source=0;
     uint16_t base_aid_ms=0, arc_candidate_ms=0, main_reserve_ms=0;
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+    uint32_t arc_feedback_peak_ms=0;
+    uint16_t arc_feedback_base_ms=0;
+    float arc_feedback_available_j=0,arc_feedback_added_j=0;
+#endif
 #endif
 #if FOOT_PERIODIC_V38
     uint32_t periodic_packet = 0;

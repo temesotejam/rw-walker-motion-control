@@ -13,7 +13,7 @@
 
 ### 次の荷重移行制御との関係
 
-turn1の[歩行周期の判定](gait_turn_observer.h)は、同一画像の左右足角を一往復単位で集計し、相対ジャイロ方位の変化と照合します。[補正する仕事の計算](gait_turn_energy.h)と通常ZEROへの接続は、戻り補助から独立しています。RWLOGを展開すると `gait_turn.csv` の確認時刻を `walking_energy.csv` の `turn_cycle_end_ms` と照合できます。[仕事モデルと保護条件](../docs/SUPPORT_TRANSFER_V39.md)
+[歩行周期の判定](gait_turn_observer.h)は、同一画像の左右足角を一往復単位で集計し、相対ジャイロ方位の変化と照合します。turn2は二周期に共通する足の偏りからも[通常ZEROで補正する仕事](gait_turn_energy.h)を決めます。RWLOGを展開すると `gait_turn.csv` の確認時刻を `walking_energy.csv` の `turn_cycle_end_ms` と照合できます。[仕事モデルと保護条件](../docs/SUPPORT_TRANSFER_V39.md)
 
 v39-carry2では、[歩行時の入力処理](walking_energy_runner.inc)が戻り補助を採用した時点で[左受け足の追加仕事](receiving_arc_aid.h)を調べ、条件を満たせば実通電の幅を延長します。[支持切替予測器](support_transfer_plan.h)による開始時刻と幅の候補比較は記録用です。[記録タスク](support_transfer_audit.cpp)で、電流指令を切ってからの経過と実測電流も照合して、惰性の判定を記録します。[前提と評価方法](../docs/SUPPORT_TRANSFER_V39.md)
 

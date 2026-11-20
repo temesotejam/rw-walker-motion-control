@@ -141,10 +141,34 @@ static void unevenTurnAcrossTwoCycles() {
   assert(reversal.reason == Reason::Pending && reversal.turn_sign == -1);
 }
 
+static void twoCycleFootMotion() {
+  // Strict cycle has left/right excursions of 6/1 degrees; borderline is 2.5/1.
+  const auto borderline = [](unsigned, Packet& p) { p.left.measured *= 2.5f/6.f; };
+  Observer observer;
+  observer.peak(1, 100, 0);
+  cycle(observer, 100, -3, unchanged);
+  auto joined = cycle(observer, 900, -6, borderline);
+  assert(joined.reason == Reason::Confirmed && joined.weak_side == 1 && joined.turn_sign == -1);
+  assert(std::fabs(joined.paired_swing_asymmetry - 6.5f/10.5f) < .00001f);
+  // The previous marginal cycle cannot qualify another marginal cycle.
+  assert(cycle(observer, 1700, -9, borderline).reason == Reason::Balanced);
+  joined = cycle(observer, 2500, -12, unchanged);
+  assert(joined.reason == Reason::Confirmed && std::isfinite(joined.paired_swing_asymmetry));
+  assert(!std::isfinite(cycle(observer, 3300, -15, unchanged).paired_swing_asymmetry));
+  // A significant counter-turn, a missing observation, or a balanced foot blocks pooling.
+  assert(cycle(observer, 4100, -12, borderline).reason != Reason::Confirmed);
+  assert(cycle(observer, 4900, -9, [](unsigned, Packet& p) { p.left.measured = NAN; }).reason == Reason::Coverage);
+  assert(cycle(observer, 5700, -6, borderline).reason == Reason::Balanced);
+  cycle(observer, 6500, -3, unchanged);
+  const auto balanced = cycle(observer, 7300, 0, [](unsigned, Packet& p) { p.left.measured /= 6.f; });
+  assert(balanced.reason == Reason::Balanced && !std::isfinite(balanced.paired_swing_asymmetry));
+}
+
 int main() {
   persistenceAndSigns();
   imageEvidence();
   phaseAndGyro();
   unevenTurnAcrossTwoCycles();
+  twoCycleFootMotion();
   std::puts("PASS paired gait cycles, independent gyro sign, fresh coverage and resets");
 }

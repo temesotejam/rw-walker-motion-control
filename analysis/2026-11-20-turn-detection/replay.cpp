@@ -41,7 +41,8 @@ int main() {
                 << result.left_swing_deg << ' ' << result.right_swing_deg << ' ' << result.yaw_delta_deg
                 << ' ' << result.pair_yaw_delta_deg
                 << ' ' << int(result.weak_side) << ' ' << int(result.turn_sign) << ' '
-                << int(result.streak) << ' ' << int(result.reason) << '\n';
+                << int(result.streak) << ' ' << int(result.reason) << ' '
+                << result.paired_swing_asymmetry << '\n';
     } else {
       return 1;
     }

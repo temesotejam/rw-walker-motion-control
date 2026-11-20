@@ -34,6 +34,12 @@ def main():
         assert rows[1]["weak_side"] == "1" and rows[1]["turn_sign"] == "-1" and rows[1]["samples"] == "24"
         assert rows[0]["pair_yaw_delta_deg"] == "" and float(rows[1]["pair_yaw_delta_deg"]) == -12
         assert rows[-1]["left_swing_deg"] == "" and active["gait_turn"]["confirmed_ms"] == 1900
+        assert active["gait_turn"]["revision"] == 2 and rows[1]["paired_swing_asymmetry"] == ""
+        assert abs(float(rows[2]["paired_swing_asymmetry"]) - .68) < .0001
+        block = active["gait_turn"]
+        legacy = dict(block, revision=1, columns=block["columns"][:-1], rows=[r[:-1] for r in block["rows"]])
+        assert write_gait_turn({"gait_turn": legacy}, output) == len(rows)
+        assert "paired_swing_asymmetry" not in (output / "gait_turn.csv").read_text().splitlines()[0]
         assert write_gait_turn({}, work) == 0 and not (work / "gait_turn.csv").exists()
         corrupt = dict(active["gait_turn"], exported=100)
         try:

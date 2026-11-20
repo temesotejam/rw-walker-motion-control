@@ -2672,6 +2672,9 @@ void ExperimentRunner::resetEnergyControlAutonomous() {
   walking_energy_completion_pending_=false;walking_energy_active_pulse_=WalkingEnergyAudit{};
 #if SUPPORT_TRANSFER_CARRY2
   walking_main_reserve_={};
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+  walking_arc_feedback_={};
+#endif
 #endif
   walking_energy_stop_reason_=2;
   walking_pulse_start_i0_ma_=walking_pulse_goal_ma_=walking_pulse_tau_s_=NAN;
@@ -3392,6 +3395,12 @@ bool ExperimentRunner::recordEnergyControlAutonomousPeak(uint32_t peak_ms, int8_
   const bool complete_match=completed.executed && completed.completion_reason==1 &&
       completed.completion.valid && completed.completion.work_valid &&
       completed.trigger_ms==energy_control_autonomous_pending_zero_ms_;
+#if SUPPORT_TRANSFER_ARC_FEEDBACK
+  walking_arc_feedback_.peak(lateral_energy_geometry_,physical_side,peak_ms,amplitude_deg,
+      completed.peak_ms,completed.trigger_ms,event.pending_command_matched && complete_match &&
+      completed.assisted_cycle && !completed.optional && !completed.rescue && !completed.return_event &&
+      completed.side==physical_side && imu_ && imu_->acquisitionHealthy() && !imu_->stale(millis()));
+#endif
   const bool learn=event.pending_command_matched && !walking_return_pending_ && complete_match &&
       peak_ms>energy_control_autonomous_pending_zero_ms_ &&
       peak_ms-energy_control_autonomous_pending_zero_ms_<=1500 &&

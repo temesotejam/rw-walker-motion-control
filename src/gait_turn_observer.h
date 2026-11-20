@@ -40,6 +40,7 @@ struct Result {
   float left_deg = NAN, right_deg = NAN;  // Second-highest measured forward angles.
   float left_swing_deg = NAN, right_swing_deg = NAN;  // Second-highest minus second-lowest.
   float yaw_delta_deg = NAN, pair_yaw_delta_deg = NAN;
+  float paired_swing_asymmetry = NAN;  // Used only when the two cycles jointly qualify.
   int8_t weak_side = 0;  // -1 left, +1 right.
   int8_t turn_sign = 0;  // Independent gyro sign; no assumed motor response.
   uint8_t streak = 0;
@@ -86,6 +87,31 @@ struct Coverage {
 
 inline bool halfDurationValid(uint32_t begin, uint32_t end) {
   return end > begin && end - begin >= minimum_half_ms && end - begin <= maximum_half_ms;
+}
+
+inline int weakSide(float reach, float swing, float scale = 1.f) {
+  if (reach >= scale*minimum_reach_difference_deg && swing >= scale*minimum_swing_difference_deg) return 1;
+  if (reach <= -scale*minimum_reach_difference_deg && swing <= -scale*minimum_swing_difference_deg) return -1;
+  return 0;
+}
+
+// At least one cycle independently clears both thresholds. The other must
+// support the same foot and heading; a large turn followed by recovery is excluded.
+inline bool pairedFootEvidence(const Result& previous, Result& current) {
+  const float prev_reach = previous.left_deg - previous.right_deg;
+  const float prev_swing = previous.left_swing_deg - previous.right_swing_deg;
+  const float reach = current.left_deg - current.right_deg;
+  const float swing = current.left_swing_deg - current.right_swing_deg;
+  const int side = weakSide(reach, swing, .5f);
+  if (!side || weakSide(prev_reach, prev_swing, .5f) != side ||
+      (!current.weak_side && !weakSide(prev_reach, prev_swing)) ||
+      weakSide(.5f*(prev_reach+reach), .5f*(prev_swing+swing)) != side ||
+      !current.turn_sign || current.turn_sign * previous.yaw_delta_deg < minimum_yaw_deg) return false;
+  const float total = current.left_swing_deg + current.right_swing_deg +
+                      previous.left_swing_deg + previous.right_swing_deg;
+  current.paired_swing_asymmetry = (prev_swing+swing)/total;
+  current.weak_side = side;
+  return true;
 }
 } // namespace detail
 
@@ -167,10 +193,7 @@ class Observer {
     out.right_swing_deg = out.right_deg - right_.second_low;
     const float reach_difference = out.left_deg - out.right_deg;
     const float swing_difference = out.left_swing_deg - out.right_swing_deg;
-    if (reach_difference >= minimum_reach_difference_deg && swing_difference >= minimum_swing_difference_deg)
-      out.weak_side = 1;
-    else if (reach_difference <= -minimum_reach_difference_deg && swing_difference <= -minimum_swing_difference_deg)
-      out.weak_side = -1;
+    out.weak_side = detail::weakSide(reach_difference, swing_difference);
     if (!std::isfinite(start_yaw_) || !mid_gyro_valid_ || !std::isfinite(yaw)) {
       out.reason = Reason::GyroUnavailable;
       return;
@@ -178,11 +201,12 @@ class Observer {
     out.yaw_delta_deg = yaw - start_yaw_;
     if (out.yaw_delta_deg >= minimum_yaw_deg) out.turn_sign = 1;
     if (out.yaw_delta_deg <= -minimum_yaw_deg) out.turn_sign = -1;
-    if (!out.weak_side) { out.reason = Reason::Balanced; return; }
-    out.reason = out.turn_sign ? Reason::Pending : Reason::NoTurn;
-    out.streak = out.turn_sign ? 1 : 0;
-    if (latest_.end_ms != out.start_ms || latest_.weak_side != out.weak_side ||
-        !std::isfinite(latest_.yaw_delta_deg)) return;
+    out.reason = !out.weak_side ? Reason::Balanced : (out.turn_sign ? Reason::Pending : Reason::NoTurn);
+    out.streak = out.weak_side && out.turn_sign ? 1 : 0;
+    if (latest_.end_ms != out.start_ms || !std::isfinite(latest_.yaw_delta_deg)) return;
+    const int prev_side = detail::weakSide(latest_.left_deg-latest_.right_deg,
+                                           latest_.left_swing_deg-latest_.right_swing_deg);
+    if ((!out.weak_side || out.weak_side != prev_side) && !detail::pairedFootEvidence(latest_, out)) return;
     // A bend may accumulate mostly in one of the two cycles. A material
     // opposite turn in either cycle vetoes confirmation even if the sum is large.
     out.pair_yaw_delta_deg = latest_.yaw_delta_deg + out.yaw_delta_deg;

@@ -28,7 +28,8 @@ void cycles(GaitTurnRun& run, unsigned count) {
       packet.epoch_us = epoch;
       packet.published_us = epoch + ms * 1000;
       packet.left.image_us = packet.right.image_us = packet.published_us - 10000;
-      packet.left.measured = j > 12 ? 8 : 0;
+      const float reach = i == 2 ? 2.5f : 8.f;
+      packet.left.measured = j > 12 ? reach : 0.f;
       packet.right.measured = j <= 12 ? 1 : 0;
       run.observe(packet);
       if (j == 12 || j == 24) run.peak(j == 12 ? -1 : 1, ms, -.01f * (ms - 100));

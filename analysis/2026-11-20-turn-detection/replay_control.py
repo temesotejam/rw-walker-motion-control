@@ -30,7 +30,8 @@ def control_inputs(folder, cycles):
         c = turns.get(p["peak_telemetry_capture_time_ms"])
         if c:
             add(clock, 1, "C", *(c[k] for k in ("start_ms", "end_ms", "reason", "weak_side", "turn_sign",
-                                                "left_swing_deg", "right_swing_deg")))
+                                                "left_swing_deg", "right_swing_deg")),
+                c.get("paired_swing_asymmetry") or "nan")
     frames = sorted((f for f in meta["foot_frames"] if f.get("control_observed_us") and f["state_id"] == 3),
                     key=lambda f: f["control_observed_us"])
     frame_clock = [f["control_observed_us"] for f in frames]
