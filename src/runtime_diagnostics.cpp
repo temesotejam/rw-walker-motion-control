@@ -37,6 +37,8 @@ StackScan stack_scans[kLanes]{};
 stack_scan::Schedule stack_schedules[kLanes];  // one owner per lane; never exported directly
 Memory memory{};
 uint32_t diagnostics_enabled = 0, run_active = 0;
+uint32_t wifi_recovery_requested = 0;
+uint32_t wifi_recoveries = 0;
 usb_diag::Parser usb_commands;
 CameraDriver camera_driver{};
 uint32_t event_id = 0, event_count = 0, clients = 0, ap_active = 0;
@@ -137,6 +139,14 @@ void tick() {
   // Merely connecting USB never enables periodic diagnostics.
   for (uint8_t i = 0; i < 32 && Serial.available() > 0; ++i) {
     const auto command = usb_commands.feed(static_cast<char>(Serial.read()));
+    if (command == usb_diag::Command::WifiRecover) {
+      if (runActive()) Serial.print("USBDBG,wifi_recovery=busy\n");
+      else {
+        put(wifi_recovery_requested, 1);
+        Serial.print("USBDBG,wifi_recovery=queued\n");
+      }
+      continue;
+    }
     if (command == usb_diag::Command::Download) {
       if (runActive()) {
         Serial.print("USBDBG,download=busy\n");
@@ -186,6 +196,7 @@ void tick() {
         current_boot.id, reason(current_boot.reset), current_boot.reset, stageName(get(boot_stage)),
         get(boot_failures), observer_started, heavyAllowed() ? uxTaskGetStackHighWaterMark(nullptr) : 0, dropped);
     append("USBDBG,mode,enabled=1,run_quiet=%u,heavy_scans_allowed=%u\n", runActive(), heavyAllowed());
+    append("USBDBG,wifi,recoveries=%u\n", get(wifi_recoveries));
     if (have_previous_boot) {
       append("USBDBG,previous_boot,id=%u,stage=%s,failures=0x%08x,rtc_sample=%u\n",
           previous_boot.id, stageName(previous_boot.stage), previous_boot.failures, have_previous_sample);
@@ -268,6 +279,10 @@ void begin() {
     observer_started = false; result(false);
   }
 }
+bool takeWifiRecoveryRequest() {
+  return __atomic_exchange_n(&wifi_recovery_requested, 0U, __ATOMIC_RELAXED) != 0;
+}
+void wifiTransportRestored() { __atomic_add_fetch(&wifi_recoveries, 1U, __ATOMIC_RELAXED); }
 void phase(Lane lane, Phase p) { put(probes[static_cast<uint32_t>(lane)].phase, static_cast<uint32_t>(p)); }
 Phase currentPhase(Lane lane) { return static_cast<Phase>(get(probes[static_cast<uint32_t>(lane)].phase)); }
 void beat(Lane lane, uint32_t detail, bool allow_stack_scan) {

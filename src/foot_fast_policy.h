@@ -25,7 +25,12 @@ constexpr uint32_t kArchiveCapacity=2048;
 constexpr uint32_t kArchiveCapacity=1760;
 #endif
 constexpr size_t kMetadataHardBudgetBytes=1408U*1024U;
+#if defined(SUPPORT_TRANSFER_V39) && SUPPORT_TRANSFER_V39
+// All published metadata, including its footer, fits this limit. reserve() adds the NUL byte.
+constexpr size_t kMetadataReserveBytes=kMetadataHardBudgetBytes;
+#else
 constexpr size_t kMetadataReserveBytes=1536U*1024U;
+#endif
 static_assert((kArchiveCapacity-1ULL)*kWorkerPeriodUs>=40000000ULL,"Retain the full 40-second capture");
 #elif defined(FOOT_WORKER26_V34) && FOOT_WORKER26_V34
 constexpr uint32_t kArchiveCapacity=1600; // 5s start +30s trial +5s end, plus margin.

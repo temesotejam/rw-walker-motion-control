@@ -10,6 +10,12 @@ class BoundedWriteWebServer : public WebServer {
   explicit BoundedWriteWebServer(int port = 80) : WebServer(port) {}
   bool listening() { return static_cast<bool>(_server); }
   void handleClient() override;
+  void closeTransport();
+  bool takeResponseActivity() {
+    const bool seen = response_activity_;
+    response_activity_ = false;
+    return seen;
+  }
 
  protected:
   size_t _currentClientWrite(const char* buffer, size_t length) override;
@@ -17,5 +23,6 @@ class BoundedWriteWebServer : public WebServer {
 
  private:
   uint32_t last_queue_probe_ms_ = 0;
+  bool response_activity_ = false;
   size_t pacedWrite(const uint8_t* buffer, size_t length, const char* source_tag);
 };

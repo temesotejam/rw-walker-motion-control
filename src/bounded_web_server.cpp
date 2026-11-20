@@ -4,6 +4,14 @@
 #include <errno.h>
 #include <lwip/sockets.h>
 
+void BoundedWriteWebServer::closeTransport() {
+  _currentClient.stop();
+  // hasClient() may have accepted a peer before the radio restart. Arduino's
+  // WiFiServer::end() closes the listener, but drops this cached FD on begin().
+  if (listening()) _server.available().stop();
+  WebServer::stop();
+}
+
 void BoundedWriteWebServer::handleClient() {
   // The Arduino server gives one TCP client up to 5 s to send its first byte.
   // A browser can preconnect an empty socket ahead of the 2.5 s status poll.
@@ -19,6 +27,7 @@ void BoundedWriteWebServer::handleClient() {
 }
 
 size_t BoundedWriteWebServer::pacedWrite(const uint8_t* buffer, size_t length, const char*) {
+  response_activity_ = true; // Every dispatched route, including an error response.
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpSend);
   const int fd = _currentClient.fd();
   if (fd < 0) return 0;

@@ -4,16 +4,25 @@
 #include "run_control_worker.h"
 #include "foot_observer.h"
 #include "immutable_export.h"
+#include "export_transport_recovery.h"
+#include "wifi_transport_restart.h"
 
 class WebUi {
  public:
   void begin(BoundedWriteWebServer&, RunControlWorker&, FootObserver&, ImmutableExport&);
   void update();
+  bool requestWifiRecovery(); // Call only on the HTTP owner, also for USB requests.
  private:
   friend class OfflineRunSession;
+  friend class WifiTransportRestart;
+  bool requestWifiRecovery(bool manual);
+  void closeHttpTransport();
+  bool stopWifiRadio();
+  bool startWifiAp();
+  bool startHttpListener();
   bool stopServer();
   bool queueStart();
-  OfflineRunSession::StartResult startResult() const;
+  OfflineRunSession::StartResult startResult();
   bool runActive() const;
   void cancelStart();
   bool restoreTransport();
@@ -26,6 +35,7 @@ class WebUi {
 #endif
   void command(RunControlWorker::Command);
   void manifest();
+  void confirmExport();
   void chunk();
   void previewCapture();
   void previewChunk();
@@ -43,6 +53,10 @@ class WebUi {
   uint32_t preview_token_ = 0;
   uint32_t boot_id_ = 0;
   OfflineRunSession offline_;
+  ExportTransportRecovery recovery_;
+  WifiTransportRestart wifi_restart_;
+  uint32_t recovery_poll_ms_ = 0;
+  bool start_observed_ = false;
   uint32_t offline_poll_ms_ = 0;
   uint32_t start_command_id_ = 0;
   float start_input_peak_percent_ = autonomous_input_percent::kDefaultPercent;

@@ -1242,7 +1242,11 @@ async function diagnosticSnapshotWithDetails() {
   return snapshot;
 }
 async function exportRequest(path, options, label, validate = value => value) {
-  for (let attempt = 1; attempt <= exportPolicy.maxAttempts; ++attempt) {
+  // A stopped webfix2 board can re-open its AP after 35 s of silence.
+  // Immediate browser network errors must not exhaust retries before then.
+  const hasWifiRecovery = latest?.diagnostic_build_id === 'walking-support-transfer-v39-webfix2';
+  const deadline = Date.now() + 70000;
+  for (let attempt = 1; ; ++attempt) {
     transferCheck();
     transferNote({request:path, attempt, request_started_at:new Date().toISOString()});
     try {
@@ -1256,10 +1260,12 @@ async function exportRequest(path, options, label, validate = value => value) {
       const preparingRun = path === '/export/prepare' && error.status === 409 && error.responseText === 'run_preparing';
       const permanent = !preparingRun && Number.isInteger(error.status) && error.status >= 400 && error.status < 500 &&
         ![408,429].includes(error.status);
-      if (permanent || attempt === exportPolicy.maxAttempts) throw error;
+      const linkLost = error.name === 'TypeError' || error.code === 'request_timeout';
+      const maxAttempts = hasWifiRecovery && linkLost ? 9 : exportPolicy.maxAttempts;
+      if (permanent || attempt >= maxAttempts || Date.now() >= deadline) throw error;
       transferNote({retries:transferDiagnostic.retries + 1});
-      $('transfer').textContent = `${label} · 通信を再試行 ${attempt}/${exportPolicy.maxAttempts - 1}`;
-      await waitForTransfer(1000 * 2 ** (attempt - 1));
+      $('transfer').textContent = `${label} · 通信を再試行 ${attempt}/${maxAttempts - 1}`;
+      await waitForTransfer(Math.min(1000 * 2 ** (attempt - 1), 12000, deadline - Date.now()));
     }
   }
 }
@@ -1335,6 +1341,15 @@ async function download() {
     saveBlob(new Blob([file], {type: 'application/octet-stream'}), m.filename);
     transferNote({phase:'complete', filename:m.filename});
     $('transfer').textContent = `CRC検証完了 · ${m.bytes} bytes · 足角度 ${completedFoot?.length ?? 0}行`;
+    if (m.completion_ack === true) {
+      // Only the browser can confirm the complete file, including cached chunks.
+      // An acknowledgement lost after saving must leave the completed file available.
+      try {
+        await request(`/export/complete?token=${m.token}&crc32=${crc}&run_id=${m.run_id}`,
+          {method:'POST', kind:'text', timeout:2500});
+        transferNote({completion_ack:true});
+      } catch (_) { transferNote({completion_ack:false}); }
+    }
     calculateWheelWork();
   } catch (error) {
     const failedPhase = transferDiagnostic.phase;

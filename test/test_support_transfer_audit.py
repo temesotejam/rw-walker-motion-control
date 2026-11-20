@@ -29,9 +29,10 @@ def main():
                         str(ROOT / "test/fixtures/support_transfer_audit.cpp"), "-o", str(exe)], check=True)
         lines = subprocess.check_output([exe]).splitlines()
         blocks = [json.loads(line) for line in lines]
-        assert len(blocks) == 11
+        assert len(blocks) == 12
         for block, line in zip(blocks, lines):
             assert block["metadata_json_final_bytes"] == len(line) <= 1408 * 1024
+        assert len(lines[-1]) == 1408 * 1024 and "support_transfer_shadow" not in blocks[-1]
         expected = [(5, 1, 3, 1), (1, 0, 0, 1), (1, 0, 1, 0), (1, 0, 0, 0)]
         for metadata, counts in zip(blocks, expected):
             b = metadata["support_transfer_shadow"]

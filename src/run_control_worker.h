@@ -188,6 +188,13 @@ class RunControlWorker {
     portEXIT_CRITICAL(&mux_);
     return result;
   }
+  bool commandsSettled() const {
+    portENTER_CRITICAL(&mux_);
+    const bool settled = !command_state_.pending && !stop_requested_ &&
+                         published_command_completed_ == command_state_.completed;
+    portEXIT_CRITICAL(&mux_);
+    return settled;
+  }
   void beginRunAudit(uint32_t epoch_us = 0) {
     // Owner only. The previous run has already been released by HTTP.
     control_work::profile.reset();

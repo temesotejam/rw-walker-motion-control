@@ -44,7 +44,7 @@ def main():
                      "support_transfer_replay", "http_client_queue"):
             checked(*py, ROOT / "test" / f"test_{test}.py")
         for test in ("periodic_foot", "mekf_host", "fore_aft_motion_guard", "support_transfer_plan",
-                     "offline_run_export"):
+                     "offline_run_export", "export_transport_recovery", "wifi_transport_restart"):
             binary = tmp / (test + ".exe")
             source = [ROOT / "test" / f"test_{test}.cpp"]
             if test == "mekf_host":

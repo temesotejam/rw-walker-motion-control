@@ -36,9 +36,7 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
         event == ARDUINO_EVENT_WIFI_AP_STACONNECTED ? 1 : event == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED ? -1 : 0,
         event == ARDUINO_EVENT_WIFI_AP_START ? 1 : event == ARDUINO_EVENT_WIFI_AP_STOP ? 0 : -1);
   });
-  RuntimeDiag::result(WiFi.mode(WIFI_AP));
-  RuntimeDiag::result(WiFi.softAP(Config::AP_SSID, Config::AP_PASS, Config::AP_CHANNEL));
-  RuntimeDiag::result(WiFi.softAPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0)));
+  RuntimeDiag::result(startWifiAp());
   boot_id_ = esp_random();
   s.on("/", HTTP_GET, [this]() {
 #if !FOOT_PERIODIC_V38
@@ -72,6 +70,7 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
     server_->send(ok ? 202 : 409, "text/plain", ok ? "preparing" : "completed_run_required");
   });
   s.on("/export/manifest", HTTP_GET, [this]() { manifest(); });
+  s.on("/export/complete", HTTP_POST, [this]() { confirmExport(); });
   s.on("/export/chunk", HTTP_GET, [this]() { chunk(); });
   s.on("/diagnostics/usb", HTTP_POST, [this]() {
     if (offline_.busy()) { server_->send(409, "text/plain", "run_preparing"); return; }
@@ -84,9 +83,17 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
     server_->send(410, "text/plain", "Open http://192.168.4.1/ and use resumable RWLOG download.");
   });
   s.onNotFound([this]() { server_->send(404, "text/plain", "not_found"); });
-  s.enableDelay(false); s.begin();
+  s.enableDelay(false);
+  RuntimeDiag::result(startHttpListener());
 }
 void WebUi::update() {
+  if (wifi_restart_.active()) {
+    const auto count = wifi_restart_.count();
+    wifi_restart_.update(millis(), *this);
+    if (wifi_restart_.count() != count) RuntimeDiag::wifiTransportRestored();
+    RuntimeDiag::beat(RuntimeDiag::Lane::Http);
+    return;
+  }
   if (offline_.busy()) {
 #if FOOT_PERIODIC_V38
     if (server_) server_->handleClient();
@@ -99,9 +106,40 @@ void WebUi::update() {
   }
   RuntimeDiag::phase(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpPoll);
   if (server_) server_->handleClient();
+  const uint32_t now = millis();
+  if (server_ && server_->takeResponseActivity()) recovery_.onRequest(now);
+  if (recovery_.awaitingDownload() && now - recovery_poll_ms_ >= 100) {
+    recovery_poll_ms_ = now;
+    requestWifiRecovery(false);
+  }
   RuntimeDiag::sampleMemory();
   RuntimeDiag::beat(RuntimeDiag::Lane::Http);
   RuntimeDiag::phase(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::Wait);
+}
+bool WebUi::requestWifiRecovery() { return requestWifiRecovery(true); }
+bool WebUi::requestWifiRecovery(bool manual) {
+  if (!server_ || !control_ || offline_.busy() || wifi_restart_.active()) return false;
+  if (!control_->commandsSettled()) return false;
+  const auto s = control_->snapshot();
+  const bool stopped = !s.running && !s.pulse_active && s.motor_cmd_mA == 0 &&
+      !s.upright_reference_capturing && !s.equilibrium_capturing &&
+      s.heartbeat_us && static_cast<uint32_t>(micros() - s.heartbeat_us) < 500000 &&
+      (!strcmp(s.state_name, "FINISHED") || !strcmp(s.state_name, "ESTOP") ||
+       (manual && !strcmp(s.state_name, "READY_TO_MEASURE")));
+  if (!recovery_.requestRepair(millis(), stopped, manual)) return false;
+  wifi_restart_.request();
+  return true;
+}
+void WebUi::closeHttpTransport() { server_->closeTransport(); }
+bool WebUi::stopWifiRadio() { return WiFi.mode(WIFI_OFF); }
+bool WebUi::startWifiAp() {
+  const IPAddress ip(192,168,4,1);
+  return WiFi.mode(WIFI_AP) && WiFi.softAP(Config::AP_SSID, Config::AP_PASS, Config::AP_CHANNEL) &&
+         WiFi.softAPConfig(ip, ip, IPAddress(255,255,255,0));
+}
+bool WebUi::startHttpListener() {
+  server_->begin();
+  return server_->listening();
 }
 bool WebUi::stopServer() {
 #if FOOT_PERIODIC_V38
@@ -120,12 +158,14 @@ bool WebUi::queueStart() {
                                        start_energy_bridge_enabled_, start_negative_probe_mode_);
   return start_submitted_;
 }
-OfflineRunSession::StartResult WebUi::startResult() const {
+OfflineRunSession::StartResult WebUi::startResult() {
   if (!start_submitted_) return OfflineRunSession::StartResult::Rejected;
   const auto c = control_->commandState();
   if (c.pending || c.completed != start_command_id_ || !control_->commandPublished(start_command_id_))
     return OfflineRunSession::StartResult::Pending;
-  return c.ok ? OfflineRunSession::StartResult::Started : OfflineRunSession::StartResult::Rejected;
+  if (!c.ok) return OfflineRunSession::StartResult::Rejected;
+  if (!start_observed_) { recovery_.startRun(); start_observed_ = true; }
+  return OfflineRunSession::StartResult::Started;
 }
 bool WebUi::runActive() const { return control_->active(); }
 void WebUi::cancelStart() { if (!cancel_sent_) cancel_sent_ = control_->requestStop(); }
@@ -145,7 +185,9 @@ bool WebUi::prepareCompletedExport() {
   const auto cmd = control_->commandState();
   if (cmd.pending || !control_->commandPublished(cmd.completed)) return false;
   const auto st = control_->snapshot();
-  return !st.running && st.downloadable && export_->prepare();
+  if (st.running || !st.downloadable) return false;
+  recovery_.sealed(millis());
+  return export_->prepare();
 }
 bool WebUi::quietResponse() {
   if (!offline_.busy()) return false;
@@ -253,7 +295,7 @@ void WebUi::command(RunControlWorker::Command cmd) {
       start_peak_adaptation_enabled_ = peak_adaptation_enabled;
       start_energy_bridge_enabled_ = energy_bridge_enabled;
       start_negative_probe_mode_ = negative_probe_mode;
-      start_submitted_ = cancel_sent_ = false;
+      start_observed_ = start_submitted_ = cancel_sent_ = false;
       RuntimeDiag::setRunActive(true);
     }
     server_->send(ok ? 202 : 409, "text/plain", ok ? "offline_run_queued" : "command_busy");
@@ -261,7 +303,7 @@ void WebUi::command(RunControlWorker::Command cmd) {
     const bool ok = control_->request(cmd);
     // Only this HTTP owner can start an export, and Building was excluded
     // above. A refused Clear must leave the download token usable.
-    if (ok && cmd == RunControlWorker::Command::Clear) export_->reset();
+    if (ok && cmd == RunControlWorker::Command::Clear) { export_->reset(); recovery_.startRun(); }
     server_->send(ok ? 202 : 409, "text/plain", ok ? "command_queued" : "command_busy");
   }
 }
@@ -556,10 +598,12 @@ void WebUi::manifest() {
   snprintf(body, sizeof(body),
       "{\"phase\":\"%s\",\"token\":\"%s\",\"bytes\":%lu,\"hashed_bytes\":%lu,\"crc32\":%lu,"
       "\"chunk_bytes\":4096,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"run_id\":%u,\"metadata_bytes\":%lu,"
+      "\"completion_ack\":true,\"wifi_recovery_count\":%lu,"
       "\"export_memory\":{\"sampled_ms\":%lu,\"internal_free\":%lu,\"internal_min_free\":%lu,\"internal_largest\":%lu}}",
       phase(s.phase), s.token, static_cast<unsigned long>(s.bytes), static_cast<unsigned long>(s.hashed_bytes),
       static_cast<unsigned long>(s.crc), s.filename, s.error,
       static_cast<unsigned long>(boot_id_), static_cast<unsigned>(s.run_id), static_cast<unsigned long>(s.metadata_bytes),
+      static_cast<unsigned long>(wifi_restart_.count()),
       static_cast<unsigned long>(millis()),
       static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
       static_cast<unsigned long>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
@@ -574,6 +618,15 @@ static bool unsignedArg(const String& text, uint32_t& value) {
     n = n * 10 + text[i] - '0'; if (n > UINT32_MAX) return false;
   }
   value = static_cast<uint32_t>(n); return true;
+}
+void WebUi::confirmExport() {
+  const auto s = export_->status();
+  uint32_t crc, run;
+  const bool ok = unsignedArg(server_->arg("crc32"), crc) && unsignedArg(server_->arg("run_id"), run) &&
+      ExportTransportRecovery::matchesCompletion(s.phase == ImmutableExport::Phase::Ready, s.token, s.crc,
+          s.run_id, server_->arg("token").c_str(), crc, run);
+  if (ok) recovery_.downloadComplete();
+  server_->send(ok ? 200 : 409, "text/plain", ok ? "confirmed" : "export_identity_mismatch");
 }
 void WebUi::chunk() {
 #if FOOT_PERIODIC_V38

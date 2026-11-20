@@ -42,7 +42,7 @@
 #if defined(FOOT_RECEIVE_CORE1_V31) && FOOT_RECEIVE_CORE1_V31
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-receive-core1-v31"
 #elif defined(SUPPORT_TRANSFER_V39) && SUPPORT_TRANSFER_V39
-#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-support-transfer-v39-webfix1"
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-support-transfer-v39-webfix2"
 #elif defined(FOOT_PERIODIC_V38) && FOOT_PERIODIC_V38
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-periodic40-v38"
 #elif defined(FOOT_CADENCE20_V37) && FOOT_CADENCE20_V37
@@ -186,6 +186,8 @@ bool enabled();
 void setEnabled(bool enabled);
 bool runActive();
 void setRunActive(bool active);
+bool takeWifiRecoveryRequest();
+void wifiTransportRestored();
 MemorySnapshot memorySnapshot();
 ExecutionSnapshot executionSnapshot();
 void cameraLifecycleCore(bool initialize, int core);
@@ -211,6 +213,7 @@ inline bool enabled() { return enabledState(); }
 inline void setEnabled(bool value) { enabledState() = value; }
 inline bool runActive() { return runState(); }
 inline void setRunActive(bool value) { runState() = value; }
+inline void wifiTransportRestored() {}
 inline MemorySnapshot memorySnapshot() { return {}; }
 inline ExecutionSnapshot executionSnapshot() { return {}; }
 inline void cameraLifecycleCore(bool, int) {}

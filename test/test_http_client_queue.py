@@ -17,12 +17,16 @@ struct Client {
   Connection* socket = nullptr;
   int fd() const { return -1; }
   int available() { return socket && !socket->closed && socket->readable; }
-  void stop() { socket->closed = true; }
+  void stop() { if (socket) socket->closed = true; }
 };
 struct Listener {
   std::deque<Connection*> queued;
   unsigned probes = 0;
   bool hasClient() { ++probes; return !queued.empty(); }
+  Client available() {
+    if (queued.empty()) return {};
+    auto* socket = queued.front(); queued.pop_front(); return {socket};
+  }
   explicit operator bool() const { return true; }
 };
 class WebServer {
@@ -30,6 +34,7 @@ class WebServer {
   explicit WebServer(int) {}
   void queue(Connection& c) { _server.queued.push_back(&c); }
   unsigned probes() const { return _server.probes; }
+  void stop() { _currentStatus = HC_NONE; }
   virtual void handleClient() {
     if (_currentStatus == HC_NONE) {
       if (_server.queued.empty()) return;
@@ -90,6 +95,10 @@ int main() {
   assert(!late.closed);
   fixed.queue(other); delay(50); fixed.handleClient(); fixed.handleClient();
   assert(late.closed && other.served == 1);
+  Connection current, cached{true};
+  fixed.queue(current); fixed.handleClient(); fixed.queue(cached);
+  fixed.closeTransport();
+  assert(current.closed && cached.closed);
 }
 """
 

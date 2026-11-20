@@ -355,4 +355,9 @@ void setup() {
   web.begin(server, run_control, feet, log_export);
   RuntimeDiag::boot(RuntimeDiag::Stage::Ready);
 }
-void loop() { RuntimeDiag::pollFallback(); web.update(); delay(1); }
+void loop() {
+  RuntimeDiag::pollFallback();
+  if (RuntimeDiag::takeWifiRecoveryRequest()) web.requestWifiRecovery();
+  web.update();
+  delay(1);
+}

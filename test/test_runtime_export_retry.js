@@ -31,6 +31,7 @@ function harness(scenario={}) {
       requests.push(path);
       if(path==='/export/prepare'){
         ++prepareCount;
+        if (prepareCount <= (scenario.disconnectedPrepares || 0)) throw new TypeError('Failed to fetch');
         if(scenario.transientPrepare && prepareCount===1)return {ok:false,status:409,text:async()=>'run_preparing'};
         if(scenario.prepareAbort && prepareCount===1)return abort(opts.signal);
         if(scenario.prepareStatus)return {ok:false,status:scenario.prepareStatus,text:async()=>'blocked'};
@@ -46,7 +47,17 @@ function harness(scenario={}) {
         if(scenario.building && manifestCount===2)return {ok:true,json:async()=>({phase:'building',hashed_bytes:4096,bytes:fixture.length})};
         return {ok:true,json:async()=>({...manifest,...scenario.manifest})};
       }
-      const url=new URL(path,'http://192.168.4.1');assert.equal(url.pathname,'/export/chunk');
+      const url=new URL(path,'http://192.168.4.1');
+      if (url.pathname === '/export/complete') {
+        assert.equal(saves.length,1);
+        assert.equal(opts.method,'POST');
+        assert.equal(url.searchParams.get('token'),manifest.token);
+        assert.equal(Number(url.searchParams.get('crc32')),manifest.crc32);
+        assert.equal(url.searchParams.get('run_id'),'1');
+        if (scenario.ackLost) throw new TypeError('Failed to fetch');
+        return {ok:true,text:async()=>'confirmed'};
+      }
+      assert.equal(url.pathname,'/export/chunk');
       assert.equal(url.searchParams.get('token'),(scenario.manifest??manifest).token ?? manifest.token);
       const offset=Number(url.searchParams.get('offset')),length=Number(url.searchParams.get('length'));
       if(scenario.chunkDisconnect && offset>=8192)throw new TypeError('Failed to fetch');
@@ -76,6 +87,20 @@ function harness(scenario={}) {
   }
   const same=harness({manifest:{boot_id:123,metadata_bytes:12345}});await same.run();
   assert.equal(same.diagnostic().browser_transfer.phase,'complete');
+  assert(!same.requests.some(path=>path.startsWith('/export/complete')));
+  const reconnect=harness({disconnectedPrepares:6});
+  vm.runInContext("latest.diagnostic_build_id='walking-support-transfer-v39-webfix2'",reconnect.context);
+  await reconnect.run();
+  assert.equal(reconnect.prepareCount,7);
+  assert.equal(reconnect.diagnostic().browser_transfer.phase,'complete');
+  for (const ackLost of [false,true]) {
+    const trial=harness({manifest:{boot_id:123,run_id:1,completion_ack:true},ackLost});
+    await trial.run();
+    assert.equal(trial.diagnostic().browser_transfer.completion_ack,!ackLost);
+    assert.equal(trial.diagnostic().browser_transfer.phase,'complete');
+    assert.equal(trial.requests.filter(path=>path.startsWith('/export/complete')).length,1);
+    assert(Buffer.from(vm.runInContext('completedFile',trial.context)).equals(fixture));
+  }
   // Both formerly-unretried phases fail once. A timed-out POST may already have
   // queued export; retry the idempotent endpoint, then wait through building.
   let h=harness({prepareAbort:true,manifestAbort:1,building:true});await h.run();

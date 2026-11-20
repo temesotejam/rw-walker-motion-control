@@ -104,7 +104,9 @@ struct ExportProbe {
     p.previous = length;
   }
 };
-ExportProbe print(const SupportTransferAudit& audit, size_t prefix_bytes=0) {
+ExportProbe print(const SupportTransferAudit& audit, size_t prefix_bytes=0, bool expect_overflow=false) {
+  static_assert(foot_fast_policy::kMetadataReserveBytes == foot_fast_policy::kMetadataHardBudgetBytes,
+                "v39 reserves only the publishable metadata size");
   PsramString json; assert(json.reserve(foot_fast_policy::kMetadataReserveBytes));
   json += "{\"sensor_data\":\"";
   if (prefix_bytes) {
@@ -120,7 +122,12 @@ ExportProbe print(const SupportTransferAudit& audit, size_t prefix_bytes=0) {
   json.setProgress(nullptr);
   const char* rows = std::strstr(json.c_str() + base, "\"rows\":[");
   if (rows) probe.schema_bytes = rows - (json.c_str() + base) + std::strlen("\"rows\":[");
-  assert(finishMetadata(json));
+  const bool complete = finishMetadata(json);
+  if (expect_overflow) {
+    assert(!complete && !json.ok());
+    return probe;
+  }
+  assert(complete && json.c_str()[json.length()] == '\0');
   assert(json.length() <= foot_fast_policy::kMetadataHardBudgetBytes);
   std::cout << json.c_str() << "\n";
   return probe;
@@ -187,4 +194,7 @@ int main() {
   audit.submit(sample);dispatch();
   in.accel_dps2=-400;sample.captured_us=4;host_us=6;
   audit.submit(sample);dispatch();audit.seal();print(audit);
+  const size_t final_footer = std::strlen(",\"metadata_json_final_bytes\":}") + std::to_string(limit).size();
+  print(audit, limit - final_footer);
+  print(audit, limit - final_footer + 1, true);
 }
