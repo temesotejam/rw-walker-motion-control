@@ -29,7 +29,7 @@ def main():
                         str(ROOT / "test/fixtures/support_transfer_audit.cpp"), "-o", str(exe)], check=True)
         lines = subprocess.check_output([exe]).splitlines()
         blocks = [json.loads(line) for line in lines]
-        assert len(blocks) == 12
+        assert len(blocks) == 16
         for block, line in zip(blocks, lines):
             assert block["metadata_json_final_bytes"] == len(line) <= 1408 * 1024
         assert len(lines[-1]) == 1408 * 1024 and "support_transfer_shadow" not in blocks[-1]
@@ -48,6 +48,7 @@ def main():
         rows = [dict(zip(first["columns"], row)) for row in first["rows"]]
         assert [r["packet"] for r in rows] == [2, 4, 5]
         assert [r["side"] for r in rows] == [1, -1, -1]
+        assert [r["pulse_id"] for r in rows] == [17, 18, 18]
         assert [r["i0_ma"] for r in rows] == [7, -7, None]
         assert all(r["gate_mask"] == 0 for r in rows[:2])
         assert rows[1]["baseline_flags"] == 4 and rows[1]["lateral_deg"] < 0 and rows[1]["cap_ms"] == 80
@@ -55,6 +56,7 @@ def main():
         assert rows[1]["transfer_deg"] < rows[1]["lateral_deg"] and rows[1]["transfer_ms"] > 0
         assert rows[2]["gate_mask"] & (4 | 16 | 32 | 512) == 4 | 16 | 32 | 512
         assert rows[2]["reason"] == 0 and rows[2]["width_ms"] == 0
+        assert first["revision"] == 2 and first["output_enabled"] is False
         assert rows[0]["ready_after_us"] >= 7000 and rows[0]["accel_dps2"] == 400
         assert blocks[3]["support_transfer_shadow"]["unavailable"] == 1
         zero_cap = blocks[10]["support_transfer_shadow"]
@@ -85,6 +87,39 @@ def main():
         assert full["exported"] == full["stored"] == 1201
         assert [row[2] for row in full["rows"]] == list(range(1, 1202))
         assert [row[-1] for row in full["rows"]] == list(range(2**32 - 1210, 2**32 - 9))
+        carry, restarted = (block["support_transfer_shadow"] for block in blocks[11:13])
+        observed = [dict(zip(carry["columns"], row)) for row in carry["rows"]]
+        assert observed[0]["reason"] == observed[1]["reason"] == 0
+        moving, done = observed[2:]
+        assert moving["phase"] == 2 and moving["anchor"] == 2 and moving["transfer_ms"] is None
+        assert -2 < moving["terminal_deg"] < -1.8 and moving["terminal_ms"] > 0
+        assert done["phase"] == 3 and done["reason"] == 6 and done["width_ms"] == 0
+        assert done["terminal_deg"] == moving["terminal_deg"]
+        fresh = dict(zip(restarted["columns"], restarted["rows"][0]))
+        assert fresh["anchor"] == 2 and fresh["terminal_deg"] > moving["terminal_deg"]
+        # The preceding build has no terminal columns. Preserve its CSV contract.
+        extra = {"phase", "anchor", "terminal_deg", "terminal_ms", "coast_frames", "pulse_id"}
+        legacy = dict(first, revision=1, columns=[c for c in first["columns"] if c not in extra])
+        legacy["rows"] = [[v for c, v in zip(first["columns"], row) if c not in extra] for row in first["rows"]]
+        assert write_support_transfer_shadow({"support_transfer_shadow": legacy}, folder) == len(legacy["rows"])
+        coast, new_run = (block["support_transfer_shadow"] for block in blocks[13:15])
+        frames = [dict(zip(coast["columns"], row)) for row in coast["rows"]]
+        assert [r["coast_frames"] for r in frames] == [1,2,2,1,2,1,0,1,0,1,0,1,1,1,2]
+        assert frames[6]["reason"] == 2 and frames[6]["gate_mask"] == 256
+        assert frames[8]["reason"] == 0 and frames[8]["gate_mask"] == 512
+        assert dict(zip(new_run["columns"], new_run["rows"][0]))["coast_frames"] == 1
+        write_fixture(raw, blocks[13])
+        convert(raw, expanded)
+        with (expanded / "support_transfer_shadow.csv").open() as stream:
+            assert [int(r["coast_frames"]) for r in csv.DictReader(stream)] == [r["coast_frames"] for r in frames]
+        invalid = dict(coast, rows=[r.copy() for r in coast["rows"]])
+        invalid["rows"][6][coast["columns"].index("coast_frames")] = 2
+        try:
+            write_support_transfer_shadow({"support_transfer_shadow": invalid}, folder)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("gated consecutive coast accepted")
         damaged = dict(b, completed=0)
         try:
             write_support_transfer_shadow({"support_transfer_shadow": damaged}, folder)

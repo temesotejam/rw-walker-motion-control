@@ -17,6 +17,7 @@ class SupportTransferAudit {
   struct Sample {
     support_transfer_plan::Input input;
     uint32_t time_ms = 0, peak_ms = 0, packet = 0, captured_us = 0;
+    uint32_t pulse_id = 0;  // Increments on each accepted motor pulse.
     uint16_t left_age_ms = UINT16_MAX, right_age_ms = UINT16_MAX, gate_mask = 0;
     uint8_t baseline_flags = 0;
     uint16_t raw_vbat_mv = 0, model_vbat_mv = 0;
@@ -33,6 +34,7 @@ class SupportTransferAudit {
     Sample sample;
     support_transfer_plan::Decision decision;
     uint32_t ready_after_us, solve_us;
+    uint8_t coast_frames;
   };
   static constexpr unsigned capacity = 1201;
   static void taskEntry(void* self);
@@ -43,6 +45,15 @@ class SupportTransferAudit {
   };
   PsramArchive<Row, capacity> rows_;
   lateral_energy::CurrentTable current_;
+  // Only the worker touches the half-cycle geometry, including across a run reset.
+  support_transfer_plan::Progress progress_;
+  struct CoastObservation {
+    uint32_t peak_ms = 0, packet = 0, pulse_id = 0;
+    int side = 0;
+    float terminal_deg = NAN;
+  };
+  CoastObservation previous_coast_;
+  uint32_t worker_generation_ = 0;
   TaskHandle_t worker_ = nullptr;
   mutable portMUX_TYPE mux_ = portMUX_INITIALIZER_UNLOCKED;
   Sample pending_sample_;

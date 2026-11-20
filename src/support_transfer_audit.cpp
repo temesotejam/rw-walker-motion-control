@@ -60,11 +60,36 @@ void SupportTransferAudit::work() {
     if (!have_sample) continue;
 
     const uint32_t start = micros();
+    if (worker_generation_ != generation) {
+      progress_ = {};
+      previous_coast_ = {};
+      worker_generation_ = generation;
+    }
+    // The feet can still establish the geometric phase during a motor pulse.
+    // A stale image or IMU cannot establish a new reference angle.
+    progress_.observe(sample.peak_ms, sample.packet, sample.input,
+                      !(sample.gate_mask & (StaleImu | StalePacket | InvalidFoot)));
     support_transfer_plan::Decision decision;
     // Zero remaining on-time still permits a meaningful passive-reachability prediction.
-    if (!(sample.gate_mask & ~NoBudget)) decision = support_transfer_plan::select(current_, sample.input);
+    if (!(sample.gate_mask & ~NoBudget)) decision = support_transfer_plan::select(current_, sample.input, progress_);
+    uint8_t coast_frames=0;
+    if (!sample.gate_mask && decision.phase==support_transfer_plan::Phase::Receiving &&
+        decision.reason==support_transfer_plan::Reason::Coast) {
+      // pulse_id also catches pulses that start and finish between publications.
+      const bool consecutive=previous_coast_.side==sample.input.side &&
+          previous_coast_.peak_ms==sample.peak_ms && sample.packet-previous_coast_.packet==1 &&
+          previous_coast_.pulse_id==sample.pulse_id && previous_coast_.terminal_deg==decision.terminal_deg;
+      coast_frames=consecutive ? 2 : 1;
+      previous_coast_.peak_ms=sample.peak_ms;
+      previous_coast_.packet=sample.packet;
+      previous_coast_.pulse_id=sample.pulse_id;
+      previous_coast_.side=sample.input.side;
+      previous_coast_.terminal_deg=decision.terminal_deg;
+    } else {
+      previous_coast_={};
+    }
     const uint32_t end = micros();
-    const Row row{sample, decision, end - sample.captured_us, end - start};
+    const Row row{sample, decision, end - sample.captured_us, end - start,coast_frames};
     portENTER_CRITICAL(&mux_);
     if (active_ && generation == generation_) {
       ++stats_.completed;
@@ -78,7 +103,9 @@ void SupportTransferAudit::work() {
 
 namespace {
 constexpr char kSchema[] =
-          ",\"reason_names\":[\"invalid\",\"outside_approach\",\"coast\",\"wait\",\"drive\",\"insufficient\"]"
+          ",\"reason_names\":[\"invalid\",\"outside_approach\",\"coast\",\"wait\",\"drive\",\"insufficient\",\"complete\"]"
+          ",\"phase_names\":[\"none\",\"approach\",\"receiving\",\"complete\"]"
+          ",\"anchor_names\":[\"none\",\"bracketed\",\"first_receiving\"]"
           ",\"gate_bits\":[\"stale_imu\",\"stale_packet\",\"invalid_foot\",\"missing_acceleration\","
           "\"fore_aft\",\"current\",\"wheel_speed\",\"battery\",\"no_budget\",\"pulse_active\"]"
           ",\"baseline_bits\":[\"pulse_active\",\"pulse_applied_in_half_cycle\",\"baseline_crossing_consumed\",\"return_aid_accepted\"]"
@@ -87,11 +114,12 @@ constexpr char kSchema[] =
           "\"left_age_ms\",\"right_age_ms\",\"i0_ma\",\"goal_ma\",\"cap_ms\",\"reason\",\"delay_ms\","
           "\"width_ms\",\"transfer_ms\",\"transfer_deg\",\"coast_margin_j\",\"margin_j\",\"work_j\","
           "\"work_supported\",\"ready_after_us\",\"solve_us\",\"gate_mask\",\"baseline_flags\","
-          "\"raw_vbat_mv\",\"model_vbat_mv\",\"model_vbat_status\",\"capture_us32\"],\"rows\":[";
+          "\"raw_vbat_mv\",\"model_vbat_mv\",\"model_vbat_status\",\"phase\",\"anchor\","
+          "\"terminal_deg\",\"terminal_ms\",\"coast_frames\",\"pulse_id\",\"capture_us32\"],\"rows\":[";
 constexpr size_t kFooterBytes = sizeof(",\"metadata_json_final_bytes\":4294967295}") - 1;
 constexpr size_t kClosingBytes = sizeof("],\"exported\":4294967295}") - 1;
-// Even 34 single-digit values require two brackets and 33 commas.
-constexpr size_t kMinRowBytes = 69;
+// Two brackets, 40 values and 39 commas.
+constexpr size_t kMinRowBytes = 81;
 
 class RowText {
  public:
@@ -126,7 +154,7 @@ void SupportTransferAudit::append(PsramString& json) const {
   const size_t room = section_end - json.length();
   char header[448];
   const int h = std::snprintf(header, sizeof(header),
-      ",\"support_transfer_shadow\":{\"revision\":1,\"output_enabled\":false,\"worker_ready\":%s"
+      ",\"support_transfer_shadow\":{\"revision\":2,\"output_enabled\":false,\"worker_ready\":%s"
       ",\"submitted\":%" PRIu32 ",\"replaced\":%" PRIu32 ",\"unavailable\":%" PRIu32
       ",\"completed\":%" PRIu32 ",\"abandoned\":%" PRIu32 ",\"stored\":%" PRIu32
       ",\"max_ready_after_us\":%" PRIu32 ",\"max_solve_us\":%" PRIu32 ",\"rise_tau_s\":%.7f",
@@ -157,7 +185,10 @@ void SupportTransferAudit::append(PsramString& json) const {
     row.integer(in.cap_ms); row.integer(static_cast<unsigned>(d.reason)); row.integer(d.delay_ms); row.integer(d.width_ms);
     row.number(d.transfer_ms); row.number(d.transfer_deg); row.number(d.coast_margin_j); row.number(d.margin_j); row.number(d.work_j);
     row.integer(d.work_supported); row.integer(r.ready_after_us); row.integer(r.solve_us); row.integer(s.gate_mask); row.integer(s.baseline_flags);
-    row.integer(s.raw_vbat_mv); row.integer(s.model_vbat_mv); row.integer(s.model_vbat_status); row.integer(s.captured_us);
+    row.integer(s.raw_vbat_mv); row.integer(s.model_vbat_mv); row.integer(s.model_vbat_status);
+    row.integer(static_cast<unsigned>(d.phase)); row.integer(static_cast<unsigned>(d.anchor));
+    row.number(d.terminal_deg); row.number(d.terminal_ms); row.integer(r.coast_frames);
+    row.integer(s.pulse_id); row.integer(s.captured_us);
     row.finish();
   };
   uint32_t exported = 0;

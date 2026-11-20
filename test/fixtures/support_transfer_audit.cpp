@@ -64,7 +64,7 @@ struct ExperimentRunner {
   bool energy_control_autonomous_last_peak_valid_=true, energy_control_autonomous_zero_cross_consumed_for_peak_=false;
   EnergyControlAutonomousHalfCycleState energy_control_autonomous_half_cycle_state_=EnergyControlAutonomousHalfCycleState::WAIT_ZERO_CROSS;
   EnergyControlAutonomousPhase energy_control_autonomous_phase_=EnergyControlAutonomousPhase::ENERGY_CONTROL;
-  struct { bool emergency_stop=false, pulse_active=false; } status_;
+  struct { bool emergency_stop=false, pulse_active=false; uint32_t pulse_id=0; } status_;
   struct { float angle_deg=0; } walking_fore_aft_last_;
   struct { uint16_t timingCap(int,unsigned,uint16_t cap) const {return cap;} } tilt_priority_;
   bool allow_fore_aft=true;
@@ -138,12 +138,14 @@ int main() {
   audit.begin(.05f);audit.startRun();
   r.walking_half_cycle_budget_.sourcePeak(1);
   r.energy_control_autonomous_last_peak_valid_=false; r.tick(1,10);
+  r.status_.pulse_id=17;
   r.energy_control_autonomous_last_peak_valid_=true; r.tick(2,20);
   r.observeSupportTransfer(host_us/1000,host_us,-2,20); // duplicate packet must not enqueue
   host_us+=7000;dispatch();
   r.energy_control_autonomous_last_peak_side_=1;
   r.post_zero=true; r.energy_control_autonomous_zero_cross_consumed_for_peak_=true;
   r.roller.battery_mV=8350;
+  ++r.status_.pulse_id;
   assert(r.walking_half_cycle_budget_.accepted(half_cycle_energy_budget::Kind::Main,0));
   r.tick(3,-19);r.tick(4,-20);dispatch();
   r.status_.pulse_active=true; r.allow_fore_aft=false;r.roller.current_valid=false;r.tick(5,-20);dispatch();
@@ -194,6 +196,48 @@ int main() {
   audit.submit(sample);dispatch();
   in.accel_dps2=-400;sample.captured_us=4;host_us=6;
   audit.submit(sample);dispatch();audit.seal();print(audit);
+
+  // First seen with the left foot already lower. A pulse can mask the
+  // decision, but valid geometry can still anchor the receiving half-cycle.
+  const auto receiving = [&](unsigned packet, float roll, float left, unsigned mask) {
+    sample.peak_ms=400; sample.packet=packet; sample.gate_mask=mask;
+    sample.time_ms=400+25*packet; sample.captured_us=host_us=1000*sample.time_ms;
+    in.side=-1; in.angle_deg=roll; in.rate_dps=-35; in.accel_dps2=200;
+    in.left_deg=left; in.right_deg=0; in.fore_aft_deg=0;
+    in.left_rate_dps=in.right_rate_dps=0;
+    in.cap_ms=60;
+    audit.submit(sample); dispatch();
+  };
+  audit.startRun();
+  receiving(1,5,15,SupportTransferAudit::StalePacket);
+  receiving(2,3,8,SupportTransferAudit::PulseActive);
+  receiving(3,2,17,0);
+  receiving(4,-3,18,0);
+  audit.seal();print(audit);
+  // Reuse the same peak, side and packet numbers after restarting the run.
+  audit.startRun();
+  receiving(1,2,17,0);
+  audit.seal();print(audit);
+  audit.startRun();
+  // Short accepted pulses may begin and finish between two camera packets.
+  auto frame=[&](unsigned packet,unsigned gate,unsigned pulse,int side=1,unsigned peak=500,float speed=35) {
+    sample.peak_ms=peak; sample.packet=packet; sample.gate_mask=gate; sample.pulse_id=pulse;
+    sample.time_ms=600+25*packet; sample.captured_us=host_us=1000*sample.time_ms;
+    in.side=side; in.angle_deg=.4f*side; in.rate_dps=speed*side; in.accel_dps2=0;
+    in.left_deg=in.right_deg=in.fore_aft_deg=in.left_rate_dps=in.right_rate_dps=0;
+    in.cap_ms=gate==SupportTransferAudit::NoBudget ? 0 : 60;
+    audit.submit(sample);dispatch();
+  };
+  frame(1,0,20); frame(2,0,20); frame(3,0,20);
+  frame(4,0,21); frame(5,0,21); frame(7,0,21);
+  frame(8,SupportTransferAudit::NoBudget,21); frame(9,0,21);
+  frame(10,SupportTransferAudit::PulseActive,22); frame(11,0,22);
+  frame(12,0,22,1,500,3); frame(13,0,22);
+  frame(14,0,22,1,550); frame(15,0,22,-1,550); frame(16,0,22,-1,550);
+  audit.seal();print(audit);
+  audit.startRun();
+  frame(17,0,22,-1,550);
+  audit.seal();print(audit);
   const size_t final_footer = std::strlen(",\"metadata_json_final_bytes\":}") + std::to_string(limit).size();
   print(audit, limit - final_footer);
   print(audit, limit - final_footer + 1, true);

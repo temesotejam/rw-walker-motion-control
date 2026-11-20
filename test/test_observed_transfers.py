@@ -1,7 +1,7 @@
 import unittest
 
 import _project
-from score_observed_transfers import score
+from score_observed_transfers import score, score_terminals
 
 
 class ObservedTransfers(unittest.TestCase):
@@ -65,6 +65,55 @@ class ObservedTransfers(unittest.TestCase):
         self.assertEqual(self.result([self.plan])["status"], "wrong_foot")
         self.label.update(start_ms=797, end_ms=802)
         self.assertEqual(self.result([self.plan])["status"], "ambiguous_half_cycle")
+
+    def receiving(self, **changes):
+        plan = dict(self.plan, phase=2, anchor=1, transfer_ms="", terminal_deg=-1.9, terminal_ms=6)
+        plan.update(changes)
+        return plan
+
+    def terminal(self, points, plan=None):
+        samples = [dict(self.gyro[0], body_rate_sample_time_us=1_000_000 + ms * 1000,
+                        gy_dps=rate / .8 + .5, pitch_mekf_detector_relative_deg=angle)
+                   for ms, angle, rate in points]
+        return next(score_terminals(self.metadata, [plan or self.receiving()], samples))
+
+    def test_receiving_prediction_does_not_date_a_past_contact(self):
+        out = self.result([self.receiving()])
+        self.assertEqual(out["status"], "no_prior_contact_forecast")
+        self.assertNotIn("predicted_transfer_ms", out)
+        self.assertEqual(list(score_terminals(self.metadata, [self.plan], self.gyro)), [])
+
+    def test_absolute_terminal_and_interpolated_directional_rate(self):
+        # The fixed target is beyond the nominal arrival. The event horizon
+        # still closes when that target is reached without an intervening peak.
+        points = [(458, -1.55, -20), (465, -1.7, -14), (475, -2.1, -6)]
+        self.metadata["walking_energy"] = dict(archive_available=True, records=[], total=0, truncated=False)
+        r = self.terminal(points)
+        self.assertEqual(r["status"], "reached")
+        self.assertEqual(r["predicted_terminal_ms"], 466)
+        self.assertAlmostEqual(r["observation_end_ms"], 470)
+        self.assertAlmostEqual(r["observed_rate_dps"], 10)
+        self.assertTrue(r["carry_5dps"])
+        self.assertEqual(r["recorded_command"], "no_recorded_command")
+        self.metadata["walking_energy"].update(records=[dict(executed=True, output_start_ms=462,
+                                                            output_end_ms=473)], total=1)
+        self.assertEqual(self.terminal(points)["recorded_command"], "overlap")
+        self.metadata["walking_energy"]["records"][0].update(output_start_ms=470)
+        self.assertEqual(self.terminal(points)["recorded_command"], "uncertain_edge")
+        r = self.terminal(points, self.receiving(ready_after_us=12_000))
+        self.assertEqual(r["status"], "already_reached_at_ready")
+        self.assertNotIn("carry_5dps", r)
+
+    def test_reversal_and_gaps_censor_later_crossing(self):
+        points = [(460, -.5, -10), (467, -.6, 2), (473, -.6, 4), (482, -2, -30)]
+        r = self.terminal(points)
+        self.assertEqual(r["status"], "reversed")
+        self.assertFalse(r["carry_5dps"])
+        self.assertEqual(r["recorded_command"], "unknown_archive")
+        self.assertEqual(self.terminal(points[::2])["status"], "observation_gap")
+        self.assertEqual(self.terminal([])["status"], "missing_initial_observation")
+        self.metadata["energy_control_autonomous_peak_events"][1]["peak_time_ms"] = 472
+        self.assertEqual(self.terminal(points)["status"], "next_peak")
 
 
 if __name__ == "__main__":

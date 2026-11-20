@@ -13,11 +13,142 @@ static st::Input approach() {
   return in;
 }
 
+static float kinetic(float speed_dps, const st::detail::Pose& p, int side) {
+  const auto foot=side>0 ? p.right : p.left;
+  const float x=p.cg_x_mm-foot.x_mm, z=p.cg_z_mm-foot.z_mm;
+  return .5f*st::kMassKg*(x*x+z*z)*1e-6f*st::kRad*st::kRad*speed_dps*speed_dps;
+}
+
+static void receivingPhase(const lateral_energy::CurrentTable& current,int side) {
+  auto in=approach();
+  in.side=side; in.angle_deg=-side*.2f; in.rate_dps=side*15.f; in.accel_dps2=0;
+  st::Progress p;
+  p.observe(1000,1,in,true);
+  assert(p.anchor==st::Anchor::None);
+  in.angle_deg=side;
+  p.observe(1000,2,in,true);
+  assert(p.anchor==st::Anchor::Bracketed);
+  const float target=p.terminal_deg;
+  // Independent circular-arc tangent at 5 mm, radius 150 mm, level foot.
+  assert(std::fabs(target-side*std::asin(5.f/150.f)/st::kRad)<.0001f);
+  const auto coast=st::select(current,in,p);
+  assert(coast.phase==st::Phase::Receiving && coast.reason==st::Reason::Coast);
+  assert(std::isnan(coast.transfer_ms) && std::isnan(coast.transfer_deg));
+  const auto start=st::detail::pose(0,0,0,in.angle_deg);
+  const auto end=st::detail::pose(0,0,0,target);
+  const float expected=kinetic(15,start,side)-kinetic(5,end,side);
+  assert(std::fabs(coast.coast_margin_j-expected)<2e-9f); // No second collision or gravity loss.
+  in.accel_dps2=side*-120.f;
+  in.cap_ms=0;
+  const auto empty=st::select(current,in,p);
+  assert(empty.reason==st::Reason::Insufficient && empty.coast_margin_j<0 && empty.width_ms==0);
+  in.cap_ms=80;
+  const auto powered=st::select(current,in,p);
+  assert(powered.reason==st::Reason::Drive || powered.reason==st::Reason::Wait);
+  assert(powered.margin_j>0 && powered.width_ms>0 && powered.width_ms+powered.delay_ms<=powered.terminal_ms);
+  assert(std::fabs(powered.margin_j-powered.coast_margin_j-powered.work_j)<2e-9f);
+  in.cap_ms=UINT16_MAX; // Invalid wrapped/oversized budgets cannot command a pulse.
+  assert(st::select(current,in,p).reason==st::Reason::Invalid);
+  in.cap_ms=80;
+  if (side>0) in.right_deg=12; else in.left_deg=12;
+  in.angle_deg=side*1.7f;
+  p.observe(1000,3,in,true);
+  assert(p.terminal_deg==target && !p.complete);
+  in.angle_deg=side*2.f;
+  p.observe(1000,4,in,true);
+  auto done=st::select(current,in,p);
+  assert(done.phase==st::Phase::Complete && done.reason==st::Reason::Complete && !done.width_ms);
+  in.angle_deg=side*1.6f;
+  p.observe(1000,5,in,true);
+  assert(p.complete); // Neither a reversal nor noise rearms the same episode.
+  p.observe(1500,6,in,true);
+  assert(p.anchor==st::Anchor::FirstReceiving && p.terminal_deg!=target && !p.complete);
+  in.angle_deg=side*3.f;
+  p.observe(1800,7,in,true);
+  assert(p.anchor==st::Anchor::FirstReceiving && p.complete); // Already on the arc.
+  in.side=-side;
+  p.observe(1800,8,in,true);
+  assert(p.anchor==st::Anchor::None && !p.complete);
+}
+
+static void observationGap() {
+  auto in=approach();
+  for (bool invalid : {false,true}) {
+    st::Progress p;
+    p.observe(100,2,in,true);
+    if (invalid) p.observe(100,3,in,false);
+    in.angle_deg=.5f;
+    p.observe(100,4,in,true);
+    assert(p.anchor==st::Anchor::FirstReceiving);
+    in.angle_deg=-1;
+  }
+  // Foot pitch for the bracketed anchor is interpolated at the change of
+  // sign, not taken from a later packet after the swing has progressed.
+  st::Progress p;
+  in.angle_deg=-5;
+  const float old_gap=st::supportGap(0,0,0,in.angle_deg);
+  p.observe(200,8,in,true);
+  in.right_deg=9;
+  const float next_gap=st::supportGap(0,9,0,in.angle_deg);
+  p.observe(200,9,in,true);
+  assert(old_gap<0 && next_gap>0 && p.anchor==st::Anchor::Bracketed);
+  const float contact_pitch=9.f*(-old_gap)/(next_gap-old_gap);
+  assert(std::fabs(p.terminal_deg-st::arcEntryDeg(1,contact_pitch))<.00001f);
+}
+
+static void receivingPivot(const lateral_energy::CurrentTable& current) {
+  auto in=approach();
+  in.angle_deg=-6.0432f; in.rate_dps=16.0146f; in.fore_aft_deg=-2.4881f;
+  in.left_deg=5.0838f; in.right_deg=11.0901f;
+  in.left_rate_dps=-3.3421f; in.right_rate_dps=-91.3832f;
+  st::Progress p;
+  p.observe(100,1,in,true);
+  assert(st::detail::gap(st::detail::forecast(in,0))>.4f);
+  assert(st::detail::gap(st::detail::forecast(in,75))<-1.4f);
+  assert(st::detail::gap(st::detail::forecast(in,150))>.25f);
+  const auto reverses=st::select(current,in,p);
+  assert(reverses.phase==st::Phase::Receiving && reverses.reason==st::Reason::OutsideApproach);
+  assert(std::isnan(reverses.margin_j) && reverses.width_ms==0);
+
+  // Fixed-foot continuation cannot switch away as body roll advances
+  // toward the receiver in this CAD domain: d(gap)/d(roll) = x_right-x_left.
+  for (int pitch : {-10,0,10}) for (int left : {-20,-5,0,5,20})
+    for (int right : {-20,-5,0,5,20}) for (int side : {-1,1}) {
+      float previous=-INFINITY;
+      for (int i=-30;i<=30;++i) {
+        float gap=side*st::supportGap(left,right,pitch,side*.5f*i);
+        assert(gap>previous);
+        previous=gap;
+      }
+    }
+  in=approach();
+  in.angle_deg=-4; in.right_deg=6; in.accel_dps2=0; in.cap_ms=0;
+  p=st::Progress{};
+  p.observe(200,1,in,true);
+  auto long_horizon=st::select(current,in,p);
+  assert(long_horizon.phase==st::Phase::Receiving && long_horizon.terminal_ms>150);
+  const auto start=st::detail::forecast(in,0), local=st::detail::forecast(in,150);
+  const auto end=st::detail::pose(in.left_deg,in.right_deg,0,long_horizon.terminal_deg);
+  float max_rise=0;
+  for (float angle=in.angle_deg+in.rate_dps*.15f;angle<long_horizon.terminal_deg;angle+=.025f) {
+    auto at=st::detail::pose(in.left_deg,in.right_deg,0,angle);
+    max_rise=std::fmax(max_rise,st::detail::height(at)-st::detail::height(local));
+  }
+  const float mg=st::kMassKg*st::kGravity*.001f;
+  const float required=std::fmax(mg*max_rise,
+      mg*(st::detail::height(end)-st::detail::height(local))+kinetic(5,end,1));
+  assert(std::fabs(long_horizon.coast_margin_j-(kinetic(15,start,1)-required))<2e-8f);
+}
+
 int main() {
   lateral_energy::CurrentTable current;
   auto in=approach();
   assert(st::select(current,in).reason==st::Reason::Invalid);
   assert(current.prepare(.030f));
+  receivingPhase(current,1);
+  receivingPhase(current,-1);
+  observationGap();
+  receivingPivot(current);
   // Independent v14 smoothed-GLB reference values, not a mechanical ZERO.
   assert(std::fabs(st::supportGap(0,4,0,-6.26106f))<.001f);
   assert(std::fabs(st::supportGap(4,0,0,6.26106f))<.001f);
@@ -72,5 +203,5 @@ int main() {
   assert(st::select(current,in).reason==st::Reason::Invalid);
   in=approach(); in.cap_ms=81;
   assert(st::select(current,in).reason==st::Reason::Invalid);
-  std::puts("Support-transfer CAD, coast, start/width, prefix stall, current lag and direction checks passed.");
+  std::puts("Support-transfer approach, receiving arc, pulse budgets, support reversal and event tracking passed.");
 }

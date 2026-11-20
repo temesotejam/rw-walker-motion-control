@@ -3860,6 +3860,7 @@ void ExperimentRunner::observeSupportTransfer(uint32_t t, uint32_t sample_us, fl
   SupportTransferAudit::Sample s;
   s.captured_us = micros();
   s.time_ms = t; s.peak_ms = energy_control_autonomous_last_peak_ms_; s.packet = packet.count;
+  s.pulse_id = status_.pulse_id;
   if (status_.pulse_active) { s.baseline_flags |= 1; s.gate_mask |= SupportTransferAudit::PulseActive; }
   if (walking_half_cycle_budget_.reservedMs() || walking_half_cycle_budget_.spentMs()) s.baseline_flags |= 2;
   if (energy_control_autonomous_zero_cross_consumed_for_peak_) s.baseline_flags |= 4;

@@ -1319,7 +1319,8 @@ def write_support_transfer_shadow(metadata: dict, out_dir: Path) -> int:
         return 0
     columns = block["columns"]
     rows = block["rows"]
-    if (block["revision"] != 1 or block["output_enabled"] is not False or
+    if (block["revision"] not in (1, 2) or block["output_enabled"] is not False or
+            (block["revision"] == 2 and not {"phase", "anchor", "terminal_deg", "terminal_ms"}.issubset(columns)) or
             not all(isinstance(key, str) for key in columns) or len(set(columns)) != len(columns) or
             not {"time_ms", "packet", "side", "reason", "delay_ms", "width_ms",
                  "ready_after_us", "gate_mask"}.issubset(columns) or
@@ -1327,6 +1328,17 @@ def write_support_transfer_shadow(metadata: dict, out_dir: Path) -> int:
             not 0 <= len(rows) == block["exported"] <= block["stored"] <= block["completed"] or
             any(len(row) != len(columns) for row in rows)):
         raise ValueError("Invalid support transfer shadow archive")
+    # Older archives did not record the pulse counter or the consecutive-coast count.
+    evidence_columns = {"pulse_id", "coast_frames"}
+    if evidence_columns.intersection(columns):
+        if block["revision"] != 2 or not evidence_columns.issubset(columns):
+            raise ValueError("Incomplete support transfer coast evidence columns")
+        count, pulse, phase, reason, gate = map(columns.index, ("coast_frames", "pulse_id", "phase", "reason", "gate_mask"))
+        for row in rows:
+            eligible = row[phase] == 2 and row[reason] == 2 and row[gate] == 0
+            if (type(row[count]) is not int or row[count] not in (0, 1, 2) or bool(row[count]) != eligible or
+                    type(row[pulse]) is not int or not 0 <= row[pulse] <= 0xffffffff):
+                raise ValueError("Invalid support transfer coast evidence")
     with (out_dir / "support_transfer_shadow.csv").open("w", encoding="utf-8", newline="") as stream:
         writer = csv.writer(stream)
         writer.writerow(columns)

@@ -1,4 +1,4 @@
-"""Compare v39 predictions with independently timed support transfers in a converted trial."""
+"""Compare recorded support forecasts with annotated transfers or measured body motion."""
 import argparse
 import csv
 import json
@@ -45,12 +45,114 @@ def gyro_samples(metadata, samples, epoch):
     return times, rates, angles
 
 
+def capture_us(p, epoch):
+    elapsed = (int(p["capture_us32"]) - epoch) & 0xffffffff
+    if elapsed > 600_000_000:
+        raise ValueError("Decision timestamp outside the measurement clock")
+    return elapsed
+
+
 FIELDS = ("start_ms", "end_ms", "receiving_foot", "body_direction", "opposite_foot_swung",
           "forward_mm", "peak_ms", "decision_ms", "reason", "direction_agrees", "receiving_foot_agrees",
           "predicted_transfer_ms", "timing_error_to_interval_ms", "coast_margin_j",
           "candidate_margin_j", "candidate_delay_ms", "candidate_width_ms", "rate_sample_ms",
           "observed_directional_rate_dps", "exit_observation", "exit_sample_ms", "exit_rate_dps",
           "exit_carry_5dps", "status")
+
+TERMINAL_FIELDS = ("peak_ms", "packet", "side", "anchor", "reason", "coast_frames", "decision_ms", "ready_ms",
+                   "terminal_deg", "predicted_terminal_ms", "status", "observation_end_ms",
+                   "observed_rate_dps", "carry_5dps", "recorded_command")
+
+
+def terminal_observation(times, rates, angles, start, ready, until, direction, target):
+    """Follow one absolute target until the next peak or the first reversal."""
+    if until <= start:
+        return "next_peak", start, None
+    j = bisect_right(times, start) - 1
+    if j < 0 or start - times[j] > 10:
+        j += 1
+        if j == len(times) or times[j] > start + 10 or times[j] >= until:
+            return "missing_initial_observation", start, None
+    if angles[j] is None:
+        return "missing_angle", start, None
+    if direction * (angles[j] - target) >= 0:
+        return "already_at_first_observation", max(start, times[j]), None
+    for k in range(j + 1, len(times)):
+        if times[k] - times[k-1] > 10 or angles[k] is None:
+            return "observation_gap", max(start, times[k-1]), None
+        if direction * (angles[k] - target) >= 0:
+            # Interpolate the first crossing bracket, on the IMU clock.
+            f = (target - angles[k-1]) / (angles[k] - angles[k-1])
+            crossed = times[k-1] + f * (times[k] - times[k-1])
+            if crossed < until:
+                if crossed <= ready:
+                    return "already_reached_at_ready", max(start, crossed), None
+                rate = direction * (rates[k-1] + f * (rates[k] - rates[k-1]))
+                return "reached", crossed, rate
+        if times[k] >= until:
+            return "next_peak", until, None
+        if times[k-1] >= start and direction*rates[k-1] < 0 and direction*rates[k] < 0:
+            return ("reversed_at_ready" if times[k] <= ready else "reversed"), times[k], None
+    return "end_of_data", max(start, times[-1]), None
+
+
+def command_overlap(archive, start, end):
+    # The walking branch records software command edges with millisecond resolution.
+    # A missing command is informative only with a complete archive.
+    records = archive.get("records", [])
+    uncertain = False
+    for command in records:
+        if not command["executed"]:
+            continue
+        on, off = command["output_start_ms"], command["output_end_ms"]
+        if on > end+1 or (off and off < start-1):
+            continue
+        if start+1 < on < end-1 or (on < end-1 and off and off > start+1):
+            return "overlap"
+        uncertain = True
+    if uncertain:
+        return "uncertain_edge"
+    if (archive.get("archive_available") is True and archive.get("truncated") is False
+            and archive.get("total") == len(records)):
+        return "no_recorded_command"
+    return "unknown_archive"
+
+
+def score_terminals(metadata, plans, samples):
+    # This endpoint belongs to a decision, even when no contact was labeled.
+    epoch = measurement_epoch(metadata)
+    times, rates, angles = gyro_samples(metadata, samples, epoch)
+    peaks = sorted({r["peak_time_ms"] for r in metadata["energy_control_autonomous_peak_events"]})
+    for p in plans:
+        if str(p.get("phase", "")) != "2":
+            continue
+        origin, side = int(p["peak_ms"]), int(p["side"])
+        target = numeric(p["terminal_deg"])
+        out = dict(peak_ms=origin, packet=p["packet"], side=side, anchor=p["anchor"],
+                   reason=p["reason"], coast_frames=p.get("coast_frames"), terminal_deg=target)
+        if epoch is None:
+            yield dict(out, status="unknown_measurement_clock")
+            continue
+        start = capture_us(p, epoch) / 1000
+        ready = start + int(p["ready_after_us"]) / 1000
+        out.update(decision_ms=start, ready_ms=ready)
+        nominal = numeric(p["terminal_ms"])
+        if nominal is not None:
+            out["predicted_terminal_ms"] = start + nominal
+        i = bisect_right(peaks, origin)
+        if not i or peaks[i-1] != origin or start < origin:
+            yield dict(out, status="unknown_source_peak")
+            continue
+        if target is None or side not in (-1, 1):
+            yield dict(out, status="no_terminal_forecast")
+            continue
+        until = peaks[i] if i < len(peaks) else math.inf
+        status, end, rate = terminal_observation(times, rates, angles, start, ready, until, side, target)
+        out.update(status=status, observation_end_ms=end, observed_rate_dps=rate,
+                   recorded_command=command_overlap(metadata.get("walking_energy", {}), start, end))
+        if rate is not None or status == "reversed":
+            out["carry_5dps"] = rate is not None and rate >= 5
+        yield out
 
 
 def recorded_exit(times, rates, angles, g, end_ms, direction):
@@ -77,12 +179,7 @@ def score(metadata, plans, samples, labels):
     snapshots = []
     if epoch is not None:
         for p in plans:
-            # ESP32 micros() is the low 32 bits of the same microsecond clock.
-            # Unsigned subtraction also covers trials crossing a micros() wrap.
-            us = (int(p["capture_us32"]) - epoch) & 0xffffffff
-            if us > 600_000_000:
-                raise ValueError("Decision timestamp outside the measurement clock")
-            snapshots.append((us, p))
+            snapshots.append((capture_us(p, epoch), p))
     previous_end = -1
     for label in labels:
         start, end = numeric(label["start_ms"]), numeric(label["end_ms"])
@@ -131,7 +228,9 @@ def score(metadata, plans, samples, labels):
                    candidate_delay_ms=p["delay_ms"], candidate_width_ms=p["width_ms"])
         dt = numeric(p["transfer_ms"])
         if dt is None or dt <= 0:
-            yield dict(out, status="no_forecast")
+            # An already-lower receiving sole does not date past contact.
+            status = "no_prior_contact_forecast" if str(p.get("phase", "")) in ("2", "3") else "no_forecast"
+            yield dict(out, status=status)
             continue
         predicted = t + dt
         error = predicted - min(end, max(start, predicted))
@@ -143,24 +242,41 @@ def score(metadata, plans, samples, labels):
         yield dict(out, status=status, predicted_transfer_ms=predicted, timing_error_to_interval_ms=error)
 
 
+def write_rows(path, fields, rows):
+    with path.open("w", encoding="utf8", newline="") as output:
+        writer = csv.DictWriter(output, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trial", type=Path, help="Directory produced by convert_rwlog_to_csv.py")
-    parser.add_argument("labels", type=Path, help="Independent synchronized annotations, CSV")
-    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("labels", type=Path, nargs="?", help="Independent synchronized annotations, CSV")
+    parser.add_argument("--out", type=Path, help="Score annotated contacts")
+    parser.add_argument("--terminal-out", type=Path, help="Score each receiving-side target against the IMU")
     args = parser.parse_args()
+    if bool(args.labels) != bool(args.out) or not (args.out or args.terminal_out):
+        parser.error("Specify labels with --out, or use --terminal-out without contact labels")
+    if args.out and args.terminal_out and args.out.resolve() == args.terminal_out.resolve():
+        parser.error("Choose different output files for contacts and receiving-side targets")
     meta = json.loads((args.trial / "metadata.json").read_text(encoding="utf8"))
     if "support_transfer_shadow" not in meta:
         parser.error("This trial has no v39 support-transfer prediction archive")
+    if args.terminal_out and meta["support_transfer_shadow"].get("revision", 1) < 2:
+        parser.error("This recording predates receiving-side terminal forecasts (revision 2)")
     with (args.trial / "support_transfer_shadow.csv").open(encoding="utf-8-sig", newline="") as pf, \
-            (args.trial / "timeseries.csv").open(encoding="utf-8-sig", newline="") as sf, \
-            args.labels.open(encoding="utf-8-sig", newline="") as lf:
-        rows = list(score(meta, list(csv.DictReader(pf)), csv.DictReader(sf), csv.DictReader(lf)))
-    with args.out.open("w", encoding="utf8", newline="") as output:
-        writer = csv.DictWriter(output, fieldnames=FIELDS)
-        writer.writeheader()
-        writer.writerows(rows)
-    print(f"{len(rows)} labeled transfers; {sum(r['status'] == 'matched' for r in rows)} with a timed forecast.")
+            (args.trial / "timeseries.csv").open(encoding="utf-8-sig", newline="") as sf:
+        plans, samples = list(csv.DictReader(pf)), list(csv.DictReader(sf))
+    if args.labels:
+        with args.labels.open(encoding="utf-8-sig", newline="") as lf:
+            rows = list(score(meta, plans, samples, csv.DictReader(lf)))
+        write_rows(args.out, FIELDS, rows)
+        print(f"{len(rows)} labeled transfers; {sum(r['status'] == 'matched' for r in rows)} with a timed forecast.")
+    if args.terminal_out:
+        rows = list(score_terminals(meta, plans, samples))
+        write_rows(args.terminal_out, TERMINAL_FIELDS, rows)
+        print(f"{len(rows)} receiving-side decisions; {sum(r['status'] == 'reached' for r in rows)} reached after readiness.")
 
 
 if __name__ == "__main__":
