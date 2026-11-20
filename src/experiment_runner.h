@@ -1,4 +1,7 @@
 #pragma once
+#if WALKING_RIGHT_ARRIVAL
+#include "right_arrival_energy.h"
+#endif
 #if WALKING_TURN_OBSERVER
 #include "gait_turn_run.h"
 #include "gait_turn_energy.h"
@@ -777,6 +780,12 @@ private:
 #endif
 #endif
   struct WalkingEnergyAudit {
+#if WALKING_RIGHT_ARRIVAL
+    right_arrival_energy::Result right_arrival{};
+    bool right_arrival_checked=false;
+    uint16_t right_base_ms=0;
+    float right_base_q=NAN, right_final_j=NAN;
+#endif
 #if WALKING_TURN_OBSERVER
     uint32_t turn_cycle_end_ms=0;
     uint16_t turn_base_ms=0, turn_candidate_ms=0;

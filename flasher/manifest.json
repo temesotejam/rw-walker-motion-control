@@ -1,6 +1,6 @@
 {
-  "name": "RW Walker v39 Small-step / Turn3",
-  "version": "walking-support-transfer-v39-smallstep-ab",
+  "name": "RW Walker Right Arrival",
+  "version": "walking-support-transfer-v39-arrival1",
   "new_install_improv_wait_time": 0,
   "builds": [
     {

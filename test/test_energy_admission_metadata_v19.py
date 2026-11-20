@@ -18,7 +18,7 @@ base = ROOT / 'test/fixtures/energy/test_return_energy_metadata_v18.py'
 context = {'__file__': str(base)}
 exec(compile(base.read_text(encoding='utf8').split('\nwith tempfile.TemporaryDirectory', 1)[0], str(base), 'exec'), context)
 parse = context['context']['parse']
-fixture = '#include "fore_aft_motion_guard.h"\n#include "energy_admission_v19.h"\n#include "receiving_arc_aid.h"\n' + context['fixture']
+fixture = '#include "fore_aft_motion_guard.h"\n#include "energy_admission_v19.h"\n#include "receiving_arc_aid.h"\n#if WALKING_RIGHT_ARRIVAL\n#include "right_arrival_energy.h"\n#endif\n' + context['fixture']
 fixture = fixture.replace('for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u})',
                           'for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u,24u})')
 marker = 'class ExperimentRunner {public:\n'
@@ -37,6 +37,13 @@ fixture = fixture.replace(marker, marker + r'''
 marker = 'a.optional=i==4;a.early_budget_checked=i==4;a.early_budget_admitted=false;'
 assert fixture.count(marker) == 1
 fixture = fixture.replace(marker, marker + r'''
+#if WALKING_RIGHT_ARRIVAL
+    if(i==0){
+      a.right_arrival_checked=true;a.right_base_ms=54;a.right_base_q=10.f;
+      a.right_arrival=right_arrival_energy::limit(geometry,table,25.5f,3.86f,4.5f,0.f,345.f,54);
+      a.right_final_j=a.right_arrival.selected_j;
+    }
+#endif
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
     const auto scope=a.return_event?energy_admission_v19::Scope::ExplicitReturnAid:
         a.optional?energy_admission_v19::Scope::OptionalMain:energy_admission_v19::Scope::OrdinaryZero;
@@ -91,20 +98,22 @@ fixture = fixture.replace('const bool return_energy_mode=true;', 'const bool ret
 fixture = fixture.replace('early_energy_mode=EARLY_ENERGY_MAIN;', 'early_energy_mode=EARLY_ENERGY_MAIN && !small_step;')
 profile_line = next(line for line in context['logger'].splitlines() if 'String(walking_trial::name(walking_profile_))' in line)
 fixture = fixture.replace('json+="{";', 'json+="{";\n#if WALKING_SMALL_STEP_AB\n'
-                          '  const auto walking_profile_=small_step ? walking_trial::Profile::SmallStep : walking_trial::Profile::Turn3;\n'
+                          '  const auto walking_profile_=small_step ? walking_trial::Profile::SmallStep : walking_trial::standardProfile();\n'
                           + profile_line + '\n#endif\n')
 with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
     temp = Path(folder)
     (temp / 'test.cpp').write_text(fixture, encoding='utf8')
     previous_rows = {}
-    for admission, carry, turn in [(False,False,False), (True,False,False),
-                                   (True,True,False), (True,True,True)]:
+    for admission, carry, turn, arrival in [(False,False,False,False), (True,False,False,False),
+                                           (True,True,False,False), (True,True,True,False),
+                                           (True,True,True,True)]:
         exe = temp / ('v19.exe' if admission else 'v18.exe')
         subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror'] + flags +
                        ['-DWALKING_ADMISSION_V19=' + str(int(admission)), '-DSUPPORT_TRANSFER_CARRY2=' + str(int(carry)),
                         '-DWALKING_TURN_OBSERVER=' + str(int(turn)), '-DSUPPORT_TRANSFER_ARC_FEEDBACK=' + str(int(turn)),
                         '-DSUPPORT_TRANSFER_STALL_V3=' + str(int(turn)),
                         '-DWALKING_SMALL_STEP_AB=' + str(int(turn)),
+                        '-DWALKING_RIGHT_ARRIVAL=' + str(int(arrival)),
                         '-I' + str(ROOT / 'test/fixtures/arduino'),
                         '-I' + str(ROOT / 'src'), str(temp / 'test.cpp'), '-o', str(exe)], check=True)
         for mode, count in [('', 7), ('empty', 0)] + ([('small-step', 7)] if turn else []):
@@ -113,7 +122,20 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
             metadata = converter.expand_tables(raw)
             rows = metadata['walking_energy']['records']
             if turn:
-                assert raw['walking_profile'] == ('v14_small_step' if mode=='small-step' else 'turn3')
+                assert raw['walking_profile'] == ('v14_small_step' if mode=='small-step' else
+                                                  'right_arrival_v1' if arrival else 'turn3')
+            if arrival and mode!='small-step':
+                model=metadata['walking_energy']
+                assert model['right_arrival_model']=='positive_unassisted_real_zero_startup_4p5_v1'
+                if rows:
+                    r=rows[0]
+                    assert r['right_arrival_checked'] and r['right_arrival_eligible']
+                    assert model['right_arrival_reason_names'][r['right_arrival_reason']]=='reduced'
+                    assert r['right_arrival_base_ms']==54 and 0<r['right_arrival_limit_ms']<54
+                    assert r['right_arrival_base_j']>r['right_arrival_final_j']
+                    assert not rows[1]['right_arrival_checked'] and rows[1]['right_arrival_final_j'] is None
+            else:
+                assert 'right_arrival_model' not in metadata['walking_energy']
             if mode=='small-step':
                 revision = 'walking_peak_rate_energy_v14'
                 assert all(raw[key]==revision for key in ('energy_model','wheel_work_model_revision','lateral_energy_revision',
@@ -205,7 +227,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 expected_mask = sum(bit for bit, key in [(1, 'passive_rate_supported'), (2, 'work_rate_supported'),
                                                        (4, 'charge_supported')] if not current[key])
                 assert current['energy_unsupported_mask'] == expected_mask
-            out = temp / (('turn_' if turn else 'carry_' if carry else 'v19_') + (mode or 'rows'))
+            out = temp / (('arrival_' if arrival else 'turn_' if turn else 'carry_' if carry else 'v19_') + (mode or 'rows'))
             out.mkdir()
             assert converter.write_walking_energy_diagnostics(metadata, out) == count
             if count:
@@ -226,6 +248,10 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 assert detail['angle_deg'] == 8.5 and detail['rate_dps'] == 35
                 with (out / 'walking_energy.csv').open(newline='', encoding='utf8') as stream:
                     csv_rows = list(csv.DictReader(stream))
+                if arrival:
+                    assert csv_rows[0]['right_arrival_base_ms']=='54'
+                    assert int(csv_rows[0]['right_arrival_limit_ms'])<54
+                    assert csv_rows[0]['right_arrival_eligible']=='True'
                 if carry:
                     assert csv_rows[1]['arc_base_guarded_ms'] == '28' and csv_rows[1]['arc_main_reserve_ms'] == '50'
                     assert all(row['arc_aid_reason'] == '' for i, row in enumerate(csv_rows) if i != 1)

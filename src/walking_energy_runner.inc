@@ -368,6 +368,33 @@ bool ExperimentRunner::tryWalkingEnergy(
 #else
       energy::evaluateWidth(lateral_energy_geometry_,walking_energy_current_,in,width);
 #endif
+#if WALKING_RIGHT_ARRIVAL
+  // Evaluate the new arrival fit against the unsteered, already wheel-limited
+  // command. This fit was identified on positive, unassisted physical ZERO.
+  if (!small_step && side==1 && e.event_kind==0 && !optional_early_event_ &&
+      !stall_rescue_event_ && !foot_support_event_ && !return_aid && !a.assisted_cycle &&
+      energy_control_autonomous_input_peak_percent_==0 && in.target_deg==4.5f &&
+      actual.valid && !actual.coast && width) {
+    a.right_arrival_checked=true;
+    a.right_base_ms=width;a.right_base_q=actual.q_mas;
+    a.right_arrival=right_arrival_energy::limit(lateral_energy_geometry_,walking_energy_current_,
+        in.rate_dps,in.previous_peak_deg,in.target_deg,in.initial_current_ma,in.goal_current_ma,width);
+    if (a.right_arrival.eligible && a.right_arrival.width_ms<width) {
+      width=a.right_arrival.width_ms;
+      if (width) {
+        actual=energy::evaluateWidth(lateral_energy_geometry_,walking_energy_current_,calculation,width);
+      } else {
+        // The arrival fit selects coast. Keep the inherited model's positive
+        // unmet request visible alongside its zero newly-commanded work.
+        guard=wheel_cycle_guard_;
+        actual.width_ms=0;actual.q_mas=0;actual.predicted_work_j=0;
+        actual.predicted_arrival_j=actual.available_j;actual.unmet_j=actual.request_j;
+        actual.saturated=actual.request_j>0;actual.charge_supported=true;
+        actual.coast=true;actual.reason=walking_energy_policy::Reason::Coast;
+      }
+    }
+  }
+#endif
 #if WALKING_TURN_OBSERVER
   // Use the confirmed cycle only on an ordinary, already admissible motion
   // event. Both model inversions start with the same pre-command guard state.
@@ -396,7 +423,11 @@ bool ExperimentRunner::tryWalkingEnergy(
           auto candidate_guard=wheel_cycle_guard_;
           a.turn_candidate_ms=candidate_guard.limit(side,e.pre_input_wheel_speed_rpm,true,t,candidate.width_ms);
           const auto after=energy::evaluateWidth(lateral_energy_geometry_,walking_energy_current_,adjusted,a.turn_candidate_ms);
-          if (gait_turn_energy::admissible(actual,after,delta)) {
+          if (
+#if WALKING_RIGHT_ARRIVAL
+              (!a.right_arrival_checked || !a.right_arrival.eligible || a.turn_candidate_ms<=a.right_arrival.width_ms) &&
+#endif
+              gait_turn_energy::admissible(actual,after,delta)) {
             calculation=adjusted;selected=candidate;guard=candidate_guard;width=a.turn_candidate_ms;actual=after;
             a.requested_ms=selected.width_ms;a.turn_adjustment_j=delta;
           }
@@ -404,6 +435,10 @@ bool ExperimentRunner::tryWalkingEnergy(
       }
     }
   }
+#endif
+#if WALKING_RIGHT_ARRIVAL
+  if(a.right_arrival_checked && a.right_arrival.eligible && actual.valid)
+    a.right_final_j=right_arrival_energy::predictedJ(in.rate_dps,actual.q_mas);
 #endif
   a.guarded_ms=width;
   a.decision=actual;
@@ -745,6 +780,14 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
   json+="\"foot_role\":\"timing_only_no_ms_boost_no_forced_coast_override\",";
 #endif
   json+="\"startup_exception\":\"fixed_start_kick_only_then_all_widths_energy_selected\",\"work_model\":\"inherited_empirical_pulse_Q_arrival_transfer_provisional\",\"coast_residual_modelled\":false,";
+#if WALKING_RIGHT_ARRIVAL
+  if(!smallStepBaselineSelected()){
+    json+="\"right_arrival_model\":\"positive_unassisted_real_zero_startup_4p5_v1\",";
+    json+="\"right_arrival_reason_names\":[\"not_evaluated\",\"invalid\",\"outside_support\",\"kept\",\"reduced\",\"coast\"],";
+    json+="\"right_arrival_units\":\"J_of_nominal_body_peak_U;Q_in_mA_s_modelled_during_command\",";
+    json+="\"right_arrival_comparison\":\"base=unsteered_wheel_limited;final=after_steering;existing_work_and_completion_fields_use_inherited_model\",";
+  }
+#endif
   json+="\"common_gain\":0.25,\"redistribution_gain\":0.125,\"each_correction_limit_target_fraction\":0.125,\"intercept_rolloff\":\"min(1,rate_dps/20)^2\",\"incoming_peak_max_age_ms\":1500,\"same_side_peak_max_age_ms\":3000,";
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
   const auto& cfg=walking_fore_aft_guard_.config();const auto& motion=walking_fore_aft_last_;
@@ -772,6 +815,20 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     String row="{\"time_ms\":"+String(a.time_ms)+",\"peak_ms\":"+String(a.peak_ms)+",\"side\":"+String(a.side);
     row+=",\"output_start_ms\":"+String(a.output_start_ms);
     row+=",\"requested_ms\":"+String(a.requested_ms)+",\"guarded_ms\":"+String(a.guarded_ms);
+#if WALKING_RIGHT_ARRIVAL
+    if(!smallStepBaselineSelected()){
+      const auto& fit=a.right_arrival;
+      row+=",\"right_arrival_checked\":"+String(a.right_arrival_checked?"true":"false");
+      row+=",\"right_arrival_eligible\":"+String(a.right_arrival_checked && fit.eligible?"true":"false");
+      row+=",\"right_arrival_reason\":"+String(static_cast<unsigned>(fit.reason));
+      row+=",\"right_arrival_base_ms\":"+String(a.right_base_ms)+",\"right_arrival_limit_ms\":"+String(fit.width_ms);
+      row+=",\"right_arrival_base_q_mas\":"+n(a.right_base_q)+",\"right_arrival_coast_j\":"+n(fit.coast_j);
+      row+=",\"right_arrival_base_j\":"+n(fit.original_j)+",\"right_arrival_target_j\":"+n(fit.target_j);
+      row+=",\"right_arrival_final_j\":"+n(a.right_final_j);
+      row+=",\"right_arrival_elapsed_j\":"+n(fit.eligible && a.completion.valid
+          ? right_arrival_energy::predictedJ(a.start_rate_dps,a.completion.q_mas) : NAN);
+    }
+#endif
     row+=",\"executed\":"+String(a.executed?"true":"false")+",\"optional\":"+String(a.optional?"true":"false")+",\"rescue\":"+String(a.rescue?"true":"false");
     row+=",\"early_budget_checked\":"+String(a.early_budget_checked?"true":"false")+",\"early_budget_admitted\":"+String(a.early_budget_admitted?"true":"false");
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19

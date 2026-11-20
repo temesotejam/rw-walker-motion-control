@@ -94,6 +94,9 @@ function walkingFootFastTrial(s = latest) {
 function supportTransferTrial(s) {
   return /^walking-support-transfer-v39(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
+function rightArrivalTrial(s = latest) {
+  return s?.diagnostic_build_id === 'walking-support-transfer-v39-arrival1';
+}
 function foreAftStopText(reason) {
   return ({
     fore_aft_outward_divergence:'前後の傾きが外向きに持続して増えたため、入力を停止しました。',
@@ -142,10 +145,12 @@ function controls() {
   $('work-start-10').disabled = $('work-start').disabled;
   $('work-start-12').disabled = $('work-start').disabled;
   if (latest?.foot_control_required && !latest.foot_control_ready) $('work-start').disabled = true;
-  const compare = latest?.diagnostic_build_id === 'walking-support-transfer-v39-smallstep-ab';
+  const rightArrival = rightArrivalTrial();
+  const compare = rightArrival || latest?.diagnostic_build_id === 'walking-support-transfer-v39-smallstep-ab';
   $('small-step-start').hidden = !compare;
   $('small-step-start').disabled = !compare || $('work-start').disabled;
-  $('work-start').textContent = compare ? 'turn3 支持移行で30秒測定（±8°）' : '目標±8°で30秒測定';
+  $('work-start').textContent = rightArrival ? '右への振れを調整して30秒測定（±8°）' :
+    compare ? 'turn3 支持移行で30秒測定（±8°）' : '目標±8°で30秒測定';
   $('work-start-status').textContent = !fresh ? '±8°を開始できません：本体との通信を確認してください。' :
     latest.running ? '±8°を開始できません：測定中です。' :
     busy || transferRunning ? '±8°を開始できません：処理の完了を待っています。' :
@@ -339,7 +344,10 @@ function render(s) {
       (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '') +
       (fast ? ' 最初はモータを開始せず、足角度と画像の更新を確認してください。画像更新は目標' + format(s.foot?.target_fps ?? 15,0) + 'fpsで、実際の更新速度と遅延は下に表示します。時刻差はdriver基準で、露光時刻との対応は未校正です。' : '');
     const turnVersion = /^walking-support-transfer-v39-(turn[123])$/.exec(s.diagnostic_build_id);
-    if (s.diagnostic_build_id === 'walking-support-transfer-v39-smallstep-ab') {
+    if (rightArrivalTrial(s)) {
+      $('work-title').textContent = '左右揺動のエネルギー制御（±8°・30秒）';
+      $('work-description').textContent = '右への振れを調整する条件では、歩き始めに中心を右向きに通る速さと候補の入力から次のピークを予測し、振れが大きくなるときに通電を短くします。v14式の小歩幅条件と同じ足角測定を使います。';
+    } else if (s.diagnostic_build_id === 'walking-support-transfer-v39-smallstep-ab') {
       $('work-title').textContent = '歩行制御の比較（±8°・30秒）';
       $('work-description').textContent = 'v14式 小歩幅は、胴体が中心を通過する前に不足エネルギーに応じて最長15 ms通電します。turn3 支持移行は、左足へ支持を移すときの失速を予測して補助します。どちらも同じ足角測定と姿勢監視を使います。選んだ方式をRWLOGに保存します。';
     } else if (turnVersion) {
@@ -585,6 +593,9 @@ function renderWalkingProfile(profile) {
     $('run-model').textContent = '次のピークに必要な仕事から通電幅を選びます。';
     $('run-brake').textContent = '前倒し入力は最長15 msです。';
     $('run-adaptation').textContent = '左右のピークをエネルギー計算に使います。';
+  } else if (profile === 'right_arrival_v1') {
+    $('run-model').textContent = '右へ中心を通るとき、実走から求めた到達エネルギーで起動中の主入力を調整します。';
+    $('run-percent').textContent = '左への支持移行では、失速を予測したときに補助します。';
   } else if (profile === 'turn3') {
     $('run-percent').textContent = 'turn3 支持移行。左へ戻るときの補助と、中心通過後の主入力を選びます。';
   }
@@ -631,7 +642,8 @@ async function startOfflineRun(isBatchPackage = false, forcedModel = null, workT
   requestedEnergyModel = energyModel;
   requestedSmallStep = smallStep;
   const runLabel = positiveCurrentPackage ? '正側300・350・400 mAの一括実験' : extendedPackage ? '負側30・35・40 msの一括実験' : isBatchPackage ? '負側5条件の一括実験' :
-    smallStep ? 'v14式 小歩幅' : workPackage ? 'ホイール仕事に基づく制御' : inversePackage ? '固定脚・負側のエネルギー制御' : '左右揺動エネルギー制御';
+    smallStep ? 'v14式 小歩幅' : workPackage && target === 8 && rightArrivalTrial() ? '右への振れを調整する歩行制御' :
+    workPackage ? 'ホイール仕事に基づく制御' : inversePackage ? '固定脚・負側のエネルギー制御' : '左右揺動エネルギー制御';
   commandInFlight = true; setOffline(latest?.foot_periodic ? 0 : (batchPackage || workPackage ? 50000 : 30000)); $('message').textContent = `${runLabel}（目標${target}°・${inputCurrentMa} mA）の開始要求を送信中…`;
   try {
     const apiModel = smallStep ? 'work_control_small_step' : energyModel;

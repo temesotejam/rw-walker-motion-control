@@ -1314,7 +1314,7 @@ bool ExperimentRunner::startEnergyControlAutonomousCapture(bool small_step_basel
   const bool comparison=walking_trial::comparison_enabled && wheelWorkMode() &&
       energy_control_autonomous_target_peak_deg_==8.f && energy_control_autonomous_input_peak_percent_==0.f;
   const auto profile=small_step_baseline ? walking_trial::Profile::SmallStep :
-      comparison ? walking_trial::Profile::Turn3 : walking_trial::Profile::None;
+      comparison ? walking_trial::standardProfile() : walking_trial::Profile::None;
   beginStartSync(millis(),profile);
   return true;
 }

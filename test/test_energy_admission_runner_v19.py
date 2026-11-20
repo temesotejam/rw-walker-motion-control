@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 admission_source_text = (ROOT/'test/fixtures/energy/test_energy_transfer_runner_v18.py').read_text(encoding='utf8')
 admission_fixture_prefix, admission_fixture_tail = admission_source_text.split("\nfixture += r'''\n", 1)
 exec(compile(admission_fixture_prefix, str(ROOT/'test/fixtures/energy/test_energy_transfer_runner_v18.py'), 'exec'), globals())
-fixture = '#include "energy_admission_v19.h"\n#include "fore_aft_motion_guard.h"\n' + fixture
+fixture = '#include "energy_admission_v19.h"\n#include "fore_aft_motion_guard.h"\n#if WALKING_RIGHT_ARRIVAL\n#include "right_arrival_energy.h"\n#endif\n' + fixture
 fixture += admission_fixture_tail.split('static void ready18(', 1)[0]
 # Preserve the production emergency-stop pulse path while omitting unrelated
 # LEDs, capture and logger status I/O from this host double.
@@ -25,7 +25,9 @@ fixture = fixture.replace(emergency_stub,
     'void requestEmergencyStop(const char*){walking_energy_stop_reason_=3;stopMotor();'
     'status_.state=ExperimentState::ESTOP;status_.emergency_stop=true;}')
 # Match the last recorded v18 positive input's Vbat-derived current goal.
-fixture = fixture.replace('return 329.547119f;', 'return 345.005126953f;')
+fixture = fixture.replace('float predictCurrentGoalMa(int,float)const{return 329.547119f;}',
+                          'float simulated_goal_ma=345.005126953f;'
+                          ' float predictCurrentGoalMa(int,float)const{return simulated_goal_ma;}')
 fixture = r'''
 #if WALKING_TURN_OBSERVER
 #include "gait_turn_energy.h"
@@ -209,6 +211,58 @@ static void turn_main_response(){
 }
 #endif
 int main(){
+#if WALKING_RIGHT_ARRIVAL
+ // Measured 33125639, 1.705 s ZERO. The body reached +7.95 deg after
+ // the original 54 ms request. Feed its pre-command values to live dispatch.
+ {ExperimentRunner r;ready19(r,4.56917f,3.86125f);r.tilt_priority_.reset();
+  r.energy_control_autonomous_last_peak_ms_=1505;
+  r.walking_energy_peak_ms_[1]=1070;
+  assert(r.walking_half_cycle_budget_.sourcePeak(1505));
+  assert(r.walking_energy_current_.prepare(.031652f));
+  r.simulated_goal_ma=353.6989f;clock19(r,1708);
+  Event e;e.zero_cross_rate_dps=e.zero_cross_abs_rate_dps=25.5256f;
+  e.previous_peak_time_ms=1505;e.previous_peak_amplitude_deg=3.86125f;
+  e.physical_next_peak_side=1;e.zero_cross_time_ms=1705;e.target_peak_deg=8;
+  e.pre_input_wheel_speed_valid=true;e.pre_input_wheel_speed_age_us=2000;
+  e.detector_angle_after_deg=.06943f;e.i0_estimated_mA=-2.332f;
+  e.vbat_mV=8040;e.pre_input_wheel_speed_rpm=-390.27f;
+  bool healthy=false;
+  assert(r.tryWalkingEnergy(e,1708,&healthy) && healthy && e.output_executed);
+  const auto& a=r.walking_energy_active_pulse_;
+  assert(a.right_arrival.eligible && a.requested_ms==54 && a.right_base_ms==54);
+  assert(e.pulse_width_ms==23 && a.guarded_ms==23 && r.walking_half_cycle_budget_.reservedMs()==23);
+  assert(a.right_arrival.original_j>a.right_final_j && a.right_base_q>a.decision.q_mas);
+ }
+ // Same fresh real-ZERO request, routed through normal transport and timer.
+ for(unsigned mode=0;mode<7;++mode){
+   ExperimentRunner r;ready19(r,4.56f,3.86f);
+   if(mode!=3)r.tilt_priority_.reset();
+   if(mode==1)r.small_step=true;
+   if(mode==4)r.roller_obj.write_ok=false;
+   if(mode==5)r.walking_fore_aft_last_.allow_output=false;
+   if(mode==6)confirmed_right_weak(r);
+   if(mode==5)r.acceptMotionCrossing(false,1200,26,-.01f,.01f,1,1200);
+   else main19(r,1200,mode==2?18.f:26.f,.01f);
+   const auto a=r.walking_energy_audit_[0];
+   if(mode==1 || mode==3){assert(!a.right_arrival_checked && a.executed);continue;}
+   if(mode==5){assert(!a.right_arrival_checked && !a.executed);continue;}
+   assert(a.right_arrival_checked);
+   if(mode==2){assert(!a.right_arrival.eligible && a.right_arrival.reason==right_arrival_energy::Reason::OutsideSupport);continue;}
+   assert(a.right_arrival.eligible && a.right_arrival.reason==right_arrival_energy::Reason::Reduced);
+   assert(a.right_base_ms>a.guarded_ms && a.guarded_ms>0 && a.guarded_ms<=a.right_arrival.width_ms);
+   assert(a.right_arrival.original_j>a.right_final_j && a.right_base_q>a.decision.q_mas);
+   if(mode==4){assert(!a.executed && !r.status_.pulse_active && !r.walking_half_cycle_budget_.mainUsed());continue;}
+   assert(a.executed && r.status_.pulse_active && a.guarded_ms==r.last_finished_event.pulse_width_ms);
+   clock19(r,a.output_start_ms+a.guarded_ms);r.updateEnergyControlAutonomousPulse(mock_ms);
+   assert(!r.status_.pulse_active && r.walking_half_cycle_budget_.spentMs()==a.guarded_ms);
+ }
+ {ExperimentRunner r;ready19(r,2.6f,3.f);r.tilt_priority_.reset();main19(r,1200,39,.01f);
+  const auto a=r.walking_energy_audit_[0];
+  assert(a.right_arrival.eligible && a.right_arrival.reason==right_arrival_energy::Reason::Coast);
+  assert(!a.executed && a.decision.coast && a.decision.unmet_j>0 && a.decision.predicted_work_j==0);
+  assert(r.walking_half_cycle_budget_.mainUsed() && r.walking_half_cycle_budget_.spentMs()==0 && !r.status_.pulse_active);
+ }
+#endif
 #if WALKING_SMALL_STEP_AB
  // A v14 partial contribution and a turn3 defer on the same state.
  {ExperimentRunner r;ready19(r,6.47749f,5.21523f);r.small_step=true;
@@ -543,6 +597,7 @@ with tempfile.TemporaryDirectory(prefix='energy_admission_runner_v19_') as folde
         '-DSUPPORT_TRANSFER_ARC_FEEDBACK='+str(feedback),
         '-DSUPPORT_TRANSFER_STALL_V3='+str(stall),
         '-DWALKING_SMALL_STEP_AB='+str(stall),
+        '-DWALKING_RIGHT_ARRIVAL='+str(stall),
         '-DFOOT_SUPPORT_ASSIST=1','-DFOOT_SUPPORT_LOCAL=1','-DFOOT_SUPPORT_TRANSFER=1',
         '-DFOOT_SUPPORT_ENERGY=1','-DEARLY_ENERGY_MAIN=1','-DPULSE_LIFECYCLE_FIX=1',
         '-DSWAY_BALANCE_TRIAL=1','-DWALKING_RETURN_ENERGY=1','-DWALKING_TRANSFER_V18=1',
