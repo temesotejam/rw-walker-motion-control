@@ -2,6 +2,7 @@
 
 | 場所 | 残した理由 |
 |---|---|
+| [2026-11-20-carry2-turn](2026-11-20-carry2-turn/) | carry2の実歩行50784949。右足の前振れが小さい区間、床格子に対する左右の前進、相対方位と実通電を照合。 |
 | [2026-11-20-carry1-trials](2026-11-20-carry1-trials/) | v39-carry1の2試行。床格子に対する交互前進と停止、足と胴体の角度、救済通電後の折り返し、carry2の比較。 |
 | [2026-11-20-webfix3-walking](2026-11-20-webfix3-walking/) | v39-webfix3で実測した2試行。床に対する前進、救済入力と折返し、[支持切替後のエネルギー予測とIMU実測](2026-11-20-webfix3-walking/receiving-replay.md)を比較。 |
 | [2026-11-20-support-transfer](2026-11-20-support-transfer/) | v37の2試行でv39の開始時刻と通電幅の候補を再計算した結果。`half_cycles.csv` は各半周期、`summary.json` は試行別の件数と入力ファイルのハッシュ。[予測と実測の読み方](../docs/SUPPORT_TRANSFER_V39.md) |
