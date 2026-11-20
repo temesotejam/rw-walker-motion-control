@@ -487,7 +487,15 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
 #else
   json += "\"foot_camera_required_for_autonomous_start\":false,";
 #endif
-  json += "\"steering\":{\"revision\":\"amplitude_only_04730\",\"enabled\":false,\"profile\":\"disabled\",\"feedback_enabled\":false,\"heading_enabled\":false,\"response_check_enabled\":false,\"targets\":\"selected_target_for_both_sides;command_target_latched_until_response_peak\",\"previous_peak_target_gate\":\"disabled_in_04731;retired_8deg_residual\",\"v53_fields\":\"gyro_heading_diagnostic_only;difference_unavailable;delta_and_cycles_zero\",\"gyro_heading_diagnostic\":\"relative_from_start_sync;startup_bias;3_axis;no_magnetometer;drifts;rows_lag_one_sample;invalid_on_gap_over_10ms;never_control\",\"reason_codes\":{\"8\":\"disabled\"}},";
+  json += "\"steering\":{\"revision\":\"amplitude_only_04730\",\"enabled\":false,\"profile\":\"disabled\",\"feedback_enabled\":false,\"heading_enabled\":false,\"response_check_enabled\":false,\"targets\":\"selected_target_for_both_sides;command_target_latched_until_response_peak\",\"previous_peak_target_gate\":\"disabled_in_04731;retired_8deg_residual\",";
+#if WALKING_TURN_OBSERVER
+  json += "\"scope\":\"legacy_steering_only;cycle_asymmetry_in_gait_turn;actual_pulses_in_walking_energy\","
+          "\"v53_fields\":\"legacy_difference_unavailable;delta_and_cycles_zero\","
+          "\"gyro_heading_diagnostic\":\"relative_from_start_sync;startup_bias;3_axis;no_magnetometer;drifts;rows_lag_one_sample;invalid_on_gap_over_10ms;sampled_at_confirmed_peaks\",";
+#else
+  json += "\"v53_fields\":\"gyro_heading_diagnostic_only;difference_unavailable;delta_and_cycles_zero\",\"gyro_heading_diagnostic\":\"relative_from_start_sync;startup_bias;3_axis;no_magnetometer;drifts;rows_lag_one_sample;invalid_on_gap_over_10ms;never_control\",";
+#endif
+  json += "\"reason_codes\":{\"8\":\"disabled\"}},";
   const auto placement = RuntimeDiag::executionSnapshot();
   json += "\"execution_placement\":{\"revision\":\"core_isolation_04724\",\"camera_init_call_core\":" + String(placement.camera_init_core);
   json += ",\"camera_deinit_call_core\":" + String(placement.camera_deinit_core);

@@ -20,6 +20,20 @@
 static_assert(ARDUINO_EVENT_RUNNING_CORE == 0, "Wi-Fi events must run outside the control core");
 
 static String num(float x) { return isfinite(x) ? String(x, 4) : String("null"); }
+#if WALKING_TURN_OBSERVER
+// The HTTP task only reads the control worker's published copy.
+static String gaitTurnField(const RunControlSnapshot& snapshot) {
+  const auto& turn = snapshot.gait_turn;
+  if (!turn.enabled) return String();
+  const auto& last = turn.latest;
+  return String(",\"gait_turn\":{\"end_ms\":") + String(last.end_ms) +
+      ",\"reason\":\"" + gait_turn::reasonName(last.reason) + "\",\"left_deg\":" + num(last.left_deg) +
+      ",\"right_deg\":" + num(last.right_deg) + ",\"yaw_delta_deg\":" + num(last.yaw_delta_deg) +
+      ",\"pair_yaw_delta_deg\":" + num(last.pair_yaw_delta_deg) +
+      ",\"weak_side\":" + String(int(last.weak_side)) + ",\"confirmed_ms\":" + String(turn.confirmed_ms) +
+      ",\"confirmed_side\":" + String(int(turn.confirmed_side)) + "}";
+}
+#endif
 static bool unsignedArg(const String& text, uint32_t& value);
 static const char* phase(ImmutableExport::Phase p) {
   switch (p) {
@@ -382,7 +396,11 @@ void WebUi::status() {
     String body = "{\"periodic_run\":true,\"state\":\"" + String(s.state_name) +
         "\",\"remaining_ms\":" + String(s.remaining_ms) + ",\"pitch_deg\":" + num(s.pitch_deg) +
         ",\"actual_mA\":" + String(s.actual_current_mA) + ",\"motor_mA\":" + String(s.motor_cmd_mA) +
-        ",\"foot_periodic\":" + periodicFeet.liveJson() + "}";
+        ",\"foot_periodic\":" + periodicFeet.liveJson()
+#if WALKING_TURN_OBSERVER
+        + gaitTurnField(s)
+#endif
+        + "}";
     server_->sendHeader("Cache-Control","no-store");
     server_->send(200,"application/json",body);
     return;
@@ -414,6 +432,9 @@ void WebUi::status() {
   json += ",\"wifi_export_recovery\":true";
 #if FOOT_PERIODIC_V38
   json += ",\"foot_periodic\":" + periodicFeet.liveJson();
+#endif
+#if WALKING_TURN_OBSERVER
+  json += gaitTurnField(s);
 #endif
 #if defined(FOOT_LIVE_STATUS_V35) && FOOT_LIVE_STATUS_V35
   json += ",\"live_status_supported\":true,\"status_view\":\"" + String(live?"live":"full") + "\"";

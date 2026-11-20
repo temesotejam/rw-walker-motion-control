@@ -8,6 +8,9 @@
 #include "runtime_diagnostics.h"
 #include "mekf_attitude_diagnostics.h"
 #include "gyro_steering.h"
+#if WALKING_TURN_OBSERVER
+#include "gait_turn_observer.h"
+#endif
 #include "control_work_profile.h"
 #include "control_latency.h"
 #include "autonomous_target.h"
@@ -43,6 +46,9 @@ struct RunControlSnapshot {
   uint32_t upright_reference_capture_samples = 0;
   MekfAttitudeSnapshot mekf_attitude;
   steering::Snapshot steering = steering::disabledSnapshot();
+#if WALKING_TURN_OBSERVER
+  gait_turn::Status gait_turn{};
+#endif
   float upright_error_deg = 180, upright_pitch_error_deg = 180, accel_norm_g = 0, gyro_norm_dps = 0;
   uint32_t imu_sample_us = 0;
   bool running = false;

@@ -47,6 +47,12 @@ fixture = fixture.replace(marker, marker + r'''
       a.arc_foot_source=2;a.base_aid_ms=28;a.arc_candidate_ms=33;a.main_reserve_ms=50;
     }
 #endif
+#if WALKING_TURN_OBSERVER
+    if(i==0 || i==4){
+      a.turn_cycle_end_ms=900;a.turn_base_ms=66;a.turn_candidate_ms=63;
+      a.turn_adjustment_j=-.0000197f;
+    }
+#endif
 #endif
 ''')
 marker = '  PsramString json;'
@@ -68,10 +74,12 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
     temp = Path(folder)
     (temp / 'test.cpp').write_text(fixture, encoding='utf8')
     previous_rows = {}
-    for admission, carry in [(False, False), (True, False), (True, True)]:
+    for admission, carry, turn in [(False,False,False), (True,False,False),
+                                   (True,True,False), (True,True,True)]:
         exe = temp / ('v19.exe' if admission else 'v18.exe')
         subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror'] + flags +
                        ['-DWALKING_ADMISSION_V19=' + str(int(admission)), '-DSUPPORT_TRANSFER_CARRY2=' + str(int(carry)),
+                        '-DWALKING_TURN_OBSERVER=' + str(int(turn)),
                         '-I' + str(ROOT / 'test/fixtures/arduino'),
                         '-I' + str(ROOT / 'src'), str(temp / 'test.cpp'), '-o', str(exe)], check=True)
         for mode, count in [('', 7), ('empty', 0)]:
@@ -149,7 +157,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 expected_mask = sum(bit for bit, key in [(1, 'passive_rate_supported'), (2, 'work_rate_supported'),
                                                        (4, 'charge_supported')] if not current[key])
                 assert current['energy_unsupported_mask'] == expected_mask
-            out = temp / (('carry_' if carry else 'v19_') + (mode or 'rows'))
+            out = temp / (('turn_' if turn else 'carry_' if carry else 'v19_') + (mode or 'rows'))
             out.mkdir()
             assert converter.write_walking_energy_diagnostics(metadata, out) == count
             if count:
@@ -173,6 +181,14 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 if carry:
                     assert csv_rows[1]['arc_base_guarded_ms'] == '28' and csv_rows[1]['arc_main_reserve_ms'] == '50'
                     assert all(row['arc_aid_reason'] == '' for i, row in enumerate(csv_rows) if i != 1)
+                if turn:
+                    for index in (0,4):
+                        event = csv_rows[index]
+                        assert event['turn_cycle_end_ms'] == '900'
+                        assert event['turn_base_ms'] == '66' and event['turn_candidate_ms'] == '63'
+                        assert abs(float(event['turn_adjustment_j']) + .0000197) < 1.e-9
+                    assert float(csv_rows[0]['turn_command_adjustment_j']) == float(csv_rows[0]['turn_adjustment_j'])
+                    assert float(csv_rows[4]['turn_command_adjustment_j']) == 0
                 assert csv_rows[4]['energy_admission_applies'] == 'True'
                 assert csv_rows[4]['energy_admission_allowed'] == csv_rows[4]['fore_aft_allowed'] == 'False'
                 assert float(csv_rows[4]['fore_aft_angle_deg']) == 7.5

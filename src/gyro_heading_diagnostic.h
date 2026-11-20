@@ -1,7 +1,8 @@
 #pragma once
 #include "gyro_steering.h"
 
-// Diagnostic only. Never supplies a target or actuator decision.
+// Relative body heading, reported in the log and sampled at confirmed gait
+// events by the optional turn observer. It has no ground yaw reference.
 // Raw sensor -> physical body frame is Ry(pi), matching MEKF; apply only
 // the fixed startup gyro calibration (never the magnetic field).
 class GyroHeadingDiagnostic {

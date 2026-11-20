@@ -27,6 +27,13 @@ fixture = fixture.replace(emergency_stub,
 # Match the last recorded v18 positive input's Vbat-derived current goal.
 fixture = fixture.replace('return 329.547119f;', 'return 345.005126953f;')
 fixture = r'''
+#if WALKING_TURN_OBSERVER
+#include "gait_turn_energy.h"
+struct GaitStateFixture {
+ gait_turn::Status value;
+ const gait_turn::Status& status() const {return value;}
+};
+#endif
 #if SUPPORT_TRANSFER_CARRY2
 #include "receiving_arc_aid.h"
 #include "periodic_foot_state.h"
@@ -40,7 +47,15 @@ struct StreamDouble {
 } periodicFeet;
 #endif
 ''' + fixture
+fixture = fixture.replace('struct Status {', 'struct Status {\n#if WALKING_TURN_OBSERVER\n'
+    ' struct { bool gyro_valid = false; } steering;\n#endif\n', 1)
+fixture = fixture.replace('struct EnergyControlAutonomousZeroCrossEvent {',
+    'struct EnergyControlAutonomousZeroCrossEvent {\n#if WALKING_TURN_OBSERVER\n'
+    ' uint8_t event_kind = 0;\n#endif\n', 1)
 fixture = fixture.replace('class ExperimentRunner {public:', '''class ExperimentRunner {public:
+#if WALKING_TURN_OBSERVER
+ GaitStateFixture gait_turn_run_;
+#endif
 #if SUPPORT_TRANSFER_CARRY2
  periodic_foot::Packet periodic_foot_packet_;
  void observeSupportTransfer(uint32_t,uint32_t,float,float){}  // Detached shadow observer.
@@ -87,7 +102,106 @@ static bool fore_aft(ExperimentRunner& r,unsigned t,float angle,float rate){
  in.quaternion.y=in.quaternion.z=0;in.gyro_rad_s.x=rate*lateral_energy::kRadPerDeg;
  return r.observeWalkingForeAft(in);
 }
+#if WALKING_TURN_OBSERVER
+static void confirmed_right_weak(ExperimentRunner& r){
+ auto& state=r.gait_turn_run_.value;
+ state.enabled=true;
+ auto& cycle=state.latest;
+ cycle.reason=gait_turn::Reason::Confirmed;cycle.weak_side=1;cycle.turn_sign=-1;cycle.streak=2;
+ cycle.start_ms=100;cycle.mid_ms=480;cycle.end_ms=900;
+ cycle.left_deg=7;cycle.right_deg=1;cycle.left_swing_deg=8;cycle.right_swing_deg=1;
+ cycle.yaw_delta_deg=-4;cycle.pair_yaw_delta_deg=-7;
+ state.confirmed_ms=cycle.end_ms;state.confirmed_side=cycle.weak_side;
+ r.status_.steering.gyro_valid=true;
+ auto& raw=r.walking_return_frame_;
+ raw.run_id=r.status_.run_id;raw.sequence=11;raw.image_us=mock_us-35000;raw.received_us=mock_us-10000;
+ raw.timestamp_valid=raw.frame_valid=raw.zero_ready=true;
+ raw.left_detected=raw.right_detected=raw.left_range_ok=raw.right_range_ok=true;
+ raw.left_deg=7.f;raw.right_deg=.4f;
+}
+static void turn_main_setup(ExperimentRunner& r,int side){
+ ready19(r,10,side>0?7:8);confirmed_right_weak(r);
+ r.energy_control_autonomous_last_peak_side_=-side;
+ unsigned index=side>0?1:0;
+ r.walking_energy_peaks_[index]=10;r.walking_energy_peak_ms_[index]=700;
+ if(side>0)positive_bias(r,.00018f);
+}
+static void turn_main_response(){
+ assert(gait_turn_energy::widthStep(9)==0 && gait_turn_energy::widthStep(10)==1 &&
+        gait_turn_energy::widthStep(39)==3 && gait_turn_energy::widthStep(80)==5);
+ for(int side:{1,-1}){
+  ExperimentRunner reference;turn_main_setup(reference,side);
+  reference.gait_turn_run_.value.enabled=false;
+  main19(reference,1200,side*36.75f);
+  const auto before=reference.walking_energy_active_pulse_;
+  assert(before.executed && before.guarded_ms==(side>0?66:61));
+  ExperimentRunner r;turn_main_setup(r,side);
+  main19(r,1200,side*36.75f);
+  const auto a=r.walking_energy_active_pulse_;
+  assert(a.executed && a.turn_cycle_end_ms==900 && a.turn_base_ms==before.guarded_ms);
+  assert(a.turn_candidate_ms==(side>0?63:64) && a.guarded_ms==a.turn_candidate_ms);
+  assert(side*a.turn_adjustment_j<0 && near(before.decision.request_j+a.turn_adjustment_j,a.decision.request_j));
+  const float work_change=a.decision.predicted_work_j-before.decision.predicted_work_j;
+  const int step=gait_turn_energy::widthStep(before.guarded_ms);
+  assert(work_change*a.turn_adjustment_j>0 && std::abs(int(a.guarded_ms)-int(before.guarded_ms))<=step);
+  const auto& geometry=r.lateral_energy_geometry_;
+  const float step_j=std::fabs(lateral_energy::potential(geometry,8.f-side*.20f)-lateral_energy::potential(geometry,8.f));
+  const auto edge_ms=static_cast<uint16_t>(before.guarded_ms-side*step);
+  const float edge_q=lateral_energy::charge(r.walking_energy_current_,edge_ms,a.start_i0_ma,a.start_goal_ma);
+  const float edge_work=lateral_energy::work(lateral_energy::coefficients(side),
+      36.75f*lateral_energy::kRadPerDeg,edge_q);
+  const float expected_request=before.decision.predicted_work_j-
+      side*(7.f/9.f)*std::min(step_j,std::fabs(edge_work-before.decision.predicted_work_j));
+  assert(near(a.decision.request_j,expected_request));
+  assert(r.status_.pulse_active && r.roller_obj.last_command==side*1200);
+  assert(r.last_finished_event.pulse_width_ms==a.guarded_ms);
+  assert(near(r.last_finished_event.predicted_input_work_j,a.decision.predicted_work_j));
+  assert(r.walking_half_cycle_budget_.mainUsed());
+  clock19(r,a.output_start_ms+a.guarded_ms);r.updateEnergyControlAutonomousPulse(mock_ms);
+  assert(!r.status_.pulse_active && r.walking_half_cycle_budget_.spentMs()==a.guarded_ms);
+  assert(r.walking_energy_active_pulse_.completion.valid &&
+         r.walking_energy_active_pulse_.completion.actual_elapsed_ms==a.guarded_ms);
+ }
+ // The longer negative candidate can exceed the fitted Q range even when
+ // the original negative command was supported. Retain the ordinary event.
+ {ExperimentRunner r;turn_main_setup(r,-1);
+  r.energy_control_autonomous_last_peak_amplitude_deg_=7;
+  main19(r,1200,-36.75f);const auto& a=r.walking_energy_active_pulse_;
+  assert(a.executed && a.turn_candidate_ms>a.turn_base_ms && a.guarded_ms==a.turn_base_ms);
+  assert(lateral_energy::charge(r.walking_energy_current_,a.turn_candidate_ms,a.start_i0_ma,a.start_goal_ma)>
+         lateral_energy::coefficients(-1).charge_max_mAs);
+  assert(a.guarded_ms==62 && a.turn_adjustment_j==0);}
+ // Confirmations from the wrong sign, a prior or expired cycle, or a missing
+ // camera/gyro observation must reproduce the ordinary guarded pulse exactly.
+ for(unsigned mode=0;mode<8;++mode){
+  ExperimentRunner r;turn_main_setup(r,1);
+  auto& cycle=r.gait_turn_run_.value.latest;
+  switch(mode){
+   case 0:cycle.weak_side=-1;break;
+   case 1:cycle.turn_sign=1;break;
+   case 2:cycle.start_ms=500;cycle.end_ms=750;break;
+   case 3:cycle.reason=gait_turn::Reason::Pending;break;
+   case 4:r.walking_return_frame_.image_us=mock_us-75001;break;
+   case 5:r.walking_return_frame_.run_id++;break;
+   case 6:r.walking_return_frame_.right_detected=false;break;
+   case 7:r.status_.steering.gyro_valid=false;break;
+  }
+  main19(r,1200,36.75f);
+  const auto& a=r.walking_energy_active_pulse_;
+  assert(a.executed && a.guarded_ms==66 && a.turn_adjustment_j==0);
+ }
+ // A transport failure cannot become an executed correction or debit any on-time.
+ {ExperimentRunner r;turn_main_setup(r,1);r.roller_obj.write_ok=false;main19(r,1200,36.75f);
+  const auto& a=r.walking_energy_audit_[0];
+  assert(!a.executed && !r.status_.pulse_active && a.turn_adjustment_j<0);
+  assert(r.walking_half_cycle_budget_.spentMs()==0 && !r.walking_half_cycle_budget_.mainUsed());}
+ std::cout<<"turn feedback: signed ZERO work and duration, freshness, scope, failed write and completion PASS\n";
+}
+#endif
 int main(){
+#if WALKING_TURN_OBSERVER
+ turn_main_response();
+#endif
 #if SUPPORT_TRANSFER_CARRY2
  {
   receiving_arc_aid::Input shape;shape.side=-1;shape.observed_shape=true;shape.body_deg=4;
@@ -107,6 +221,9 @@ int main(){
  // causal paired image, missing identity, no main history, or no shape.
  for(unsigned mode=0;mode<9;++mode){
   ExperimentRunner r;ready19(r);r.energy_control_autonomous_last_peak_side_=1;
+#if WALKING_TURN_OBSERVER
+  confirmed_right_weak(r);
+#endif
   r.walking_return_event_=r.stall_rescue_event_=true;
   r.walking_return_choice_.request_j=.000061f;r.walking_return_choice_.deceleration_dps2=180;
   r.walking_return_observation_.evidence=return_observation_policy::Evidence::ObservedShape;
@@ -129,6 +246,9 @@ int main(){
   if(mode==6)r.roller_obj.write_ok=false;
   r.acceptMotionCrossing(true,1200,-15,4.05f,4.f,1,1200);
   const auto& a=r.walking_energy_audit_[0];
+#if WALKING_TURN_OBSERVER
+  assert(a.turn_cycle_end_ms==0 && a.turn_adjustment_j==0);
+#endif
   if(mode==6){assert(!a.executed && a.arc_aid.reason==receiving_arc_aid::Reason::CommandVeto);continue;}
   assert(a.executed && r.status_.pulse_active);
   if(mode<2 || mode==7){
@@ -167,8 +287,14 @@ int main(){
  // A supported positive relocation is still exactly the energy result; the
  // gate adds neither an arbitrary reduction nor a second input at ZERO.
  {ExperimentRunner r;ready19(r);positive_bias(r,.00018f);r.roller_obj.write_delay_ms=7;
+#if WALKING_TURN_OBSERVER
+  confirmed_right_weak(r);
+#endif
   r.acceptOptionalEarlyMotion(1200,32,-1.2f);assert(r.status_.pulse_active);
   const auto a=r.walking_energy_active_pulse_;
+#if WALKING_TURN_OBSERVER
+  assert(a.turn_cycle_end_ms==0 && a.turn_adjustment_j==0);
+#endif
   assert(a.energy_admission_applies && a.energy_admission_allowed && a.energy_unsupported_mask==0);
   assert(a.early_budget_admitted && a.guarded_ms==a.decision.width_ms && a.guarded_ms==a.requested_ms);
   assert(a.output_start_ms==1207 && a.guarded_ms>0 && r.walking_half_cycle_budget_.mainUsed());
@@ -238,6 +364,9 @@ int main(){
  // The real fore/aft observer vetoes new optional, ordinary and return-aid
  // outputs during its outward candidate without inventing corrective J.
  for(unsigned mode=0;mode<3;++mode){ExperimentRunner r;ready19(r);positive_bias(r,.00018f);
+#if WALKING_TURN_OBSERVER
+  confirmed_right_weak(r);
+#endif
   assert(!fore_aft(r,1202,8,60));assert(!r.walkingForeAftAllowsOutput());
   assert(r.walking_fore_aft_last_.reason==fore_aft_motion_guard::Reason::Candidate);
   if(mode==0)r.acceptOptionalEarlyMotion(1202,32,-1.2f);
@@ -277,9 +406,9 @@ int main(){
 '''
 with tempfile.TemporaryDirectory(prefix='energy_admission_runner_v19_') as folder:
     temp = Path(folder);(temp/'fixture.cpp').write_text(fixture, encoding='utf8')
-    for carry in (0,1):
+    for carry, turn in ((0,0),(1,0),(1,1)):
         subprocess.run(['g++','-std=c++11','-O2','-Wall','-Wextra','-Werror',
-        '-DSUPPORT_TRANSFER_CARRY2='+str(carry),'-DSUPPORT_TRANSFER_V39='+str(carry),
+        '-DSUPPORT_TRANSFER_CARRY2='+str(carry),'-DSUPPORT_TRANSFER_V39='+str(carry),'-DWALKING_TURN_OBSERVER='+str(turn),
         '-DFOOT_SUPPORT_ASSIST=1','-DFOOT_SUPPORT_LOCAL=1','-DFOOT_SUPPORT_TRANSFER=1',
         '-DFOOT_SUPPORT_ENERGY=1','-DEARLY_ENERGY_MAIN=1','-DPULSE_LIFECYCLE_FIX=1',
         '-DSWAY_BALANCE_TRIAL=1','-DWALKING_RETURN_ENERGY=1','-DWALKING_TRANSFER_V18=1',

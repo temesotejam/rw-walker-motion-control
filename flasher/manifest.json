@@ -1,6 +1,6 @@
 {
   "name": "RW Walker v39 support transfer prediction",
-  "version": "walking-support-transfer-v39-carry2",
+  "version": "walking-support-transfer-v39-turn1",
   "new_install_improv_wait_time": 0,
   "builds": [
     {

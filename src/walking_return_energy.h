@@ -6,6 +6,10 @@
 namespace walking_return_energy {
 struct Input : walking_energy_policy::Input {
   float arrival_bias_j=0,return_work_j=0;
+#if WALKING_TURN_OBSERVER
+  // Signed change to the ordinary positive work request. Return aid has its own budget.
+  float turn_adjustment_j=0;
+#endif
 };
 using Decision=walking_energy_policy::Decision;
 inline Decision select(const lateral_energy::Geometry& g,const lateral_energy::CurrentTable& table,
@@ -16,6 +20,10 @@ inline Decision select(const lateral_energy::Geometry& g,const lateral_energy::C
   const float limit=.25f*out.target_j;
   out.available_j=std::fmax(0.f,out.available_j+std::fmax(-limit,std::fmin(limit,in.arrival_bias_j)));
   out.deficit_j=out.target_j+out.peak_correction_j+out.extra_energy_j-out.available_j;
+#if WALKING_TURN_OBSERVER
+  if (!std::isfinite(in.turn_adjustment_j)) {out.valid=out.selected=false;return out;}
+  out.deficit_j+=in.turn_adjustment_j;
+#endif
   out.request_j=std::fmax(std::fmax(0.f,out.deficit_j),std::fmin(.5f*out.target_j,in.return_work_j));
   const auto c=lateral_energy::coefficients(in.side);
   const float omega=in.rate_dps*lateral_energy::kRadPerDeg;

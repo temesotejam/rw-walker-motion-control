@@ -65,6 +65,9 @@ static void captureRunState(void*, RunControlSnapshot& out) {
   out.pitch_deg = st.pitch_mekf_deg; out.rate_dps = st.physical_roll_rate_dps;
   out.mekf_attitude = st.mekf_attitude;
   out.steering = st.steering;
+#if WALKING_TURN_OBSERVER
+  out.gait_turn = runner.gaitTurnStatus();
+#endif
   out.target_deg = runner.energyControlAutonomousTargetPeakDeg();
   out.input_peak_percent = runner.energyControlAutonomousInputPeakPercent();
   out.input_current_mA = runner.energyControlAutonomousInputCurrentMa();

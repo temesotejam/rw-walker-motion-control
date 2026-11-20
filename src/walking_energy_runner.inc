@@ -299,14 +299,51 @@ bool ExperimentRunner::tryWalkingEnergy(
     }
   }
 #endif
-  a.guarded_ms=width;
-  const auto actual=
+  auto actual=
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
       return_aid?half_cycle_energy_budget::evaluateReturnAidWidth(lateral_energy_geometry_,walking_energy_current_,calculation,width):
       energy::evaluateWidth(lateral_energy_geometry_,walking_energy_current_,calculation,width);
 #else
       energy::evaluateWidth(lateral_energy_geometry_,walking_energy_current_,in,width);
 #endif
+#if WALKING_TURN_OBSERVER
+  // Use the confirmed cycle only on an ordinary, already admissible motion
+  // event. Both model inversions start with the same pre-command guard state.
+  const auto& turn=gait_turn_run_.status();
+  if (e.event_kind==0 && !optional_early_event_ && !stall_rescue_event_ && !foot_support_event_ &&
+      !walking_return_event_ && !a.assisted_cycle && !exhausted && width && !selected.coast &&
+      energy_control_autonomous_target_peak_deg_==8.f && energy_control_autonomous_input_peak_percent_==0 &&
+      turn.enabled && turn.latest.reason==gait_turn::Reason::Confirmed) {
+    a.turn_cycle_end_ms=turn.latest.end_ms;
+    a.turn_base_ms=a.turn_candidate_ms=width;
+    const auto& raw=walking_return_frame_;
+    const uint64_t now_us=esp_timer_get_time();
+    const bool fresh=raw.run_id && raw.run_id==status_.run_id && raw.timestamp_valid &&
+        raw.frame_valid && raw.zero_ready && raw.left_detected && raw.right_detected &&
+        raw.left_range_ok && raw.right_range_ok && std::isfinite(raw.left_deg) && std::isfinite(raw.right_deg) &&
+        raw.image_us && raw.image_us<=raw.received_us && raw.received_us<=now_us &&
+        now_us-raw.image_us<=periodic_foot::maximum_age_us;
+    if (fresh && status_.steering.gyro_valid && t>=turn.latest.end_ms &&
+        t-turn.latest.end_ms<=turn.latest.end_ms-turn.latest.start_ms) {
+      const float delta=gait_turn_energy::adjustment(turn,side,t,in,actual,lateral_energy_geometry_,walking_energy_current_);
+      if (delta!=0.f) {
+        auto adjusted=calculation;
+        adjusted.turn_adjustment_j=delta;
+        const auto candidate=energy::decide(lateral_energy_geometry_,walking_energy_current_,adjusted);
+        if (candidate.valid && !candidate.coast) {
+          auto candidate_guard=wheel_cycle_guard_;
+          a.turn_candidate_ms=candidate_guard.limit(side,e.pre_input_wheel_speed_rpm,true,t,candidate.width_ms);
+          const auto after=energy::evaluateWidth(lateral_energy_geometry_,walking_energy_current_,adjusted,a.turn_candidate_ms);
+          if (gait_turn_energy::admissible(actual,after,delta)) {
+            calculation=adjusted;selected=candidate;guard=candidate_guard;width=a.turn_candidate_ms;actual=after;
+            a.requested_ms=selected.width_ms;a.turn_adjustment_j=delta;
+          }
+        }
+      }
+    }
+  }
+#endif
+  a.guarded_ms=width;
   a.decision=actual;
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
   const auto admission=energy_admission_v19::assess(return_aid?energy_admission_v19::Scope::ExplicitReturnAid:
@@ -562,6 +599,9 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
   json+=",\"walking_energy\":{\"revision\":\"walking_energy_admission_v19\",\"output_enabled\":true,\"branch\":24,";
   json+="\"selector_revision\":\"walking_energy_admission_v19\",\"optional_main_support_required\":true,";
+#if WALKING_TURN_OBSERVER
+  json+="\"turn_input_revision\":\"weak_right_negative_yaw_unassisted_zero_v1\",";
+#endif
 #if SUPPORT_TRANSFER_CARRY2
   json+="\"arc_aid_revision\":\"negative_receiving_arc_v2\",\"arc_aid_reason_names\":[\"inactive\",\"no_fresh_shape\",\"outside_model\",\"not_receiving\",\"shape_returning\",\"eligible\",\"no_main_room\",\"no_width_gain\",\"applied\",\"uncertain_pivot\",\"command_veto\"],";
   json+="\"arc_foot_source_names\":[\"unavailable\",\"periodic_packet\",\"fresh_pair_since_packet\"],";
@@ -652,6 +692,11 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     row+=",\"energy_admission_checked\":"+String(a.energy_admission_checked?"true":"false")+",\"energy_admission_applies\":"+String(a.energy_admission_applies?"true":"false")+",\"energy_admission_allowed\":"+String(a.energy_admission_allowed?"true":"false");
     row+=",\"energy_unsupported_mask\":"+String(a.energy_unsupported_mask)+",\"energy_admission_reason\":"+String(a.energy_admission_reason);
     row+=",\"fore_aft_allowed\":"+String(a.fore_aft_allowed?"true":"false")+",\"fore_aft_reason\":"+String(a.fore_aft_reason)+",\"fore_aft_angle_deg\":"+n(a.fore_aft_angle_deg)+",\"fore_aft_rate_dps\":"+n(a.fore_aft_rate_dps);
+#endif
+#if WALKING_TURN_OBSERVER
+    row+=",\"turn_cycle_end_ms\":"+String(a.turn_cycle_end_ms)+",\"turn_base_ms\":"+String(a.turn_base_ms);
+    row+=",\"turn_candidate_ms\":"+String(a.turn_candidate_ms)+",\"turn_adjustment_j\":"+n(a.turn_adjustment_j);
+    row+=",\"turn_command_adjustment_j\":"+n(a.executed?a.turn_adjustment_j:0.f);
 #endif
     row+=",\"valid\":"+String(d.valid?"true":"false")+",\"coast\":"+String(d.coast?"true":"false")+",\"saturated\":"+String(d.saturated?"true":"false")+",\"extrapolated\":"+String(d.extrapolated?"true":"false");
 #if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY

@@ -1,4 +1,8 @@
 #pragma once
+#if WALKING_TURN_OBSERVER
+#include "gait_turn_run.h"
+#include "gait_turn_energy.h"
+#endif
 #if FOOT_PERIODIC_V38
 #include "periodic_foot_state.h"
 #endif
@@ -102,7 +106,15 @@
 class ExperimentRunner {
 public:
 #if FOOT_PERIODIC_V38
-  void observePeriodicFoot(const periodic_foot::Packet& packet) { periodic_foot_packet_ = packet; }
+  void observePeriodicFoot(const periodic_foot::Packet& packet) {
+    periodic_foot_packet_ = packet;
+#if WALKING_TURN_OBSERVER
+    if (packet.count) gait_turn_run_.observe(packet);
+#endif
+  }
+#endif
+#if WALKING_TURN_OBSERVER
+  const gait_turn::Status& gaitTurnStatus() const { return gait_turn_run_.status(); }
 #endif
 #if SUPPORT_TRANSFER_V39
   void startSupportTransferRun() {
@@ -714,6 +726,9 @@ private:
       Config::ENERGY_CONTROL_V0_CG_HEIGHT_M,Config::ENERGY_CONTROL_V0_RADIUS_M,
       Config::ENERGY_CONTROL_V0_INNER_EDGE_X_M,Config::ENERGY_CONTROL_V0_OUTER_EDGE_X_M};
   lateral_energy::CurrentTable lateral_current_table_;
+#if WALKING_TURN_OBSERVER
+  GaitTurnRun gait_turn_run_;
+#endif
 #if SUPPORT_TRANSFER_V39
   SupportTransferAudit transfer_audit_;
   uint32_t transfer_packet_ = 0, transfer_previous_sample_us_ = 0;
@@ -750,6 +765,11 @@ private:
   receiving_arc_aid::MainReserve walking_main_reserve_;
 #endif
   struct WalkingEnergyAudit {
+#if WALKING_TURN_OBSERVER
+    uint32_t turn_cycle_end_ms=0;
+    uint16_t turn_base_ms=0, turn_candidate_ms=0;
+    float turn_adjustment_j=0;
+#endif
 #if SUPPORT_TRANSFER_CARRY2
     receiving_arc_aid::Result arc_aid;
     uint8_t arc_foot_source=0;

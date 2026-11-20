@@ -1326,6 +1326,28 @@ def write_walking_energy_diagnostics(metadata: dict, out_dir: Path) -> int:
     return len(rows)
 
 
+def write_gait_turn(metadata: dict, out_dir: Path) -> int:
+    block = metadata.get("gait_turn")
+    if block is None:
+        return 0
+    columns = ["start_ms", "mid_ms", "end_ms", "samples", "left_deg", "right_deg",
+               "left_swing_deg", "right_swing_deg", "yaw_delta_deg", "pair_yaw_delta_deg",
+               "weak_side", "turn_sign", "streak", "reason"]
+    if (not isinstance(block, dict) or block.get("revision") != 1 or block.get("columns") != columns or
+            not isinstance(block.get("rows"), list) or type(block.get("enabled")) is not bool or
+            type(block.get("archive_available")) is not bool or
+            not all(type(block.get(k)) is int for k in ("exported", "stored", "total")) or
+            not len(block["rows"]) == block["exported"] <= block["stored"] <= block["total"] or
+            (block["total"] and not block["enabled"]) or (block["stored"] and not block["archive_available"]) or
+            any(not isinstance(row, list) or len(row) != len(columns) for row in block["rows"])):
+        raise ValueError("Invalid gait turn cycle archive")
+    with (out_dir / "gait_turn.csv").open("w", newline="", encoding="utf8") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(columns)
+        writer.writerows(block["rows"])
+    return len(block["rows"])
+
+
 def write_support_transfer_shadow(metadata: dict, out_dir: Path) -> int:
     block = metadata.get("support_transfer_shadow")
     if block is None:
@@ -1411,6 +1433,7 @@ def convert(path: Path, out_dir: Path) -> None:
     cad_count = write_cad_support_shadow(metadata, out_dir)
     support_count = write_foot_support_diagnostics(metadata, out_dir)
     walking_energy_count = write_walking_energy_diagnostics(metadata, out_dir)
+    write_gait_turn(metadata, out_dir)
     write_support_transfer_shadow(metadata, out_dir)
     e2_shadow_peak_count = write_e2_shadow_peaks(metadata, out_dir)
     q1_shadow_event_count = write_q1_shadow_events(metadata, out_dir)

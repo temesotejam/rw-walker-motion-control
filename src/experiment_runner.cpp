@@ -123,6 +123,9 @@ void ExperimentRunner::begin(PsramLogger& logger, ImuManager& imu, Roller485Mana
   logger_ = &logger;
   imu_ = &imu;
   roller_ = &roller;
+#if WALKING_TURN_OBSERVER
+  gait_turn_run_.begin(ps_malloc);
+#endif
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY && defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
   // Optional archive only. Allocation failure is exported, while the internal
   // active-pulse copy still finalizes current, work and pending state.
@@ -409,8 +412,8 @@ void ExperimentRunner::update() {
     stopMotor();
   }
 
-  // Diagnostics run only after motion, actuator and logging work; no steering
-  // or motor path reads the result. Log rows see the preceding sample.
+  // Update after motion and logging. The log rows and confirmed-peak observer
+  // see the preceding completed gyro estimate.
   if (new_gyro_sample) updateGyroHeadingDiagnostic(r);
 }
 
@@ -1456,6 +1459,10 @@ void ExperimentRunner::recordV59StateGateEvent(uint32_t crossing_ms, float hprev
 }
 
 void ExperimentRunner::beginStartSync(uint32_t now_ms) {
+#if WALKING_TURN_OBSERVER
+  gait_turn_run_.start(energy_control_autonomous_mode_ && wheelWorkMode() &&
+      energy_control_autonomous_target_peak_deg_ == 8.f && energy_control_autonomous_input_peak_percent_ == 0.f);
+#endif
   stall_rescue_detector_.reset();stall_rescue_attempted_peak_ms_=0;stall_rescue_event_=false;
 #if defined(APPROACH_RESCUE_TRIAL) && APPROACH_RESCUE_TRIAL
   approach_stall_rescue_detector_.reset();approach_stall_rescue_event_=false;
@@ -1482,7 +1489,7 @@ void ExperimentRunner::beginStartSync(uint32_t now_ms) {
   angle_late_blocked_peak_ms_=0;angle_last_check_ms_=0;
 #endif
 #endif
-  // Amplitude only: relative heading is a diagnostic, never a target.
+  // The legacy peak-target steering remains disabled.
   energy_control_autonomous_pending_target_deg_ = NAN;
   status_.steering = steering::disabledSnapshot();
   gyro_heading_start_pending_ = energy_control_autonomous_mode_;
@@ -3034,6 +3041,9 @@ void ExperimentRunner::appendFootSupportMetadata(PsramString& json) const {
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
   appendWalkingEnergyMetadata(json);
 #endif
+#if WALKING_TURN_OBSERVER
+  gait_turn_run_.append(json);
+#endif
   auto number=[](float v){return std::isfinite(v)?String(v,5):String("null");};
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
@@ -3459,6 +3469,12 @@ bool ExperimentRunner::recordEnergyControlAutonomousPeak(uint32_t peak_ms, int8_
   event.integral_plus_j = energy_control_autonomous_integral_plus_j_;
   event.integral_minus_j = energy_control_autonomous_integral_minus_j_;
   logger_->addEnergyControlAutonomousPeakEvent(event);
+#if WALKING_TURN_OBSERVER
+  // The peak becomes known at confirmation. Use the heading already available
+  // on this control step, before the next gyro diagnostic update.
+  gait_turn_run_.peak(physical_side, event.peak_telemetry_capture_time_ms,
+      status_.steering.gyro_valid ? status_.steering.yaw_deg : NAN);
+#endif
   if(wheelWorkMode() && energy_control_autonomous_target_peak_deg_==8.f)
     recordFootPhasePeak(physical_side,peak_ms,amplitude_deg);
   return true;
@@ -5936,6 +5952,9 @@ void ExperimentRunner::requestEmergencyStop(const char* reason) {
 
 void ExperimentRunner::clearFinishedOrEstop() {
   if (running()) return;
+#if WALKING_TURN_OBSERVER
+  gait_turn_run_.start(false);
+#endif
   if (logger_) logger_->clear();
   setSyncLed(false);
   status_.state = bias_ready_ ? ExperimentState::READY_TO_MEASURE : ExperimentState::STARTUP_GYRO_CALIB;

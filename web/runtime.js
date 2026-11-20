@@ -195,6 +195,7 @@ function clearOffline() {
   try { sessionStorage.removeItem(offlineKey); } catch (_) {}
 }
 function renderOffline() {
+  renderGaitTurn(null);
   const remaining = Math.max(0, Math.ceil((offlineUntil - Date.now()) / 1000));
   $('connection').textContent = remaining ? 'Web更新を休止中 · Wi-Fi接続を維持してください' : 'Webの復帰待ち · 自動再試行';
   $('state').textContent = 'Web休止中';
@@ -247,6 +248,34 @@ function periodicFootText(p) {
   if (!p.count || p.packet_age_ms > 150) return '足角度の定周期更新待ち';
   return `足角度　左 ${side(p.left)}　右 ${side(p.right)} · 平均${format(p.published_hz,1)} Hz · 更新${p.count}回（両足有効${p.both_valid}回）· 周期抜け${p.missed}回`;
 }
+function renderGaitTurn(turn) {
+  const line = $('gait-turn');
+  line.hidden = !turn;
+  line.textContent = '';
+  if (!turn) return;
+  if (!turn.end_ms) {
+    line.textContent = '旋回の観測　左右一往復の完了待ち';
+    return;
+  }
+  const time = ms => format(ms / 1000, 2) + '秒';
+  const side = n => n === 1 ? '右足' : '左足';
+  const confirmedNow = turn.confirmed_ms === turn.end_ms && Math.abs(turn.confirmed_side) === 1;
+  let summary;
+  if (confirmedNow) summary = side(turn.confirmed_side) + 'の前振れが小さく、旋回を確認';
+  else if (turn.reason === 'pending' && Math.abs(turn.weak_side) === 1)
+    summary = side(turn.weak_side) + 'の前振れ小・次の周期と照合';
+  else if (turn.reason === 'gyro_unavailable') summary = '相対方位を取得できず';
+  else if (turn.reason === 'coverage' || turn.reason === 'phase') summary = '一往復分の有効な観測が不足';
+  else summary = '継続した旋回は未確認';
+  const measurements = Number.isFinite(turn.left_deg) && Number.isFinite(turn.right_deg)
+    ? `　前振れ 左${format(turn.left_deg, 1)}°／右${format(turn.right_deg, 1)}°` : '';
+  const heading = Number.isFinite(turn.pair_yaw_delta_deg)
+    ? `　2周期の相対方位変化 ${format(turn.pair_yaw_delta_deg, 1)}°`
+    : Number.isFinite(turn.yaw_delta_deg) ? `　1周期の相対方位変化 ${format(turn.yaw_delta_deg, 1)}°` : '';
+  const previous = !confirmedNow && turn.confirmed_ms > 0 && Math.abs(turn.confirmed_side) === 1
+    ? `　前回の旋回確認 ${time(turn.confirmed_ms)}（${side(turn.confirmed_side)}の前振れ小）` : '';
+  line.textContent = `測定${time(turn.end_ms)}の周期　${summary}${measurements}${heading}${previous}`;
+}
 const format = (n, digits = 2) => Number.isFinite(n) ? n.toFixed(digits) : '—';
 function drawMarkers(f) {
   const ctx = $('markers').getContext('2d'); ctx.clearRect(0, 0, 640, 120);
@@ -292,6 +321,7 @@ function footFastTiming(f, stale, terminal) {
     ` · driverフレーム→ready ${ms(f.frame_to_ready_ms)} ms`;
 }
 function render(s) {
+  renderGaitTurn(s.gait_turn);
   if (walkingAdmissionTrial(s)) {
     const fast = walkingFootFastTrial(s);
     $('work-title').textContent = s.foot_periodic ? '歩行のエネルギー制御（v38・足角度40 Hz・30秒）' : fast ? '歩行のエネルギー制御（v20・足角度低遅延版・30秒）' : '歩行のエネルギー制御（v19・30秒）';
@@ -301,7 +331,10 @@ function render(s) {
       '戻りの救済後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。前倒し候補のモデル支持を確認し、範囲外はZEROで再評価します。前後の持続逸脱では入力を停止します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
       (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '') +
       (fast ? ' 最初はモータを開始せず、足角度と画像の更新を確認してください。画像更新は目標' + format(s.foot?.target_fps ?? 15,0) + 'fpsで、実際の更新速度と遅延は下に表示します。時刻差はdriver基準で、露光時刻との対応は未校正です。' : '');
-    if (s.diagnostic_build_id === 'walking-support-transfer-v39-carry2') {
+    if (s.diagnostic_build_id === 'walking-support-transfer-v39-turn1') {
+      $('work-title').textContent = '歩行のエネルギー制御（turn1・左右の足運びと旋回・30秒）';
+      $('work-description').textContent += ' ±8°歩行では、一往復ごとに足の前振れと相対方位を測ります。右足の前振れ不足と負方向の旋回が続くと、実測で右足が振り出される半周期には通常入力の仕事を加え、左足が振り出される半周期には十分な揺れがあるときに仕事を減らします。補正前後の幅はRWLOGに記録します。';
+    } else if (s.diagnostic_build_id === 'walking-support-transfer-v39-carry2') {
       $('work-title').textContent = '歩行のエネルギー制御（carry2・足裏円弧までの戻り補助・30秒）';
       $('work-description').textContent += ' ±8°で戻りの救済が必要なとき、受け足の円弧まで進む仕事を見積もります。主入力用の時間を考慮して救済幅を決め、RWLOGに記録します。';
     } else if (predictTransfer) {
@@ -466,6 +499,7 @@ async function refreshStatus(force) {
       $('pitch').textContent = format(s.pitch_deg) + '°';
       $('current').textContent = `${s.motor_mA} / ${s.actual_mA} mA`;
       $('foot-status').textContent = periodicFootText(s.foot_periodic);
+      renderGaitTurn(s.gait_turn);
       for (const id of ['left','right']) {
         const side = s.foot_periodic[id];
         $(id).textContent = Number.isFinite(side.estimated_deg) ? format(side.estimated_deg) + '°（推定）' : '推定無効';
