@@ -4,6 +4,9 @@
 #endif
 #if SUPPORT_TRANSFER_V39
 #include "support_transfer_audit.h"
+#if SUPPORT_TRANSFER_CARRY2
+#include "receiving_arc_aid.h"
+#endif
 #endif
 
 #include <Adafruit_AHRS.h>
@@ -743,7 +746,15 @@ private:
 #endif
   float walking_energy_peaks_[2]={NAN,NAN};
   uint32_t walking_energy_peak_ms_[2]={0,0};
+#if SUPPORT_TRANSFER_CARRY2
+  receiving_arc_aid::MainReserve walking_main_reserve_;
+#endif
   struct WalkingEnergyAudit {
+#if SUPPORT_TRANSFER_CARRY2
+    receiving_arc_aid::Result arc_aid;
+    uint8_t arc_foot_source=0;
+    uint16_t base_aid_ms=0, arc_candidate_ms=0, main_reserve_ms=0;
+#endif
 #if FOOT_PERIODIC_V38
     uint32_t periodic_packet = 0;
 #endif

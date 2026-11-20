@@ -19,6 +19,14 @@ struct Packet {
   uint64_t epoch_us = 0, scheduled_us = 0, published_us = 0;
   uint32_t count = 0, missed = 0, both_valid = 0, max_late_us = 0;
 };
+#if SUPPORT_TRANSFER_CARRY2
+inline bool matchesPair(const Packet& p,uint64_t now,uint32_t sequence,uint64_t image) {
+  return p.count && p.epoch_us && image>=p.epoch_us && now>=p.published_us &&
+      now-p.published_us<=period_us && p.published_us>=image && now-image<=maximum_age_us &&
+      p.left.sequence==sequence && p.right.sequence==sequence &&
+      p.left.image_us==image && p.right.image_us==image;
+}
+#endif
 
 class Track {
  public:
@@ -92,6 +100,24 @@ class Estimator {
     if (std::isfinite(packet.left.estimated) && std::isfinite(packet.right.estimated)) ++packet.both_valid;
     return true;
   }
+#if SUPPORT_TRANSFER_CARRY2
+  // Only the control core calls this, from an already selected return aid.
+  // A read never advances or republishes the 40 Hz stream.
+  bool rescuePair(uint64_t now,uint64_t epoch,uint32_t sequence,uint64_t image,
+                  uint64_t first_received,Side& left,Side& right) const {
+    if (!epoch || epoch!=epoch_ || !packet.count || now<packet.published_us ||
+        image<=packet.left.image_us ||
+        image<=packet.right.image_us || image<epoch || first_received<image ||
+        first_received<=packet.published_us || now<first_received ||
+        now-first_received>period_us || now-image>maximum_age_us) return false;
+    const auto l=left_.at(now),r=right_.at(now);
+    if (l.sequence!=sequence || r.sequence!=sequence || l.image_us!=image || r.image_us!=image ||
+        !std::isfinite(l.estimated) || !std::isfinite(r.estimated) ||
+        !std::isfinite(l.rate_dps) || !std::isfinite(r.rate_dps)) return false;
+    left=l;right=r;
+    return true;
+  }
+#endif
   Packet packet;
  private:
   static void update(Track& side,uint32_t seq,uint64_t image,bool seen,bool allowed,float angle) {

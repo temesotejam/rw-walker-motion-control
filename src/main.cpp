@@ -243,6 +243,9 @@ static bool controlStep(void*) {
     if(f.sequence!=return_sequence || f.run_id!=return_run || !f.timestamp_valid){
       return_sequence=f.sequence;return_run=f.run_id;
       return_observation_policy::FootFrame raw;
+#if SUPPORT_TRANSFER_CARRY2
+      raw.sequence=f.sequence;raw.image_us=f.frame_us;raw.received_us=foot_observed_us;
+#endif
       raw.run_id=f.run_id;raw.timestamp_valid=f.timestamp_valid && f.frame_us>=measurement_epoch_us;
       raw.frame_ms=raw.timestamp_valid?static_cast<uint32_t>((f.frame_us-measurement_epoch_us)/1000):0;
       raw.ready_ms=static_cast<uint32_t>((foot_observed_us-measurement_epoch_us)/1000);

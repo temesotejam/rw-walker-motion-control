@@ -26,6 +26,26 @@ fixture = fixture.replace(emergency_stub,
     'status_.state=ExperimentState::ESTOP;status_.emergency_stop=true;}')
 # Match the last recorded v18 positive input's Vbat-derived current goal.
 fixture = fixture.replace('return 329.547119f;', 'return 345.005126953f;')
+fixture = r'''
+#if SUPPORT_TRANSFER_CARRY2
+#include "receiving_arc_aid.h"
+#include "periodic_foot_state.h"
+#define esp_timer_get_time micros
+struct StreamDouble {
+ periodic_foot::Estimator estimator;
+ bool rescuePair(unsigned run,uint64_t now,uint64_t epoch,uint32_t seq,uint64_t image,uint64_t received,
+                 periodic_foot::Side& left,periodic_foot::Side& right)const{
+  return run==3 && estimator.rescuePair(now,epoch,seq,image,received,left,right);
+ }
+} periodicFeet;
+#endif
+''' + fixture
+fixture = fixture.replace('class ExperimentRunner {public:', '''class ExperimentRunner {public:
+#if SUPPORT_TRANSFER_CARRY2
+ periodic_foot::Packet periodic_foot_packet_;
+ void observeSupportTransfer(uint32_t,uint32_t,float,float){}  // Detached shadow observer.
+#endif
+''')
 fixture += r'''
 static void refresh19(ExperimentRunner& r){
  fore_aft_motion_guard::Input in;in.valid=true;in.now_us=mock_us;in.sample_us=mock_us;
@@ -68,6 +88,60 @@ static bool fore_aft(ExperimentRunner& r,unsigned t,float angle,float rate){
  return r.observeWalkingForeAft(in);
 }
 int main(){
+#if SUPPORT_TRANSFER_CARRY2
+ {
+  receiving_arc_aid::Input shape;shape.side=-1;shape.observed_shape=true;shape.body_deg=4;
+  shape.speed_dps=15;shape.decel_dps2=180;shape.fore_aft_deg=0;
+  shape.left_deg=shape.left_est=16;shape.right_deg=shape.right_est=1;
+  shape.left_rate=shape.right_rate=0;shape.base_j=.000061f;shape.target_j=.001f;
+  auto result=receiving_arc_aid::evaluate(shape);
+  assert(result.reason==receiving_arc_aid::Reason::Eligible && result.terminal_deg<0 && near(result.horizon_s,.15f,1e-6f));
+  shape.left_rate=-80;shape.right_rate=10;
+  assert(receiving_arc_aid::evaluate(shape).reason==receiving_arc_aid::Reason::ShapeReturning);
+  shape.left_rate=shape.right_rate=0;shape.left_est=3;shape.right_est=0;shape.body_deg=8;
+  assert(receiving_arc_aid::evaluate(shape).reason==receiving_arc_aid::Reason::UncertainPivot);
+  shape.left_est=16;shape.fore_aft_deg=11;
+  assert(receiving_arc_aid::evaluate(shape).reason==receiving_arc_aid::Reason::OutsideModel);
+ }
+ // Same mechanical event with a recent slot, an expired slot with a newer
+ // causal paired image, missing identity, no main history, or no shape.
+ for(unsigned mode=0;mode<9;++mode){
+  ExperimentRunner r;ready19(r);r.energy_control_autonomous_last_peak_side_=1;
+  r.walking_return_event_=r.stall_rescue_event_=true;
+  r.walking_return_choice_.request_j=.000061f;r.walking_return_choice_.deceleration_dps2=180;
+  r.walking_return_observation_.evidence=return_observation_policy::Evidence::ObservedShape;
+  r.walking_return_observation_.foot_age_ms=36;
+  auto& est=periodicFeet.estimator;est.start(mock_us-200000);
+  for(int i=0;i<4;++i){
+   const auto image=mock_us-96000+i*20000;
+   est.observe(100+i,image,image+18000,true,true,true,16,true,true,1);
+   if(i==2)assert(est.publish(mock_us-(mode>=7?24000:26000)));
+  }
+  auto& raw=r.walking_return_frame_;raw.run_id=3;raw.left_deg=16;raw.right_deg=1;
+  raw.image_us=mock_us-36000;raw.received_us=mock_us-18000;raw.sequence=103;
+  if(mode==0 || mode==3 || mode==4 || mode==6)assert(est.publish(mock_us-900));
+  r.periodic_foot_packet_=est.packet;
+  if(mode!=3)r.walking_main_reserve_.observe(-1,true,40);
+  if(mode==2)++raw.sequence;
+  if(mode==4)r.walking_return_observation_.evidence=return_observation_policy::Evidence::RecognitionDropout;
+  if(mode==5)r.periodic_foot_packet_.epoch_us++;
+  if(mode==8)raw.run_id=4;
+  if(mode==6)r.roller_obj.write_ok=false;
+  r.acceptMotionCrossing(true,1200,-15,4.05f,4.f,1,1200);
+  const auto& a=r.walking_energy_audit_[0];
+  if(mode==6){assert(!a.executed && a.arc_aid.reason==receiving_arc_aid::Reason::CommandVeto);continue;}
+  assert(a.executed && r.status_.pulse_active);
+  if(mode<2 || mode==7){
+   assert(a.arc_foot_source==(mode==0?1:2));
+   assert(a.arc_aid.reason==receiving_arc_aid::Reason::Applied && a.arc_aid.extra_j>0);
+   assert(a.guarded_ms>a.base_aid_ms && a.guarded_ms<=40 && a.guarded_ms<=a.arc_candidate_ms);
+   assert(near(a.decision.request_j,a.return_work_j+a.arc_aid.extra_j));
+  }else{
+   assert(a.guarded_ms==a.base_aid_ms && near(a.decision.request_j,a.return_work_j));
+   assert(a.arc_aid.reason==(mode==3?receiving_arc_aid::Reason::NoMainRoom:receiving_arc_aid::Reason::NoFreshShape));
+  }
+ }
+#endif
  // The recorded 15954ms state still selects64ms and covers its model J. The
  // v19 gate rejects only its relocation because passive39.2354>37.5379dps.
  {ExperimentRunner r;ready19(r,6.47749f,5.21523f);positive_bias(r,.0001457f);
@@ -98,9 +172,15 @@ int main(){
   assert(a.energy_admission_applies && a.energy_admission_allowed && a.energy_unsupported_mask==0);
   assert(a.early_budget_admitted && a.guarded_ms==a.decision.width_ms && a.guarded_ms==a.requested_ms);
   assert(a.output_start_ms==1207 && a.guarded_ms>0 && r.walking_half_cycle_budget_.mainUsed());
+#if SUPPORT_TRANSFER_CARRY2
+  assert(r.walking_main_reserve_.forSide(1)==80);
+#endif
   r.updateEnergyControlAutonomousPulse(r.run_start_ms_+1200);assert(r.status_.pulse_active);
   clock19(r,a.output_start_ms+a.guarded_ms+1);r.updateEnergyControlAutonomousPulse(mock_ms);
   assert(r.walking_half_cycle_budget_.spentMs()==a.guarded_ms+1u);
+#if SUPPORT_TRANSFER_CARRY2
+  assert(r.walking_main_reserve_.forSide(1)==a.guarded_ms+1u && r.walking_main_reserve_.forSide(-1)==80);
+#endif
   const auto writes=r.roller_obj.writes;main19(r,1400,32);assert(r.roller_obj.writes==writes);
  }
  // A valid covered candidate whose Q exceeds the fitted positive range must
@@ -145,7 +225,16 @@ int main(){
   assert(remaining==79-aid.guarded_ms);main19(r,1400,-25);
   assert(r.status_.pulse_active && r.walking_energy_active_pulse_.guarded_ms<=remaining);
   assert(!r.walking_energy_active_pulse_.energy_admission_applies && r.walking_return_pending_);
-  if(full)assert(r.walking_energy_active_audit_==-1 && r.walking_energy_audit_[191].completion_reason==77);}
+  if(full)assert(r.walking_energy_active_audit_==-1 && r.walking_energy_audit_[191].completion_reason==77);
+#if SUPPORT_TRANSFER_CARRY2
+  const auto next=r.walking_energy_active_pulse_;
+  assert(r.walking_main_reserve_.forSide(-1)==80);
+  clock19(r,next.output_start_ms+next.guarded_ms);r.updateEnergyControlAutonomousPulse(mock_ms);
+  assert(r.walking_main_reserve_.forSide(-1)==next.guarded_ms);
+  r.walking_main_reserve_.observe(-1,false,80);  // More relevant completed post-aid experience wins.
+  assert(r.walking_main_reserve_.forSide(-1)==next.guarded_ms);
+#endif
+ }
  // The real fore/aft observer vetoes new optional, ordinary and return-aid
  // outputs during its outward candidate without inventing corrective J.
  for(unsigned mode=0;mode<3;++mode){ExperimentRunner r;ready19(r);positive_bias(r,.00018f);
@@ -175,6 +264,9 @@ int main(){
   assert(r.walking_fore_aft_last_.reason==fore_aft_motion_guard::Reason::Diverging);
   const auto& a=r.walking_energy_active_pulse_;
   assert(a.completion_reason==3 && a.completion.actual_elapsed_ms==42 && !a.completion.duration_completed);
+#if SUPPORT_TRANSFER_CARRY2
+  assert(r.walking_main_reserve_.forSide(1)==80);
+#endif
   assert(r.walking_half_cycle_budget_.spentMs()==42 && r.walking_half_cycle_budget_.remaining()==38);
   assert(!r.walking_energy_completion_pending_ && r.walking_energy_active_audit_==-1);
   if(full)assert(r.walking_energy_audit_[191].completion_reason==77 && r.walking_energy_count_==192);
@@ -185,9 +277,11 @@ int main(){
 '''
 with tempfile.TemporaryDirectory(prefix='energy_admission_runner_v19_') as folder:
     temp = Path(folder);(temp/'fixture.cpp').write_text(fixture, encoding='utf8')
-    subprocess.run(['g++','-std=c++11','-O2','-Wall','-Wextra','-Werror',
+    for carry in (0,1):
+        subprocess.run(['g++','-std=c++11','-O2','-Wall','-Wextra','-Werror',
+        '-DSUPPORT_TRANSFER_CARRY2='+str(carry),'-DSUPPORT_TRANSFER_V39='+str(carry),
         '-DFOOT_SUPPORT_ASSIST=1','-DFOOT_SUPPORT_LOCAL=1','-DFOOT_SUPPORT_TRANSFER=1',
         '-DFOOT_SUPPORT_ENERGY=1','-DEARLY_ENERGY_MAIN=1','-DPULSE_LIFECYCLE_FIX=1',
         '-DSWAY_BALANCE_TRIAL=1','-DWALKING_RETURN_ENERGY=1','-DWALKING_TRANSFER_V18=1',
         '-DWALKING_ADMISSION_V19=1','-I'+str(ROOT/'src'),str(temp/'fixture.cpp'),'-o',str(temp/'fixture.exe')],check=True)
-    subprocess.run([str(temp/'fixture.exe')],check=True)
+        subprocess.run([str(temp/'fixture.exe')],check=True)

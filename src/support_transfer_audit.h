@@ -18,6 +18,7 @@ class SupportTransferAudit {
     support_transfer_plan::Input input;
     uint32_t time_ms = 0, peak_ms = 0, packet = 0, captured_us = 0;
     uint32_t pulse_id = 0;  // Increments on each accepted motor pulse.
+    uint16_t current_after_zero_ms = UINT16_MAX;  // Last current sample minus acknowledged zero.
     uint16_t left_age_ms = UINT16_MAX, right_age_ms = UINT16_MAX, gate_mask = 0;
     uint8_t baseline_flags = 0;
     uint16_t raw_vbat_mv = 0, model_vbat_mv = 0;

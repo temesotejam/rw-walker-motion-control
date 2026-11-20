@@ -13,6 +13,10 @@ enum class Evidence : uint8_t {
 struct FootFrame {
   uint16_t run_id=0;
   uint32_t frame_ms=0,ready_ms=0;
+#if SUPPORT_TRANSFER_CARRY2
+  uint32_t sequence=0;
+  uint64_t image_us=0,received_us=0;
+#endif
   bool timestamp_valid=false,frame_valid=false,zero_ready=false;
   bool left_detected=false,right_detected=false;
   // These must include the separately configured 5 degree range allowance.

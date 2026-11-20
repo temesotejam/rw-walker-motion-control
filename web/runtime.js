@@ -301,7 +301,12 @@ function render(s) {
       '戻りの救済後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。前倒し候補のモデル支持を確認し、範囲外はZEROで再評価します。前後の持続逸脱では入力を停止します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +
       (s.foot?.control_extension_deg ? ' 校正端から' + s.foot.control_extension_deg + '°以内のずれは許容し、外挿として記録します。' : '') +
       (fast ? ' 最初はモータを開始せず、足角度と画像の更新を確認してください。画像更新は目標' + format(s.foot?.target_fps ?? 15,0) + 'fpsで、実際の更新速度と遅延は下に表示します。時刻差はdriver基準で、露光時刻との対応は未校正です。' : '');
-    if (predictTransfer) $('work-description').textContent += ' ±8°では荷重移行を予測し、惰性と通電の開始・幅を比較してRWLOGに記録します。実際の電流指令はv19が決めます。';
+    if (s.diagnostic_build_id === 'walking-support-transfer-v39-carry2') {
+      $('work-title').textContent = '歩行のエネルギー制御（carry2・足裏円弧までの戻り補助・30秒）';
+      $('work-description').textContent += ' ±8°で戻りの救済が必要なとき、受け足の円弧まで進む仕事を見積もります。主入力用の時間を考慮して救済幅を決め、RWLOGに記録します。';
+    } else if (predictTransfer) {
+      $('work-description').textContent += ' ±8°では荷重移行を予測し、惰性と通電の開始・幅を比較してRWLOGに記録します。実際の電流指令はv19が決めます。';
+    }
   } else if (walkingTransferTrial(s)) {
     $('work-title').textContent = '歩行のエネルギー制御（v18・30秒）';
     $('work-description').textContent = '今回のv18は±8°を使用します。戻りの不足分を救済した後、実ZEROクロスで主入力を再計算します。救済と主入力を合わせて半周期80ms以内の試験範囲です。足の認識が一時的に欠けたときは、新しい画像と機体の減速条件を確認して救済します。開始できない理由は±8°ボタンの下に表示します。±10°・±12°は別の比較方式です。' +

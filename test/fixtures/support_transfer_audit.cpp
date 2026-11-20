@@ -48,7 +48,9 @@ enum class EnergyControlAutonomousHalfCycleState { WAIT_ZERO_CROSS };
 enum class EnergyControlAutonomousPhase { ENERGY_CONTROL, HOLD };
 // No motor command, actuator or I/O API is available to the real snapshot method.
 struct Roller {
-  bool current_valid=true, speed_valid=true;
+  bool current_valid=true, speed_valid=true, roller_ok=true;
+  int applied_current_mA=0, requested_current_mA=0;
+  uint32_t command_sequence=0, applied_command_sequence=1, applied_command_time_us=UINT32_MAX-9999;
   uint32_t current_sample_time_us=0, speed_sample_time_us=0;
   int actual_current_mA=7, battery_mV=7400;
   float speed_rpm=0;
@@ -145,6 +147,7 @@ int main() {
   r.energy_control_autonomous_last_peak_side_=1;
   r.post_zero=true; r.energy_control_autonomous_zero_cross_consumed_for_peak_=true;
   r.roller.battery_mV=8350;
+  r.roller.applied_command_time_us=210000; // The frame-4 current observation predates this acknowledgement.
   ++r.status_.pulse_id;
   assert(r.walking_half_cycle_budget_.accepted(half_cycle_energy_budget::Kind::Main,0));
   r.tick(3,-19);r.tick(4,-20);dispatch();
@@ -228,7 +231,8 @@ int main() {
     in.cap_ms=gate==SupportTransferAudit::NoBudget ? 0 : 60;
     audit.submit(sample);dispatch();
   };
-  frame(1,0,20); frame(2,0,20); frame(3,0,20);
+  sample.current_after_zero_ms=100;
+  frame(1,0,0); frame(2,0,0); frame(3,0,0); // Verified initial zero, no walking pulse yet.
   frame(4,0,21); frame(5,0,21); frame(7,0,21);
   frame(8,SupportTransferAudit::NoBudget,21); frame(9,0,21);
   frame(10,SupportTransferAudit::PulseActive,22); frame(11,0,22);
@@ -237,6 +241,26 @@ int main() {
   audit.seal();print(audit);
   audit.startRun();
   frame(17,0,22,-1,550);
+  sample.current_after_zero_ms=69;frame(18,0,22,-1,550);
+  sample.current_after_zero_ms=70;in.goal_current_ma=280;in.initial_current_ma=100;
+  frame(19,0,22,-1,550);frame(20,0,22,-1,550);
+  in.initial_current_ma=-101;frame(21,0,22,-1,550);
+  in.initial_current_ma=101;frame(22,0,22,-1,550);
+  sample.current_after_zero_ms=UINT16_MAX;in.initial_current_ma=0;frame(23,0,22,-1,550);
+  sample.current_after_zero_ms=100;frame(24,0,22,-1,550);frame(25,0,22,-1,550);
+  audit.seal();print(audit);
+  audit.startRun();
+  r.status_.pulse_active=false;r.allow_fore_aft=true;r.roller.current_valid=true;
+  r.status_.pulse_id=0;r.roller.applied_command_time_us=1;r.roller.applied_command_sequence=0;
+  r.tick(30,-20);dispatch(); // No known zero acknowledgement.
+  r.roller.applied_command_sequence=5;r.roller.command_sequence=6;
+  r.tick(31,-20);dispatch(); // Last write failed.
+  r.roller.command_sequence=5;r.roller.requested_current_mA=300;
+  r.tick(32,-20);dispatch(); // Pending nonzero request.
+  r.roller.requested_current_mA=0;r.roller.applied_current_mA=300;
+  r.tick(33,-20);dispatch(); // Zero has been requested but not applied.
+  r.roller.applied_current_mA=0;
+  r.tick(34,-20);dispatch(); // Verified initial zero, no motor pulse.
   audit.seal();print(audit);
   const size_t final_footer = std::strlen(",\"metadata_json_final_bytes\":}") + std::to_string(limit).size();
   print(audit, limit - final_footer);

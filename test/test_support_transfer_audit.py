@@ -29,7 +29,7 @@ def main():
                         str(ROOT / "test/fixtures/support_transfer_audit.cpp"), "-o", str(exe)], check=True)
         lines = subprocess.check_output([exe]).splitlines()
         blocks = [json.loads(line) for line in lines]
-        assert len(blocks) == 16
+        assert len(blocks) == 17
         for block, line in zip(blocks, lines):
             assert block["metadata_json_final_bytes"] == len(line) <= 1408 * 1024
         assert len(lines[-1]) == 1408 * 1024 and "support_transfer_shadow" not in blocks[-1]
@@ -56,7 +56,8 @@ def main():
         assert rows[1]["transfer_deg"] < rows[1]["lateral_deg"] and rows[1]["transfer_ms"] > 0
         assert rows[2]["gate_mask"] & (4 | 16 | 32 | 512) == 4 | 16 | 32 | 512
         assert rows[2]["reason"] == 0 and rows[2]["width_ms"] == 0
-        assert first["revision"] == 2 and first["output_enabled"] is False
+        assert first["revision"] == 3 and first["output_enabled"] is False
+        assert [r["current_after_zero_ms"] for r in rows] == [160, None, None]
         assert rows[0]["ready_after_us"] >= 7000 and rows[0]["accel_dps2"] == 400
         assert blocks[3]["support_transfer_shadow"]["unavailable"] == 1
         zero_cap = blocks[10]["support_transfer_shadow"]
@@ -98,16 +99,26 @@ def main():
         fresh = dict(zip(restarted["columns"], restarted["rows"][0]))
         assert fresh["anchor"] == 2 and fresh["terminal_deg"] > moving["terminal_deg"]
         # The preceding build has no terminal columns. Preserve its CSV contract.
-        extra = {"phase", "anchor", "terminal_deg", "terminal_ms", "coast_frames", "pulse_id"}
+        extra = {"phase", "anchor", "terminal_deg", "terminal_ms", "coast_frames", "pulse_id", "current_after_zero_ms"}
         legacy = dict(first, revision=1, columns=[c for c in first["columns"] if c not in extra])
         legacy["rows"] = [[v for c, v in zip(first["columns"], row) if c not in extra] for row in first["rows"]]
         assert write_support_transfer_shadow({"support_transfer_shadow": legacy}, folder) == len(legacy["rows"])
+        age = first["columns"].index("current_after_zero_ms")
+        v2 = dict(first, revision=2, columns=first["columns"][:age]+first["columns"][age+1:],
+                  rows=[r[:age]+r[age+1:] for r in first["rows"]])
+        assert write_support_transfer_shadow({"support_transfer_shadow": v2}, folder) == len(v2["rows"])
         coast, new_run = (block["support_transfer_shadow"] for block in blocks[13:15])
         frames = [dict(zip(coast["columns"], row)) for row in coast["rows"]]
         assert [r["coast_frames"] for r in frames] == [1,2,2,1,2,1,0,1,0,1,0,1,1,1,2]
         assert frames[6]["reason"] == 2 and frames[6]["gate_mask"] == 256
         assert frames[8]["reason"] == 0 and frames[8]["gate_mask"] == 512
-        assert dict(zip(new_run["columns"], new_run["rows"][0]))["coast_frames"] == 1
+        tails = [dict(zip(new_run["columns"], row)) for row in new_run["rows"]]
+        assert [r["reason"] for r in tails] == [2]*9
+        assert [r["coast_frames"] for r in tails] == [1,1,1,2,1,1,1,1,2]
+        zeros = blocks[15]["support_transfer_shadow"]
+        observed_zero = [dict(zip(zeros["columns"], row)) for row in zeros["rows"]]
+        assert [r["current_after_zero_ms"] for r in observed_zero] == [None,None,None,None,949]
+        assert all(r["pulse_id"] == 0 for r in observed_zero)
         write_fixture(raw, blocks[13])
         convert(raw, expanded)
         with (expanded / "support_transfer_shadow.csv").open() as stream:

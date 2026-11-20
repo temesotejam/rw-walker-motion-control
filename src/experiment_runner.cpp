@@ -2663,6 +2663,9 @@ void ExperimentRunner::resetEnergyControlAutonomous() {
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
   walking_energy_active_audit_=-1;
   walking_energy_completion_pending_=false;walking_energy_active_pulse_=WalkingEnergyAudit{};
+#if SUPPORT_TRANSFER_CARRY2
+  walking_main_reserve_={};
+#endif
   walking_energy_stop_reason_=2;
   walking_pulse_start_i0_ma_=walking_pulse_goal_ma_=walking_pulse_tau_s_=NAN;
 #endif
@@ -3886,10 +3889,20 @@ void ExperimentRunner::observeSupportTransfer(uint32_t t, uint32_t sample_us, fl
   if (!std::isfinite(acceleration)) s.gate_mask |= SupportTransferAudit::MissingAcceleration;
   if (!walkingForeAftAllowsOutput()) s.gate_mask |= SupportTransferAudit::ForeAft;
   const auto tel = roller_->telemetrySnapshot();
-  if (tel.current_valid && tel.current_sample_time_us && s.captured_us - tel.current_sample_time_us <= 50000)
+  if (tel.current_valid && tel.current_sample_time_us && s.captured_us - tel.current_sample_time_us <= 50000) {
     in.initial_current_ma = side * walkingCurrentPolarity(Config::ENERGY_CONTROL_AUTONOMOUS_NORMAL_OUTPUT_SIGN,
                                                           Config::MOTOR_DRIVER_POLARITY) * tel.actual_current_mA;
-  else s.gate_mask |= SupportTransferAudit::Current;
+    const uint32_t elapsed = tel.current_sample_time_us - tel.applied_command_time_us;
+    // Initialization can acknowledge zero before the first queued command.
+    // A later failed write leaves its attempt newer than the last acknowledgement.
+    const bool acknowledged = tel.applied_command_sequence &&
+        (!tel.command_sequence || tel.applied_command_sequence == tel.command_sequence);
+    if (!status_.pulse_active && tel.roller_ok && acknowledged && tel.applied_current_mA == 0 &&
+        tel.requested_current_mA == 0 && elapsed < 0x80000000u) {
+      const uint32_t elapsed_ms = elapsed / 1000;
+      s.current_after_zero_ms = elapsed_ms >= UINT16_MAX ? UINT16_MAX - 1 : elapsed_ms;
+    }
+  } else s.gate_mask |= SupportTransferAudit::Current;
   s.raw_vbat_mv = tel.battery_mV;
   const auto battery = control_math::modelVoltage(tel.battery_mV, Config::MODEL_VBAT_REFERENCE_V,
                                                    Config::MODEL_VBAT_MIN_V, Config::MODEL_VBAT_MAX_V);
@@ -8498,4 +8511,7 @@ const char* ExperimentRunner::stateName() const {
   return "UNKNOWN";
 }
 
+#if SUPPORT_TRANSFER_CARRY2
+#include "periodic_foot_stream.h"
+#endif
 #include "walking_energy_runner.inc"

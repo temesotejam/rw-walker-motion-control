@@ -1,0 +1,92 @@
+#pragma once
+
+#include "support_transfer_plan.h"
+
+// Extension of an already accepted return-aid event. No timing or current
+// command is generated here. The trial data cover only motion to the left.
+namespace receiving_arc_aid {
+enum class Reason : uint8_t {
+  Inactive, NoFreshShape, OutsideModel, NotReceiving, ShapeReturning,
+  Eligible, NoMainRoom, NoWidthGain, Applied, UncertainPivot, CommandVeto
+};
+struct Input {
+  int side=0;
+  bool observed_shape=false;
+  float body_deg=NAN, speed_dps=NAN, decel_dps2=NAN, fore_aft_deg=NAN;
+  float left_deg=NAN, right_deg=NAN, left_est=NAN, right_est=NAN;
+  float left_rate=NAN, right_rate=NAN, base_j=NAN, target_j=NAN;
+};
+struct Result {
+  Reason reason=Reason::Inactive;
+  float extra_j=0, terminal_deg=NAN, horizon_s=NAN;
+};
+inline Result evaluate(const Input& in) {
+  Result out;
+  if (in.side!=-1) return out;
+  if (!in.observed_shape) {out.reason=Reason::NoFreshShape;return out;}
+  if (!(in.body_deg>0 && in.body_deg<=12 && in.speed_dps>=3 && in.speed_dps<=35 &&
+        std::isfinite(in.decel_dps2) && in.decel_dps2>0 &&
+        std::fabs(in.fore_aft_deg)<=10 && std::fabs(in.left_deg)<=20 && std::fabs(in.right_deg)<=20 &&
+        std::fabs(in.left_est)<=20 && std::fabs(in.right_est)<=20 &&
+        std::fabs(in.left_rate)<=180 && std::fabs(in.right_rate)<=180 &&
+        std::isfinite(in.base_j) && in.base_j>0 && std::isfinite(in.target_j) && in.target_j>0)) {
+    out.reason=Reason::OutsideModel;return out;
+  }
+  const float gap=support_transfer_plan::supportGap(in.left_deg,in.right_deg,in.fore_aft_deg,in.body_deg);
+  if (gap>=0 || in.left_deg-in.right_deg<3.f) {out.reason=Reason::NotReceiving;return out;}
+  // Only ask whether the observed shape persists locally. In the stopped
+  // trials the nominal ZERO time was beyond what the feet can be extrapolated to.
+  out.horizon_s=std::fmin(support_transfer_plan::kForecastLimitMs*.001f,in.body_deg/in.speed_dps);
+  const float left=in.left_est+in.left_rate*out.horizon_s;
+  const float right=in.right_est+in.right_rate*out.horizon_s;
+  if (std::fabs(left)>20 || std::fabs(right)>20) {out.reason=Reason::OutsideModel;return out;}
+  if (in.left_est-in.right_est<3.f || left-right<3.f) {out.reason=Reason::ShapeReturning;return out;}
+  const auto clearance=[&](float seconds) {
+    return -support_transfer_plan::supportGap(in.left_est+in.left_rate*seconds,
+        in.right_est+in.right_rate*seconds,in.fore_aft_deg,in.body_deg-in.speed_dps*seconds);
+  };
+  // Moving towards the left increases its clearance over the right at fixed
+  // foot pitches: the right sole's horizontal coordinate exceeds the left's
+  // over this roll range. Each sole's height changes by at most 28 mm/rad
+  // with pitch: for |pitch|<=30 degrees its toe/heel derivative is bounded
+  // by the 28 mm longitudinal edge distance (z in [-83,-75] mm).
+  // Certify both halves if the full-interval bound is inconclusive.
+  const float loss=28.f*lateral_energy::kRadPerDeg*(std::fabs(in.left_rate)+std::fabs(in.right_rate))*out.horizon_s;
+  const float start=clearance(0);
+  if (!(start>0 && clearance(out.horizon_s)>0 &&
+        (start>loss || (start>.5f*loss && clearance(.5f*out.horizon_s)>.5f*loss)))) {
+    out.reason=Reason::UncertainPivot;return out;
+  }
+  out.terminal_deg=support_transfer_plan::arcEntryDeg(in.side,in.left_deg+in.fore_aft_deg);
+  const float c=walking_energy_policy::passiveCoefficients(in.side).omega2_j;
+  const float rad=lateral_energy::kRadPerDeg, carry=support_transfer_plan::kCarryDps;
+  const float extra=c*rad*rad*(2*in.decel_dps2*std::fabs(out.terminal_deg)+carry*carry);
+  out.extra_j=std::fmax(0.f,std::fmin(.5f*in.target_j-in.base_j,extra));
+  out.reason=Reason::Eligible;
+  return out;
+}
+
+class MainReserve {
+ public:
+  void observe(int side,bool assisted,uint32_t elapsed) {
+    if ((side!=-1 && side!=1) || !elapsed) return;
+    auto& state=side>0?right_:left_;
+    const auto width=static_cast<uint16_t>(elapsed>walking_energy_policy::kMaxPulseMs ?
+        walking_energy_policy::kMaxPulseMs:elapsed);
+    if (width>state.any) state.any=width;
+    if (assisted && width>state.assisted) state.assisted=width;
+  }
+  uint16_t forSide(int side) const {
+    const auto& state=side>0?right_:left_;
+    return state.assisted?state.assisted:(state.any?state.any:walking_energy_policy::kMaxPulseMs);
+  }
+ private:
+  struct History { uint16_t assisted=0,any=0; };
+  History left_,right_;
+};
+inline uint16_t boundWidth(uint16_t baseline,uint16_t candidate,uint16_t envelope,uint16_t reserve) {
+  const uint16_t room=envelope>reserve ? envelope-reserve : 0;
+  const uint16_t limited=candidate<room ? candidate : room;
+  return baseline>limited ? baseline : limited;
+}
+}

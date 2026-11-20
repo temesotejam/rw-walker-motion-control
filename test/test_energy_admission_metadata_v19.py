@@ -18,7 +18,7 @@ base = ROOT / 'test/fixtures/energy/test_return_energy_metadata_v18.py'
 context = {'__file__': str(base)}
 exec(compile(base.read_text(encoding='utf8').split('\nwith tempfile.TemporaryDirectory', 1)[0], str(base), 'exec'), context)
 parse = context['context']['parse']
-fixture = '#include "fore_aft_motion_guard.h"\n#include "energy_admission_v19.h"\n' + context['fixture']
+fixture = '#include "fore_aft_motion_guard.h"\n#include "energy_admission_v19.h"\n#include "receiving_arc_aid.h"\n' + context['fixture']
 fixture = fixture.replace('for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u})',
                           'for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u,24u})')
 marker = 'class ExperimentRunner {public:\n'
@@ -41,6 +41,12 @@ fixture = fixture.replace(marker, marker + r'''
     a.energy_unsupported_mask=admission.unsupported_mask;a.energy_admission_reason=static_cast<uint8_t>(admission.reason);
     a.fore_aft_allowed=i!=4;a.fore_aft_reason=static_cast<uint8_t>(i==4?fore_aft_motion_guard::Reason::Candidate:fore_aft_motion_guard::Reason::Healthy);
     a.fore_aft_angle_deg=i==4?7.5f:.25f;a.fore_aft_rate_dps=i==4?35.f:1.f;
+#if SUPPORT_TRANSFER_CARRY2
+    if(a.return_event){
+      a.arc_aid.reason=receiving_arc_aid::Reason::Applied;a.arc_aid.extra_j=.00004f;
+      a.arc_foot_source=2;a.base_aid_ms=28;a.arc_candidate_ms=33;a.main_reserve_ms=50;
+    }
+#endif
 #endif
 ''')
 marker = '  PsramString json;'
@@ -62,10 +68,11 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
     temp = Path(folder)
     (temp / 'test.cpp').write_text(fixture, encoding='utf8')
     previous_rows = {}
-    for admission in [False, True]:
+    for admission, carry in [(False, False), (True, False), (True, True)]:
         exe = temp / ('v19.exe' if admission else 'v18.exe')
         subprocess.run(['g++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror'] + flags +
-                       ['-DWALKING_ADMISSION_V19=' + str(int(admission)), '-I' + str(ROOT / 'test/fixtures/arduino'),
+                       ['-DWALKING_ADMISSION_V19=' + str(int(admission)), '-DSUPPORT_TRANSFER_CARRY2=' + str(int(carry)),
+                        '-I' + str(ROOT / 'test/fixtures/arduino'),
                         '-I' + str(ROOT / 'src'), str(temp / 'test.cpp'), '-o', str(exe)], check=True)
         for mode, count in [('', 7), ('empty', 0)]:
             output = subprocess.check_output([str(exe)] + ([mode] if mode else []), text=True).splitlines()
@@ -104,6 +111,16 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 assert guard[key] is False, key
             assert 'provisional_motion_envelope' in guard['interpretation']
             block = raw['walking_energy']
+            if carry:
+                aids = metadata['walking_energy']['arc_aids']
+                assert len(aids) == bool(count)
+                assert 'arc_aid_reason' not in block['records']['fields']
+                if count:
+                    assert aids[0]['row_index'] == 1 and aids[0]['arc_foot_source'] == 2
+                    assert block['arc_aid_reason_names'][aids[0]['arc_aid_reason']] == 'applied'
+                    assert block['arc_aid_reason_names'][10] == 'command_veto'
+            else:
+                assert 'arc_aids' not in block
             assert block['revision'] == block['selector_revision'] == revision and block['branch'] == 24
             assert block['combined_half_cycle_envelope_ms'] == 80 and block['main_at_real_zero_after_aid'] is True
             assert block['completion_reason_names'][5] == 'mechanical_zero_cutoff'
@@ -132,7 +149,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 expected_mask = sum(bit for bit, key in [(1, 'passive_rate_supported'), (2, 'work_rate_supported'),
                                                        (4, 'charge_supported')] if not current[key])
                 assert current['energy_unsupported_mask'] == expected_mask
-            out = temp / ('v19_' + (mode or 'rows'))
+            out = temp / (('carry_' if carry else 'v19_') + (mode or 'rows'))
             out.mkdir()
             assert converter.write_walking_energy_diagnostics(metadata, out) == count
             if count:
@@ -153,6 +170,9 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 assert detail['angle_deg'] == 8.5 and detail['rate_dps'] == 35
                 with (out / 'walking_energy.csv').open(newline='', encoding='utf8') as stream:
                     csv_rows = list(csv.DictReader(stream))
+                if carry:
+                    assert csv_rows[1]['arc_base_guarded_ms'] == '28' and csv_rows[1]['arc_main_reserve_ms'] == '50'
+                    assert all(row['arc_aid_reason'] == '' for i, row in enumerate(csv_rows) if i != 1)
                 assert csv_rows[4]['energy_admission_applies'] == 'True'
                 assert csv_rows[4]['energy_admission_allowed'] == csv_rows[4]['fore_aft_allowed'] == 'False'
                 assert float(csv_rows[4]['fore_aft_angle_deg']) == 7.5

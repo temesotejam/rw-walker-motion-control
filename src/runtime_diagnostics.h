@@ -43,7 +43,11 @@
 #if defined(FOOT_RECEIVE_CORE1_V31) && FOOT_RECEIVE_CORE1_V31
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-receive-core1-v31"
 #elif defined(SUPPORT_TRANSFER_V39) && SUPPORT_TRANSFER_V39
+#if SUPPORT_TRANSFER_CARRY2
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-support-transfer-v39-carry2"
+#else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-support-transfer-v39-carry1"
+#endif
 #elif defined(FOOT_PERIODIC_V38) && FOOT_PERIODIC_V38
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-foot-periodic40-v38"
 #elif defined(FOOT_CADENCE20_V37) && FOOT_CADENCE20_V37

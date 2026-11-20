@@ -59,7 +59,7 @@ FIELDS = ("start_ms", "end_ms", "receiving_foot", "body_direction", "opposite_fo
           "observed_directional_rate_dps", "exit_observation", "exit_sample_ms", "exit_rate_dps",
           "exit_carry_5dps", "status")
 
-TERMINAL_FIELDS = ("peak_ms", "packet", "side", "anchor", "reason", "coast_frames", "decision_ms", "ready_ms",
+TERMINAL_FIELDS = ("peak_ms", "packet", "side", "anchor", "reason", "coast_frames", "current_after_zero_ms", "decision_ms", "ready_ms",
                    "terminal_deg", "predicted_terminal_ms", "status", "observation_end_ms",
                    "observed_rate_dps", "carry_5dps", "recorded_command")
 
@@ -129,7 +129,8 @@ def score_terminals(metadata, plans, samples):
         origin, side = int(p["peak_ms"]), int(p["side"])
         target = numeric(p["terminal_deg"])
         out = dict(peak_ms=origin, packet=p["packet"], side=side, anchor=p["anchor"],
-                   reason=p["reason"], coast_frames=p.get("coast_frames"), terminal_deg=target)
+                   reason=p["reason"], coast_frames=p.get("coast_frames"),
+                   current_after_zero_ms=p.get("current_after_zero_ms"), terminal_deg=target)
         if epoch is None:
             yield dict(out, status="unknown_measurement_clock")
             continue

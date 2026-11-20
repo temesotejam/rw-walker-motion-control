@@ -11,6 +11,13 @@ class PeriodicFootStream {
   void observe(const FootFrame& frame,uint64_t received);
   bool service(uint64_t now);
   periodic_foot::Packet current() const;
+#if SUPPORT_TRANSFER_CARRY2
+  bool rescuePair(uint16_t run,uint64_t now,uint64_t epoch,uint32_t seq,uint64_t image,uint64_t received,
+                  periodic_foot::Side& left,periodic_foot::Side& right) const {
+    return active_ && run && run==run_id_ &&
+        estimator_.rescuePair(now,epoch,seq,image,received,left,right);
+  }
+#endif
   String liveJson() const;
   void appendRun(PsramString& json) const;  // called after sealing
  private:

@@ -1,6 +1,7 @@
 #include "support_transfer_plan.h"
 #include <cassert>
 #include <cstdio>
+#include <random>
 
 namespace st = support_transfer_plan;
 
@@ -140,11 +141,47 @@ static void receivingPivot(const lateral_energy::CurrentTable& current) {
   assert(std::fabs(long_horizon.coast_margin_j-(kinetic(15,start,1)-required))<2e-8f);
 }
 
+static void boundedPivotScan() {
+  std::mt19937 rng(69728952);
+  const auto draw=[&](float low,float high) {
+    return std::uniform_real_distribution<float>(low,high)(rng);
+  };
+  int compared=0, reversals=0;
+  for (int i=0;i<20000;++i) {
+    auto in=approach();
+    in.side=i%2 ? -1 : 1;
+    in.angle_deg=draw(-15,15); in.rate_dps=in.side*draw(.1f,95);
+    in.left_deg=draw(-20,20); in.left_rate_dps=draw(-180,180);
+    in.right_deg=draw(-20,20); in.right_rate_dps=draw(-180,180);
+    in.fore_aft_deg=draw(-10,10);
+    auto limit=st::detail::withinAngle(in.angle_deg,in.rate_dps,15,150);
+    limit=st::detail::withinAngle(in.left_deg,in.left_rate_dps,20,limit);
+    limit=st::detail::withinAngle(in.right_deg,in.right_rate_dps,20,limit);
+    const auto start=st::detail::forecast(in,0), end=st::detail::forecast(in,limit);
+    if (!(limit>0) || in.side*st::detail::gap(start)<0) continue;
+    auto gap=[&](float t) {return in.side*st::detail::gap(st::detail::forecast(in,t));};
+    bool exact=gap(limit)>=0;
+    const auto check_edge=[&](float foot,float rate) {
+      if (rate==0) return;
+      const float t=-1000.f*(foot+in.fore_aft_deg)/rate;
+      if (t>0 && t<limit && gap(t)<0) exact=false;
+    };
+    check_edge(in.left_deg,in.left_rate_dps);
+    check_edge(in.right_deg,in.right_rate_dps);
+    for (unsigned t=5;t<limit;t+=5) if (gap(t)<0) exact=false;
+    assert(st::detail::keepsReceivingPivot(in,limit,start,end)==exact);
+    ++compared;
+    if (!exact) ++reversals;
+  }
+  assert(compared>5000 && reversals>200);
+}
+
 int main() {
   lateral_energy::CurrentTable current;
   auto in=approach();
   assert(st::select(current,in).reason==st::Reason::Invalid);
   assert(current.prepare(.030f));
+  boundedPivotScan();
   receivingPhase(current,1);
   receivingPhase(current,-1);
   observationGap();

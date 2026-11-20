@@ -142,6 +142,7 @@ struct Progress {
       side_=in.side;
       peak_ms_=peak_ms;
     }
+    if (complete) return;  // Latched to this half-cycle; there is no later anchor to find.
     if (!geometry_valid || !detail::validGeometry(in)) {
       previous_valid_=false;
       return;
@@ -189,6 +190,7 @@ inline Decision choosePulse(const lateral_energy::CurrentTable& current,const In
   out.margin_j=out.coast_margin_j;
   out.work_j=0;
   if (out.coast_margin_j>0) {out.reason=Reason::Coast;return out;}
+  if (!in.cap_ms || !deadline) {out.reason=Reason::Insufficient;return out;}
 
   const auto coeff=lateral_energy::coefficients(in.side);
   const float fall_step=std::exp(-.001f/walking_energy_policy::kCoastFallTauS);
@@ -198,7 +200,9 @@ inline Decision choosePulse(const lateral_energy::CurrentTable& current,const In
     if (!(speed2>0)) break; // A later pulse cannot wake a stopped trajectory.
     const float start_speed=std::sqrt(speed2);
     const float i0=in.initial_current_ma*std::exp(-.001f*delay/walking_energy_policy::kCoastFallTauS);
-    const uint16_t limit=in.cap_ms<deadline-delay ? in.cap_ms : deadline-delay;
+    uint16_t limit=in.cap_ms<deadline-delay ? in.cap_ms : deadline-delay;
+    // Once a sufficient pulse exists, only equal or shorter widths can win.
+    if (sufficient && out.width_ms<limit) limit=out.width_ms;
     const float omega=start_speed*kRad;
     float coast_q=0, next_coast_q=i0*walking_energy_policy::kCoastFallTauS*(1.f-fall_step);
     for (uint16_t width=1;width<=limit;++width) {
@@ -232,9 +236,19 @@ inline Decision choosePulse(const lateral_energy::CurrentTable& current,const In
   return out;
 }
 
-inline bool keepsReceivingPivot(const Input& in,float local_ms,const Pose& end) {
+inline bool keepsReceivingPivot(const Input& in,float local_ms,const Pose& start,const Pose& end) {
   if (in.side*gap(end)<0) return false;
   if (in.left_rate_dps==0 && in.right_rate_dps==0) return true;
+  // With fixed feet, rolling toward the receiving side only increases the
+  // signed gap: its angular derivative is the horizontal right-left pivot
+  // separation, positive throughout the model's +/-15 deg lateral range.
+  // Pitch motion of either sole can lower its world height at most
+  // (28 + 83*sin(30 deg)) mm/rad. This Lipschitz bound also holds at the
+  // longitudinal edge switch and where the circle tangent hits an endpoint.
+  const float fall_mm_per_ms=70.f*kRad*.001f*(std::fabs(in.left_rate_dps)+std::fabs(in.right_rate_dps));
+  constexpr float roundoff_mm=.002f;
+  const float initial_gap=in.side*gap(start);
+  if (initial_gap>fall_mm_per_ms*local_ms+roundoff_mm) return true;
   // A returning foot can switch from toe to heel and back into load between
   // two same-sign endpoint gaps. Probe both exact edge-change times and the
   // smooth pieces at a finer cadence than the 25 ms camera publication.
@@ -245,8 +259,16 @@ inline bool keepsReceivingPivot(const Input& in,float local_ms,const Pose& end) 
   };
   if (changes_edge_on_other_pivot(in.left_deg,in.left_rate_dps) ||
       changes_edge_on_other_pivot(in.right_deg,in.right_rate_dps)) return false;
-  for (unsigned ms=5;ms<local_ms;ms+=5)
-    if (in.side*gap(forecast(in,ms))<0) return false;
+  float last_gap=initial_gap;
+  unsigned last_ms=0;
+  for (unsigned ms=5;ms<local_ms;ms+=5) {
+    // Skip only probes whose sign is already known. Retain the old 5 ms
+    // sample positions near a possible reversal, including on the boundary.
+    if (last_gap>fall_mm_per_ms*(ms-last_ms)+roundoff_mm) continue;
+    last_gap=in.side*gap(forecast(in,ms));
+    if (last_gap<0) return false;
+    last_ms=ms;
+  }
   return true;
 }
 }  // namespace detail
@@ -325,7 +347,7 @@ inline Decision select(const lateral_energy::CurrentTable& current,const Input& 
   local_ms=detail::withinAngle(in.right_deg,in.right_rate_dps,20.f,local_ms);
   const float local_travel=std::fmin(travel,speed*local_ms*.001f);
   const auto local=detail::forecast(in,local_ms);
-  if (!(local_ms>0) || !detail::keepsReceivingPivot(in,local_ms,local)) {
+  if (!(local_ms>0) || !detail::keepsReceivingPivot(in,local_ms,now,local)) {
     // A forecast hand-back invalidates the single receiving-pivot hypothesis.
     out.reason=Reason::OutsideApproach;
     return out;

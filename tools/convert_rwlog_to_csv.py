@@ -1304,6 +1304,19 @@ def write_walking_energy_diagnostics(metadata: dict, out_dir: Path) -> int:
     if not isinstance(block, dict) or not isinstance(block.get('records'), list):
         raise ValueError('Invalid walking energy diagnostics')
     rows = block['records']
+    if 'arc_aids' in block:
+        details = block['arc_aids']
+        if not isinstance(details, list):
+            raise ValueError('Invalid receiving arc audit')
+        rows = [row.copy() for row in rows]
+        previous = -1
+        for detail in details:
+            index = detail.get('row_index') if isinstance(detail, dict) else None
+            if (type(index) is not int or not previous < index < len(rows) or
+                    not rows[index].get('return_event')):
+                raise ValueError('Invalid receiving arc audit row')
+            rows[index].update((k, v) for k, v in detail.items() if k.startswith('arc_'))
+            previous = index
     if rows:
         fields = list(dict.fromkeys(key for row in rows for key in row))
         with (out_dir / 'walking_energy.csv').open('w', newline='', encoding='utf8') as f:
@@ -1319,8 +1332,9 @@ def write_support_transfer_shadow(metadata: dict, out_dir: Path) -> int:
         return 0
     columns = block["columns"]
     rows = block["rows"]
-    if (block["revision"] not in (1, 2) or block["output_enabled"] is not False or
-            (block["revision"] == 2 and not {"phase", "anchor", "terminal_deg", "terminal_ms"}.issubset(columns)) or
+    if (block["revision"] not in (1, 2, 3) or block["output_enabled"] is not False or
+            (block["revision"] >= 2 and not {"phase", "anchor", "terminal_deg", "terminal_ms"}.issubset(columns)) or
+            (block["revision"] == 3 and not {"current_after_zero_ms", "coast_frames", "pulse_id"}.issubset(columns)) or
             not all(isinstance(key, str) for key in columns) or len(set(columns)) != len(columns) or
             not {"time_ms", "packet", "side", "reason", "delay_ms", "width_ms",
                  "ready_after_us", "gate_mask"}.issubset(columns) or
@@ -1331,7 +1345,7 @@ def write_support_transfer_shadow(metadata: dict, out_dir: Path) -> int:
     # Older archives did not record the pulse counter or the consecutive-coast count.
     evidence_columns = {"pulse_id", "coast_frames"}
     if evidence_columns.intersection(columns):
-        if block["revision"] != 2 or not evidence_columns.issubset(columns):
+        if block["revision"] < 2 or not evidence_columns.issubset(columns):
             raise ValueError("Incomplete support transfer coast evidence columns")
         count, pulse, phase, reason, gate = map(columns.index, ("coast_frames", "pulse_id", "phase", "reason", "gate_mask"))
         for row in rows:
@@ -1339,6 +1353,14 @@ def write_support_transfer_shadow(metadata: dict, out_dir: Path) -> int:
             if (type(row[count]) is not int or row[count] not in (0, 1, 2) or bool(row[count]) != eligible or
                     type(row[pulse]) is not int or not 0 <= row[pulse] <= 0xffffffff):
                 raise ValueError("Invalid support transfer coast evidence")
+    if block["revision"] == 3:
+        age = columns.index("current_after_zero_ms")
+        for row in rows:
+            elapsed = row[age]
+            if elapsed is not None and (type(elapsed) is not int or not 0 <= elapsed < 65535):
+                raise ValueError("Invalid observation age after zero command")
+            if row[count] == 2 and (elapsed is None or elapsed < 70):
+                raise ValueError("Corroborated coast without a post-decay observation")
     with (out_dir / "support_transfer_shadow.csv").open("w", encoding="utf-8", newline="") as stream:
         writer = csv.writer(stream)
         writer.writerow(columns)

@@ -79,12 +79,24 @@ void SupportTransferAudit::work() {
       const bool consecutive=previous_coast_.side==sample.input.side &&
           previous_coast_.peak_ms==sample.peak_ms && sample.packet-previous_coast_.packet==1 &&
           previous_coast_.pulse_id==sample.pulse_id && previous_coast_.terminal_deg==decision.terminal_deg;
-      coast_frames=consecutive ? 2 : 1;
-      previous_coast_.peak_ms=sample.peak_ms;
-      previous_coast_.packet=sample.packet;
-      previous_coast_.pulse_id=sample.pulse_id;
-      previous_coast_.side=sample.input.side;
-      previous_coast_.terminal_deg=decision.terminal_deg;
+      // Allow a single coast forecast during a current tail. Corroboration
+      // requires two eligible frames, both after one fall time constant and
+      // with at most one replan interval of full-current charge left to decay.
+      constexpr auto fall_ms = walking_energy_policy::kCoastFallTauS * 1000.f;
+      const bool weak_tail = sample.current_after_zero_ms != UINT16_MAX &&
+          sample.current_after_zero_ms >= fall_ms &&
+          std::fabs(sample.input.initial_current_ma) * fall_ms <=
+              sample.input.goal_current_ma * support_transfer_plan::kReplanMs;
+      coast_frames=weak_tail && consecutive ? 2 : 1;
+      if (weak_tail) {
+        previous_coast_.peak_ms=sample.peak_ms;
+        previous_coast_.packet=sample.packet;
+        previous_coast_.pulse_id=sample.pulse_id;
+        previous_coast_.side=sample.input.side;
+        previous_coast_.terminal_deg=decision.terminal_deg;
+      } else {
+        previous_coast_={};
+      }
     } else {
       previous_coast_={};
     }
@@ -115,11 +127,11 @@ constexpr char kSchema[] =
           "\"width_ms\",\"transfer_ms\",\"transfer_deg\",\"coast_margin_j\",\"margin_j\",\"work_j\","
           "\"work_supported\",\"ready_after_us\",\"solve_us\",\"gate_mask\",\"baseline_flags\","
           "\"raw_vbat_mv\",\"model_vbat_mv\",\"model_vbat_status\",\"phase\",\"anchor\","
-          "\"terminal_deg\",\"terminal_ms\",\"coast_frames\",\"pulse_id\",\"capture_us32\"],\"rows\":[";
+          "\"terminal_deg\",\"terminal_ms\",\"coast_frames\",\"pulse_id\",\"current_after_zero_ms\",\"capture_us32\"],\"rows\":[";
 constexpr size_t kFooterBytes = sizeof(",\"metadata_json_final_bytes\":4294967295}") - 1;
 constexpr size_t kClosingBytes = sizeof("],\"exported\":4294967295}") - 1;
-// Two brackets, 40 values and 39 commas.
-constexpr size_t kMinRowBytes = 81;
+// Two brackets, 41 values and 40 commas.
+constexpr size_t kMinRowBytes = 83;
 
 class RowText {
  public:
@@ -154,7 +166,7 @@ void SupportTransferAudit::append(PsramString& json) const {
   const size_t room = section_end - json.length();
   char header[448];
   const int h = std::snprintf(header, sizeof(header),
-      ",\"support_transfer_shadow\":{\"revision\":2,\"output_enabled\":false,\"worker_ready\":%s"
+      ",\"support_transfer_shadow\":{\"revision\":3,\"output_enabled\":false,\"worker_ready\":%s"
       ",\"submitted\":%" PRIu32 ",\"replaced\":%" PRIu32 ",\"unavailable\":%" PRIu32
       ",\"completed\":%" PRIu32 ",\"abandoned\":%" PRIu32 ",\"stored\":%" PRIu32
       ",\"max_ready_after_us\":%" PRIu32 ",\"max_solve_us\":%" PRIu32 ",\"rise_tau_s\":%.7f",
@@ -188,7 +200,9 @@ void SupportTransferAudit::append(PsramString& json) const {
     row.integer(s.raw_vbat_mv); row.integer(s.model_vbat_mv); row.integer(s.model_vbat_status);
     row.integer(static_cast<unsigned>(d.phase)); row.integer(static_cast<unsigned>(d.anchor));
     row.number(d.terminal_deg); row.number(d.terminal_ms); row.integer(r.coast_frames);
-    row.integer(s.pulse_id); row.integer(s.captured_us);
+    row.integer(s.pulse_id);
+    if (s.current_after_zero_ms == UINT16_MAX) row.number(NAN); else row.integer(s.current_after_zero_ms);
+    row.integer(s.captured_us);
     row.finish();
   };
   uint32_t exported = 0;
