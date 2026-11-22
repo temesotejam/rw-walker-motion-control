@@ -211,7 +211,7 @@ bool WebUi::queueStart() {
   start_submitted_ = control_->request(RunControlWorker::Command::Start, start_target_deg_,
                                        start_input_peak_percent_, start_input_current_mA_,
                                        start_brake_max_ms_, start_peak_adaptation_enabled_,
-                                       start_energy_bridge_enabled_, start_negative_probe_mode_, start_profile_);
+                                       start_energy_bridge_enabled_, start_negative_probe_mode_);
   return start_submitted_;
 }
 OfflineRunSession::StartResult WebUi::startResult() {
@@ -268,8 +268,10 @@ void WebUi::command(RunControlWorker::Command cmd) {
     server_->send(409, "text/plain", "clear_previous_run_first"); return;
   }
   const String model = cmd == RunControlWorker::Command::Start ? server_->arg("energy_model") : String();
-  const auto profile = walking_trial::requestedProfile(model.c_str());
-  const bool work_control = model == "work_control" || profile!=walking_trial::Profile::None;
+  if (model.startsWith("work_control_")) {
+    server_->send(400,"text/plain","walking_mode_changed_reload_page"); return;
+  }
+  const bool work_control = model == "work_control";
   if (cmd == RunControlWorker::Command::Start && !work_start_policy::referenceAllowed(
       work_control,
       upright_reference::valid(st.upright_reference))) {
@@ -333,9 +335,8 @@ void WebUi::command(RunControlWorker::Command cmd) {
     const bool negative_probe_mode = server_->arg("energy_model") == "bridge_probe" ||
         negative_probe_batch_mode || negative_probe_extended_mode || positive_current_batch_mode;
     const bool energy_bridge_enabled = server_->arg("energy_model") != "quadratic";
-    if (profile!=walking_trial::Profile::None && !walking_trial::comparisonAllowed(profile,target_deg,input_peak_percent,input_current_mA,brake_max_ms,
-          peak_adaptation_enabled,energy_bridge_enabled,negative_probe_mode)) {
-      server_->send(400,"text/plain","walking_profile_requires_8deg_package"); return;
+    if (work_control && brake_max_ms!=40) {
+      server_->send(400,"text/plain","experiment_package_settings_invalid_reload_page"); return;
     }
     if ((negative_probe_mode && (!(positive_current_batch_mode ?
            autonomous_brake_limit::positiveCurrentBatch(brake_max_ms) : negative_probe_extended_mode ?
@@ -358,7 +359,6 @@ void WebUi::command(RunControlWorker::Command cmd) {
       start_peak_adaptation_enabled_ = peak_adaptation_enabled;
       start_energy_bridge_enabled_ = energy_bridge_enabled;
       start_negative_probe_mode_ = negative_probe_mode;
-      start_profile_ = profile;
       start_observed_ = start_submitted_ = cancel_sent_ = false;
       RuntimeDiag::setRunActive(true);
     }

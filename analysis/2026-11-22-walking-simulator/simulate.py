@@ -9,6 +9,7 @@ import sys
 import tempfile
 
 import add_early_watch
+import aid_current_delivery
 import phase_dynamics
 import post_zero_carry
 import receiving_carry
@@ -56,6 +57,7 @@ def evaluate_new(root, trial):
         reference.extend(rows)
     peaks = []
     test, counts = return_model.load_sections(trial, episodes=peaks)
+    motion = receiving_carry.CarryReplay(trial)
     return {'run': run, 'training_runs': list(return_model.PRIOR),
             'positive_peaks': counts[(3., 'positive_peak')],
             'peaks_missing_each_section': {str(int(s)): counts[(s, 'no_section')] for s in return_model.SECTIONS},
@@ -64,7 +66,9 @@ def evaluate_new(root, trial):
             'action_forecast': phase_dynamics.evaluate_trial(root, trial),
             'observed_return_history': return_history_replay.observed_intervention(trial),
             'observed_return_prediction': return_history_replay.observed_prediction(trial),
-            'receiving_carry': receiving_carry.evaluate_trial(trial),
+            'receiving_carry': receiving_carry.evaluate_trial(trial, motion),
+            'first_receiving_outcomes': receiving_carry.first_receiving_outcomes(motion),
+            'aid_current_delivery': aid_current_delivery.evaluate_trial(trial, motion),
             'post_zero': post_zero_carry.evaluate_trial(root, trial)}
 
 
@@ -210,6 +214,9 @@ def print_summary(result):
         print(f"  +3°から受け足の端まで　終端の記録 {summary['with_receiving_end']} 件、"
               f"無追加通電で採点 {summary['coast_evaluable']} 件、5°/s以上で到達 {summary['coast_carries']} 件")
         after = trial['post_zero']
+        delivery = trial['aid_current_delivery']
+        complete = [e for e in delivery if e.get('charge_status') == 'complete']
+        print(f"  左補助の実測電流　通電中と終了後の両区間を比較できたのは {len(complete)}/{len(delivery)} 件")
         print(f"  左向きZERO通過後　終端を実測 {after['observable_endpoints']} 件、"
               f"別走の類似例で速度予測を採点できたのは {after['supported_scored']} 件")
         for group, label in (('aid', '実補助'), ('coast', '惰行')):

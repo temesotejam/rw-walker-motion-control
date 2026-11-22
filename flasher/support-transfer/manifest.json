@@ -1,6 +1,6 @@
 {
-  "name": "RW Walker Left Return Comparison",
-  "version": "walking-support-transfer-v39-left-transfer-carry1",
+  "name": "RW Walker",
+  "version": "walking-support-transfer-v39-walk1",
   "new_install_improv_wait_time": 0,
   "builds": [
     {

@@ -15,10 +15,7 @@ import webbrowser
 
 ROOT = Path(__file__).resolve().parents[1]
 ENVIRONMENT = "atoms3cam-foot-periodic40"
-BUILD_ID = "walking-support-transfer-v39-left-transfer-carry1"
-CARRY1_ID = "walking-support-transfer-v39-carry1"
-CARRY1_SHA256 = "a03957520afb5c9be6364efa366b592799a9011963c036eadf2d973d059c6d5e"
-CARRY1_MANIFEST = "firmware/carry1-manifest.json"
+BUILD_ID = "walking-support-transfer-v39-walk1"
 PAGE = "support-transfer"
 URL = f"http://127.0.0.1:8767/{PAGE}/"
 PARTS = {"bootloader.bin": 0, "partitions.bin": 0x8000,
@@ -30,7 +27,8 @@ def check_page(root):
     flasher = root / "flasher"
     directory = flasher / PAGE
     html = (directory / "index.html").read_text(encoding="utf-8")
-    if BUILD_ID not in html or 'manifest="manifest.json"' not in html:
+    if (BUILD_ID not in html or 'manifest="manifest.json"' not in html
+            or html.count("<esp-web-install-button ") != 1):
         raise ValueError(f"Installer page does not identify {BUILD_ID}")
     if any(f'src="{name}"' not in html for name in SCRIPTS):
         raise ValueError("Installer page is missing a helper script")
@@ -49,7 +47,7 @@ def check_page(root):
     return directory
 
 
-def validate_parts(parts, build_id=BUILD_ID):
+def validate_parts(parts):
     if any(not data for data in parts.values()):
         raise ValueError("An installer binary is empty")
     # Bound the boot images to their flash regions and the application to app0
@@ -74,9 +72,9 @@ def validate_parts(parts, build_id=BUILD_ID):
         raise ValueError("Partition table does not match the app0 and OTA regions")
     # Builds can contain multiple version strings in the embedded browser code.
     # The firmware's RWLOG metadata serializer emits this independent literal.
-    identity = b'"diagnostic_build_id":"' + build_id.encode() + b'",\x00'
+    identity = b'"diagnostic_build_id":"' + BUILD_ID.encode() + b'",\x00'
     if identity not in parts["firmware.bin"]:
-        raise ValueError(f"Application does not contain the expected identity {build_id}")
+        raise ValueError(f"Application does not contain the expected identity {BUILD_ID}")
 
 
 def boot_app_path():
@@ -97,37 +95,25 @@ def check(root=ROOT):
     for name in SCRIPTS:
         if (directory / name).read_bytes() != (directory.parent / name).read_bytes():
             raise ValueError(f"Packaged helper differs from source: {name}")
-    if (directory / CARRY1_MANIFEST).exists():
-        check_carry1(directory)
     return {name: hashlib.sha256(data).hexdigest() for name, data in parts.items()}
 
 
-def carry1_manifest():
-    parts = [{"path": f"carry1-{CARRY1_SHA256}.bin" if name == "firmware.bin" else name,
-              "offset": offset} for name, offset in PARTS.items()]
-    return {"name": "RW Walker carry1 (November 20 baseline)", "version": CARRY1_ID,
-            "new_install_improv_wait_time": 0, "builds": [{"chipFamily": "ESP32-S3", "parts": parts}]}
-
-
-def check_carry1(directory, source=None):
-    manifest = carry1_manifest()
-    path = directory / CARRY1_MANIFEST
-    if source is None and json.loads(path.read_bytes()) != manifest:
-        raise ValueError("Unexpected carry1 comparison manifest")
-    parts = {name: (source if source is not None and name == "firmware.bin" else
-                    path.parent / row["path"]).read_bytes()
-             for name, row in zip(PARTS, manifest["builds"][0]["parts"])}
-    if hashlib.sha256(parts["firmware.bin"]).hexdigest() != CARRY1_SHA256:
-        raise ValueError("The carry1 application differs from the recorded walking trial")
-    validate_parts(parts, CARRY1_ID)
-    if source is not None:
-        # Publish the manifest only after the exact application is in place.
-        with tempfile.TemporaryDirectory(dir=path.parent) as temp:
-            staged = Path(temp) / "staged"
-            staged.write_bytes(parts["firmware.bin"])
-            os.replace(staged, path.parent / manifest["builds"][0]["parts"][-1]["path"])
-            staged.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-            os.replace(staged, path)
+def retire_previous_installers(root):
+    # Git updates the old landing pages, but generated files survive checkout.
+    # Keep those images outside the served tree, including for cached old pages.
+    public = root / "flasher"
+    old_files = [Path(PAGE, "firmware", "carry1-manifest.json"),
+                 Path(PAGE, "firmware", "carry1-a03957520afb5c9be6364efa366b592799a9011963c036eadf2d973d059c6d5e.bin")]
+    old_files.extend(Path("foot-periodic40", "firmware", name) for name in PARTS)
+    present = [relative for relative in old_files if (public / relative).is_file()]
+    if present:
+        retired = root / ".pio" / "retired-installers"
+        retired.mkdir(parents=True, exist_ok=True)
+        archive = Path(tempfile.mkdtemp(prefix="pre-walk1-", dir=retired))
+        for relative in present:
+            destination = archive / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(public / relative, destination)
 
 
 def prepare(root=ROOT, boot_app=None):
@@ -164,6 +150,7 @@ def prepare(root=ROOT, boot_app=None):
                 else:
                     os.replace(backup, dest)
             raise
+    retire_previous_installers(root)
     return check(root)
 
 
@@ -180,8 +167,6 @@ def serve(root=ROOT):
         # Confirm its files before handing the browser to a reused port.
         client = build_opener(ProxyHandler({}))
         names = ["index.html", "manifest.json", *SCRIPTS, *("firmware/" + n for n in PARTS)]
-        if (directory / PAGE / CARRY1_MANIFEST).exists():
-            names.extend([CARRY1_MANIFEST, f"firmware/carry1-{CARRY1_SHA256}.bin"])
         for name in names:
             expected = (directory / PAGE / name).read_bytes()
             with client.open(URL + name, timeout=5) as response:
@@ -203,14 +188,10 @@ if __name__ == "__main__":
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="Verify the currently staged files without replacing them")
     mode.add_argument("--serve", action="store_true", help="Verify and open the current installer in a browser")
-    mode.add_argument("--carry1-app", type=Path, help="Stage the original November 20 carry1 app as a comparison")
     args = parser.parse_args()
     try:
         if args.serve:
             serve()
-        elif args.carry1_app:
-            check_carry1(check_page(ROOT), args.carry1_app)
-            print(f"{CARRY1_ID} {CARRY1_SHA256}")
         else:
             hashes = check() if args.check else prepare()
             print(json.dumps({"version": BUILD_ID, "url": URL, "sha256": hashes}, indent=2))

@@ -1188,12 +1188,7 @@ const char* ExperimentRunner::energyControlAutonomousPhaseName() const {
   }
 }
 
-bool ExperimentRunner::startEnergyControlAutonomousCapture(walking_trial::Profile requested) {
-  if (requested!=walking_trial::Profile::None && !walking_trial::comparisonAllowed(requested,energy_control_autonomous_target_peak_deg_,
-          energy_control_autonomous_input_peak_percent_,energy_control_autonomous_input_current_mA_,
-          energy_control_autonomous_brake_max_ms_,peak_adaptation_enabled_,energy_bridge_enabled_,negative_probe_mode_)) {
-    status_.last_error="walking_profile_requires_8deg_package"; return false;
-  }
+bool ExperimentRunner::startEnergyControlAutonomousCapture() {
   if (!logger_ || !imu_ || !roller_) return false;
   if (logger_->downloading()) { status_.last_error="log_download_in_progress"; return false; }
   if (!logger_->ready()) { status_.last_error = "psram_not_ready"; return false; }
@@ -1311,10 +1306,8 @@ bool ExperimentRunner::startEnergyControlAutonomousCapture(walking_trial::Profil
   status_.emergency_stop = false;
   status_.last_error = "";
   status_.sync_event_id = 0;
-  const bool comparison=walking_trial::comparison_enabled && wheelWorkMode() &&
-      energy_control_autonomous_target_peak_deg_==8.f && energy_control_autonomous_input_peak_percent_==0.f;
-  const auto profile=requested!=walking_trial::Profile::None ? requested :
-      comparison ? walking_trial::standardProfile() : walking_trial::Profile::None;
+  const auto profile=walking_trial::forRun(wheelWorkMode(),energy_control_autonomous_target_peak_deg_,
+                                           energy_control_autonomous_input_peak_percent_);
   beginStartSync(millis(),profile);
   return true;
 }

@@ -108,8 +108,30 @@ class CarryReplay:
                 'recorded_command': exposure, 'coast_scored': carry is not None and exposure == 'no_recorded_command'}
 
 
-def evaluate_trial(folder):
-    dataset = CarryReplay(folder)
+def first_receiving_outcomes(dataset):
+    """Measured speed at the CAD endpoint from the first completed receiving plan per right peak."""
+    outcomes = []
+    for _, peak, side in dataset.confirmations:
+        if side != 1:
+            continue
+        plans = dataset.by_peak.get(peak, ())
+        first = min((p for p in plans if p[2].get('side') == '-1' and p[2].get('phase') == '2'
+                     and p[2].get('anchor') in ('1', '2')), key=lambda p: p[1], default=None)
+        if first is None:
+            outcomes.append(dict(peak_ms=peak, status='no_receiving_anchor'))
+            continue
+        captured, ready, row = first
+        target = audit.numeric(row.get('terminal_deg'))
+        if target is None or target >= 0:
+            outcomes.append(dict(peak_ms=peak, status='invalid_left_endpoint'))
+            continue
+        plan = dict(peak_ms=peak, captured_ms=captured, decision_ms=ready, terminal_deg=target)
+        outcomes.append(dict(plan, **dataset.follow(plan)))
+    return outcomes
+
+
+def evaluate_trial(folder, dataset=None):
+    dataset = dataset if dataset is not None else CarryReplay(folder)
     states, _ = return_model.load_sections(folder, sections=(4.5, 3., 2.))
     events = []
     for entry in states:

@@ -1,40 +1,21 @@
 #pragma once
 #include <cstdint>
-#include <cstring>
 
 namespace walking_trial {
 enum class Profile : uint8_t { None, Turn3, SmallStep, RightArrival, CarryHistory, ReturnPrediction, LeftTransferCarryV1 };
-#if WALKING_SMALL_STEP_AB
-constexpr bool comparison_enabled=true;
-#else
-constexpr bool comparison_enabled=false;
-#endif
-
-inline Profile requestedProfile(const char* model) {
-  if (comparison_enabled && model && std::strcmp(model,"work_control_small_step")==0) return Profile::SmallStep;
-#if WALKING_RETURN_HISTORY
-  if (model && std::strcmp(model,"work_control_return_history")==0) return Profile::CarryHistory;
-  if (model && std::strcmp(model,"work_control_return_prediction")==0) return Profile::ReturnPrediction;
-  if (model && std::strcmp(model,"work_control_left_transfer_carry")==0) return Profile::LeftTransferCarryV1;
-#endif
-  return Profile::None;
-}
-inline constexpr Profile standardProfile() {
-#if WALKING_RIGHT_ARRIVAL
+// The accepted run settings determine the logged and executed policy. Earlier
+// names remain available for interpreting archived measurements.
+inline Profile forRun(bool wheel_work, float target_deg, float input_percent) {
+  if (!wheel_work || target_deg!=8.f || input_percent!=0.f) return Profile::None;
+#if WALKING_SMALL_STEP_AB && WALKING_RETURN_HISTORY
+  return Profile::LeftTransferCarryV1;
+#elif WALKING_SMALL_STEP_AB && WALKING_RIGHT_ARRIVAL
   return Profile::RightArrival;
-#else
+#elif WALKING_SMALL_STEP_AB
   return Profile::Turn3;
+#else
+  return Profile::None;
 #endif
-}
-inline bool comparisonAllowed(Profile profile, float target, float percent, int current, unsigned brake,
-                             bool adaptation, bool bridge, bool probe) {
-  const bool available = profile==Profile::SmallStep
-#if WALKING_RETURN_HISTORY
-      || profile==Profile::CarryHistory || profile==Profile::ReturnPrediction || profile==Profile::LeftTransferCarryV1
-#endif
-      ;
-  return comparison_enabled && available && target==8.f && percent==0.f && current==300 &&
-      brake==40 && !adaptation && bridge && !probe;
 }
 inline const char* name(Profile profile) {
   switch (profile) {

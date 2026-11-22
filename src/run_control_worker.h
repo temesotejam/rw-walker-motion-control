@@ -125,10 +125,8 @@ class RunControlWorker {
                uint16_t brake_max_ms = 0,
                bool peak_adaptation_enabled = true,
                bool energy_bridge_enabled = true,
-               bool negative_probe_mode = false, walking_trial::Profile profile = walking_trial::Profile::None) {
+               bool negative_probe_mode = false) {
     if (!ready() || command == Command::None) return false;
-    if (profile!=walking_trial::Profile::None && (command != Command::Start || !walking_trial::comparisonAllowed(
-        profile,target_deg,input_peak_percent,input_current_mA,brake_max_ms,peak_adaptation_enabled,energy_bridge_enabled,negative_probe_mode))) return false;
     if (command == Command::Start && (!autonomous_target::selectable(target_deg) ||
         !autonomous_input_percent::valid(input_peak_percent) ||
         !autonomous_input_current::valid(input_current_mA) ||
@@ -153,7 +151,6 @@ class RunControlWorker {
       command_peak_adaptation_enabled_ = peak_adaptation_enabled;
       command_energy_bridge_enabled_ = energy_bridge_enabled;
       command_negative_probe_mode_ = negative_probe_mode;
-      command_profile_ = profile;
       command_state_.pending = true; ++command_state_.submitted;
     }
     portEXIT_CRITICAL(&mux_);
@@ -164,7 +161,7 @@ class RunControlWorker {
                       uint16_t* brake_max_ms = nullptr,
                       bool* peak_adaptation_enabled = nullptr,
                       bool* energy_bridge_enabled = nullptr,
-                      bool* negative_probe_mode = nullptr, walking_trial::Profile* profile = nullptr) {
+                      bool* negative_probe_mode = nullptr) {
     portENTER_CRITICAL(&mux_);
     const Command command = stop_requested_ ? Command::None : command_;
     if (command != Command::None) {
@@ -175,7 +172,6 @@ class RunControlWorker {
       if (peak_adaptation_enabled) *peak_adaptation_enabled = command_peak_adaptation_enabled_;
       if (energy_bridge_enabled) *energy_bridge_enabled = command_energy_bridge_enabled_;
       if (negative_probe_mode) *negative_probe_mode = command_negative_probe_mode_;
-      if (profile) *profile = command_profile_;
       command_ = Command::None;
     }
     portEXIT_CRITICAL(&mux_);
@@ -390,7 +386,6 @@ class RunControlWorker {
   bool command_peak_adaptation_enabled_ = true;
   bool command_energy_bridge_enabled_ = true;
   bool command_negative_probe_mode_ = false;
-  walking_trial::Profile command_profile_ = walking_trial::Profile::None;
   float command_target_deg_ = Config::ENERGY_CONTROL_AUTONOMOUS_DEFAULT_TARGET_PEAK_DEG;
   CommandState command_state_;
   RunControlSnapshot snapshot_;

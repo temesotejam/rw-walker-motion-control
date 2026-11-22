@@ -165,7 +165,7 @@ public:
   // can enter this path.
   bool startQIdentCapture(uint8_t q_ident_run_schedule_id);  // Frozen: fail closed in this revision.
   bool startEnergyControlV0Capture();
-  bool startEnergyControlAutonomousCapture(walking_trial::Profile requested=walking_trial::Profile::None);
+  bool startEnergyControlAutonomousCapture();
   bool carryHistoryTrialSelected() const {
     return logger_ && (logger_->walkingTrialProfile()==walking_trial::Profile::CarryHistory ||
                        returnPredictionTrialSelected());

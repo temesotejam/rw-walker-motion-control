@@ -1,6 +1,5 @@
 """Offline checks for the current download paths and wrong-build rejection."""
 import json
-import hashlib
 from pathlib import Path
 import shutil
 import struct
@@ -81,24 +80,32 @@ class InstallerTests(unittest.TestCase):
         helper.write_bytes(original)
         self.assertEqual(flasher.check(self.root), known)
 
-    def test_comparison_requires_the_original_app_and_keeps_the_main_manifest(self):
+    def test_update_retires_previous_images_away_from_cached_installer_urls(self):
+        old = [Path("support-transfer/firmware/carry1-manifest.json"),
+               Path("support-transfer/firmware/carry1-a03957520afb5c9be6364efa366b592799a9011963c036eadf2d973d059c6d5e.bin"),
+               Path("foot-periodic40/firmware/firmware.bin")]
+        for relative in old:
+            source = self.root / "flasher" / relative
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_bytes(relative.as_posix().encode())
         hashes = flasher.prepare(self.root, self.boot_app)
-        archived = self.root / "archived.bin"
-        original = self.application.replace(flasher.BUILD_ID.encode(), flasher.CARRY1_ID.encode())
-        archived.write_bytes(original)
-        with patch.object(flasher, "CARRY1_SHA256", hashlib.sha256(original).hexdigest()):
-            flasher.check_carry1(self.page, archived)
-            self.assertEqual(flasher.check(self.root), hashes)
-            archived.write_bytes(original + b"unverified")
-            with self.assertRaisesRegex(ValueError, "recorded walking trial"):
-                flasher.check_carry1(self.page, archived)
-            flasher.check_carry1(self.page)
-            manifest = self.page / flasher.CARRY1_MANIFEST
-            altered = json.loads(manifest.read_bytes())
-            altered["builds"][0]["parts"][-1]["path"] = "firmware.bin"
-            manifest.write_text(json.dumps(altered), encoding="utf8")
-            with self.assertRaisesRegex(ValueError, "comparison manifest"):
-                flasher.check_carry1(self.page)
+        self.assertEqual(hashes, flasher.prepare(self.root, self.boot_app))
+        archive, = (self.root / ".pio/retired-installers").iterdir()
+        for relative in old:
+            self.assertFalse((self.root / "flasher" / relative).exists())
+            self.assertEqual((archive / relative).read_bytes(), relative.as_posix().encode())
+        self.assertEqual((self.page / "firmware" / "firmware.bin").read_bytes(), self.application)
+
+    def test_only_one_installer_is_published(self):
+        html = self.page / "index.html"
+        self.assertNotIn("carry1-manifest", html.read_text(encoding="utf-8"))
+        old = ROOT / "flasher" / "foot-periodic40"
+        self.assertIn('url=../support-transfer/', (old / "index.html").read_text(encoding="utf-8"))
+        self.assertFalse((old / "manifest.json").exists())
+        with html.open("a", encoding="utf-8") as stream:
+            stream.write('<esp-web-install-button manifest="other.json"></esp-web-install-button>')
+        with self.assertRaisesRegex(ValueError, "Installer page"):
+            flasher.check_page(self.root)
 
 
 if __name__ == "__main__":

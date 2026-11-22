@@ -49,7 +49,7 @@ vm.runInContext(code,context);
   assert.strictEqual(element('inverse-start').disabled,false);
   // The main pitch display can use the saved upright zero. The pre-start
   // comparison must use the unchanged absolute posterior actually in RWLOG.
-  const startPose={...valid,diagnostic_build_id:'walking-support-transfer-v39-left-transfer-carry1',
+  const startPose={...valid,diagnostic_build_id:'walking-support-transfer-v39-walk1',
     pitch_deg:-0.13,mekf:{valid:true,fresh:true,pitch_deg:2.07}};
   context.fetch=async()=>({ok:true,json:async()=>startPose});
   await vm.runInContext('refresh()',context);
@@ -87,7 +87,11 @@ vm.runInContext(code,context);
   assert.match(html,/id="probe-batch"/);
   assert.match(html,/id="inverse-start"/);
   assert.doesNotMatch(html,/id="probe-(0|15|30)"/);
-  assert.match(html,/ZEROクロスで必要な入力時間を計算/);
+  const walkingArea = html.split('<div id="work-energy-control">')[1].split('</div>')[0];
+  assert.deepStrictEqual([...walkingArea.matchAll(/<button id="([^"]+)"/g)].map(match => match[1]), ['work-start']);
+  assert.match(walkingArea,/歩行を開始（±8°・30秒）/);
+  assert.doesNotMatch(html,/id="(?:small-step|return-history|return-prediction|left-transfer-carry)-start"|<option value="work_control"/);
+  assert.match(html,/<details id="fixed-leg-diagnostics"><summary>固定脚の測定・校正<\/summary>[\s\S]+id="work-start-10"[\s\S]+id="work-start-12"/);
   assert.doesNotMatch(html,/±0.2|応答確認|ジャイロ方位/);
   assert.strictEqual(element('right').textContent,'8.00°'); // Tilting does not invalidate a locked zero.
   assert.strictEqual(element('left').textContent,'-6.00°');
@@ -260,87 +264,43 @@ vm.runInContext(code,context);
   vm.runInContext('latest=null;lastSeen=0;controls()',context);
   assert.strictEqual(element('work-start').disabled,true);
   assert.match(element('work-start-status').textContent,/通信/);
-  gate.diagnostic_build_id='walking-support-transfer-v39-smallstep-ab';
+  gate.diagnostic_build_id='walking-support-transfer-v39-walk1';
+  gate.foot_periodic=footPacket;
   vm.runInContext('adoptStatus(gate);render(gate)',context);
-  assert.strictEqual(element('small-step-start').hidden,false);
-  assert.strictEqual(element('small-step-start').disabled,true);
+  assert.match(element('work-description').textContent,/左足に支持が移った後/);
+  assert.doesNotMatch(element('work-description').textContent,/選んで|比較|v14/);
+  assert.strictEqual(element('work-start').disabled,true);
   const startRequests=[];
   context.fetch=async(path,opts)=>{
     assert.strictEqual(opts.method,'POST');
     startRequests.push(new URL(path,'http://device'));
     return {ok:true,text:async()=>'offline_run_queued'};
   };
-  await element('small-step-start').onclick();
+  await element('work-start').onclick();
   assert.strictEqual(startRequests.length,0);
   gate.foot_control_ready=true;
   element('input-current').value='300';
-  for(const [button,model] of [['small-step-start','work_control_small_step'],['work-start','work_control']]){
-    vm.runInContext('clearOffline();adoptStatus(gate);render(gate)',context);
-    assert.strictEqual(element(button).disabled,false);
-    await element(button).onclick();
-    const request=startRequests.pop();
-    assert.strictEqual(request.pathname,'/start-energy-control-autonomous');
-    assert.deepStrictEqual(Object.fromEntries(request.searchParams),
-      {target_deg:'8',input_peak_percent:'0',input_current_mA:'300',brake_max_ms:'40',peak_adaptation:'0',energy_model:model});
-    assert.strictEqual(/v14/.test(element('run-model').textContent),button==='small-step-start');
-  }
-  vm.runInContext("clearOffline();adoptStatus({...gate, diagnostic_build_id:'walking-support-transfer-v39-turn3'});render(latest)",context);
-  assert.strictEqual(element('small-step-start').hidden,true);
-  await element('small-step-start').onclick();
-  assert.strictEqual(startRequests.length,0);
-  vm.runInContext("clearOffline();adoptStatus({...gate,diagnostic_build_id:'walking-support-transfer-v39-arrival1'});render(latest)",context);
-  assert.strictEqual(element('small-step-start').hidden,false);
+  vm.runInContext('adoptStatus(gate);render(gate)',context);
   assert.strictEqual(element('work-start').disabled,false);
-  assert.match(element('work-start').textContent,/右への振れ/);
+  assert.match(element('work-start-status').textContent,/歩行を開始できます/);
   await element('work-start').onclick();
-  assert.strictEqual(startRequests.pop().searchParams.get('energy_model'),'work_control');
-  vm.runInContext("renderWalkingProfile('right_arrival_v1')",context);
-  assert.match(element('run-model').textContent,/到達エネルギー/);
-  assert.strictEqual(element('return-history-start').hidden,true);
-  await element('return-history-start').onclick();
-  assert.strictEqual(startRequests.length,0);
-  for(const ready of [false,true]){
-    gate.foot_control_ready=ready;
-    vm.runInContext("clearOffline();adoptStatus({...gate,diagnostic_build_id:'walking-support-transfer-v39-return-history1'});render(latest)",context);
-    assert.strictEqual(element('return-history-start').hidden,false);
-    assert.strictEqual(element('return-history-start').disabled,!ready);
-    await element('return-history-start').onclick();
-    if(ready) assert.strictEqual(startRequests.pop().searchParams.get('energy_model'),'work_control_return_history');
-    else assert.strictEqual(startRequests.length,0);
-  }
-  vm.runInContext("renderWalkingProfile('left_return_history_v1')",context);
-  assert.match(element('run-model').textContent,/左への戻り/);
-  assert.strictEqual(element('return-prediction-start').hidden,true);
-  await element('return-prediction-start').onclick();
-  assert.strictEqual(startRequests.length,0);
-  for(const ready of [false,true]){
-    gate.foot_control_ready=ready;
-    vm.runInContext("clearOffline();adoptStatus({...gate,diagnostic_build_id:'walking-support-transfer-v39-return-prediction1'});render(latest)",context);
-    assert.strictEqual(element('return-prediction-start').hidden,false);
-    assert.strictEqual(element('return-prediction-start').disabled,!ready);
-    assert.strictEqual(element('return-history-start').hidden,false);
-    await element('return-prediction-start').onclick();
-    if(ready) assert.strictEqual(startRequests.pop().searchParams.get('energy_model'),'work_control_return_prediction');
-    else assert.strictEqual(startRequests.length,0);
-  }
-  vm.runInContext("renderWalkingProfile('left_return_prediction_v1')",context);
-  assert.match(element('run-model').textContent,/支持移行を予測/);
-  assert.strictEqual(element('left-transfer-carry-start').hidden,true);
-  await element('left-transfer-carry-start').onclick();
-  assert.strictEqual(startRequests.length,0);
-  for(const ready of [false,true]){
-    gate.foot_control_ready=ready;
-    vm.runInContext("clearOffline();adoptStatus({...gate,diagnostic_build_id:'walking-support-transfer-v39-left-transfer-carry1'});render(latest)",context);
-    assert.strictEqual(element('left-transfer-carry-start').hidden,false);
-    assert.strictEqual(element('left-transfer-carry-start').disabled,!ready);
-    assert.strictEqual(element('return-prediction-start').hidden,false);
-    await element('left-transfer-carry-start').onclick();
-    if(ready) assert.strictEqual(startRequests.pop().searchParams.get('energy_model'),'work_control_left_transfer_carry');
-    else assert.strictEqual(startRequests.length,0);
-  }
-  vm.runInContext("renderWalkingProfile('left_transfer_carry_v1')",context);
+  await element('work-start').onclick();
+  assert.strictEqual(startRequests.length,1);
+  assert.strictEqual(startRequests[0].pathname,'/start-energy-control-autonomous');
+  assert.deepStrictEqual(Object.fromEntries(startRequests[0].searchParams),
+    {target_deg:'8',input_peak_percent:'0',input_current_mA:'300',brake_max_ms:'40',peak_adaptation:'0',energy_model:'work_control'});
+  assert.match(element('run-model').textContent,/開始要求.*左支持に移った後/);
+  context.fetch=async()=>({ok:true,json:async()=>({periodic_run:true,foot_periodic:footPacket,walking_profile:'left_transfer_carry_v1',
+    state:'RUNNING_BATCH_SWEEP',remaining_ms:24000,pitch_deg:1,motor_mA:0,actual_mA:0})});
+  await vm.runInContext('refresh()',context);
   assert.match(element('run-model').textContent,/左支持に移った後/);
-  console.log('walking A/B: same start gate, explicit profile requests and legacy firmware guard PASS');
+  assert.match(element('run-percent').textContent,/足姿勢と胴体の減速/);
+  assert.match(element('work-start-status').textContent,/歩行測定中/);
+  for (const [profile,text] of [['left_return_history_v1',/左への戻り/],['left_return_prediction_v1',/支持移行を予測/],['right_arrival_v1',/到達エネルギー/]]) {
+    vm.runInContext(`renderWalkingProfile('${profile}')`,context);
+    assert.match(element('run-model').textContent,text);
+  }
+  console.log('single walking start, camera gate, queued and reported support transfer, preserved historical run display PASS');
   console.log('v17 Start: detected but uncalibrated/zero pending/stale explanations, actual gate, null/offline and release text PASS');
   console.log('neutral-zero gate, frozen preview metadata/pixels, five bounded chunks, whole CRC and token failure recovery PASS');
   console.log('foot failure reasons, tilted/range/terminal display, body timeout, status recovery, stale authority and corrupt chunks PASS');
