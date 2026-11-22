@@ -95,7 +95,7 @@ function supportTransferTrial(s) {
   return /^walking-support-transfer-v39(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function singleWalkingBuild(s = latest) {
-  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3'].includes(s?.diagnostic_build_id);
+  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3', 'walking-support-transfer-v39-walk4'].includes(s?.diagnostic_build_id);
 }
 function foreAftStopText(reason) {
   return ({
@@ -519,7 +519,7 @@ async function refreshStatus(force) {
       setOffline(0);
       $('connection').textContent = '接続中 · 測定状態を自動更新';
       $('state').textContent = s.state;
-      $('work-start-status').textContent = ['left_transfer_carry_v1', 'left_transfer_carry_v2', 'left_transfer_carry_v3'].includes(s.walking_profile) ? '歩行測定中です。' : '測定中です。';
+      $('work-start-status').textContent = ['left_transfer_carry_v1', 'left_transfer_carry_v2', 'left_transfer_carry_v3', 'left_transfer_carry_v4'].includes(s.walking_profile) ? '歩行測定中です。' : '測定中です。';
       renderWalkingProfile(s.walking_profile);
       $('remaining').textContent = format(s.remaining_ms / 1000, 1) + ' s';
       $('pitch').textContent = format(s.pitch_deg) + '°';
@@ -598,6 +598,9 @@ function renderWalkingProfile(profile) {
     $('run-model').textContent = '次のピークに必要な仕事から通電幅を選びます。';
     $('run-brake').textContent = '前倒し入力は最長15 msです。';
     $('run-adaptation').textContent = '左右のピークをエネルギー計算に使います。';
+  } else if (profile === 'left_transfer_carry_v4') {
+    $('run-model').textContent = '中心を越えるための補助と、中心通過後の主入力に仕事を配分します。';
+    $('run-percent').textContent = '足の姿勢と胴体の戻り方から必要な通電時間を計算します。';
   } else if (profile === 'left_transfer_carry_v3') {
     $('run-model').textContent = '右への振り過ぎを抑え、左補助の後も中心に届くか再計算します。';
     $('run-percent').textContent = '左へ進む速度が再び落ちたときは、残った通電時間で不足する仕事を補います。';
@@ -726,8 +729,9 @@ function openCache() {
   return cachePromise;
 }
 async function cacheGet(key) {
+  if (memoryCache.has(key)) return memoryCache.get(key);
   const db = await openCache();
-  if (!db) return memoryCache.get(key);
+  if (!db) return;
   return new Promise(resolve => {
     const tx = db.transaction('chunks', 'readonly'), r = tx.objectStore('chunks').get(key);
     r.onsuccess = () => resolve(r.result); r.onerror = () => resolve(undefined);
@@ -764,6 +768,21 @@ function validateChunk(bytes, offset, length) {
     throw new Error('チャンク識別情報の不一致');
   if (crc32(bytes.subarray(16)) !== view.getUint32(12, true)) throw new Error('チャンクCRC不一致');
   return bytes.subarray(16);
+}
+function exportPackets(bytes, offset, length, chunkBytes) {
+  const count = Math.ceil(length / chunkBytes);
+  if (bytes.length !== length + 16 * count) throw new Error('チャンク長の不一致');
+  const packets = [];
+  for (let at = 0; length; ) {
+    const n = Math.min(chunkBytes, length);
+    const packet = count === 1 ? bytes : bytes.slice(at, at + n + 16);
+    validateChunk(packet, offset, n);
+    packets.push(packet);
+    at += n + 16;
+    offset += n;
+    length -= n;
+  }
+  return packets;
 }
 function saveBlob(blob, name) {
   const url = URL.createObjectURL(blob), a = document.createElement('a');
@@ -848,15 +867,17 @@ async function diagnosticSnapshotWithDetails() {
   } finally { diagnosticInFlight = false; controls(); }
   return snapshot;
 }
-async function exportRequest(path, options, label, validate = value => value) {
+async function exportRequest(path, options, label, validate = value => value, tryOnce = false) {
   // Allow a stopped device time to recover its transport. The first firmware
   // with recovery predates the status capability flag.
   const hasWifiRecovery = latest?.wifi_export_recovery === true ||
     latest?.diagnostic_build_id === 'walking-support-transfer-v39-webfix2';
-  const deadline = Date.now() + 70000;
+  const canResume = hasWifiRecovery && transferDiagnostic?.phase === 'chunks';
+  const deadline = Date.now() + (canResume ? 180000 : 70000);
   for (let attempt = 1; ; ++attempt) {
     transferCheck();
     transferNote({request:path, attempt, request_started_at:new Date().toISOString()});
+    if (transferDiagnostic.phase === 'chunks') transferNote({chunk_requests:transferDiagnostic.chunk_requests + 1});
     try {
       const value = await request(path, {...options, timeout:exportPolicy.requestTimeoutMs, signal:transferAbort?.signal});
       transferCheck();
@@ -869,8 +890,10 @@ async function exportRequest(path, options, label, validate = value => value) {
       const permanent = !preparingRun && Number.isInteger(error.status) && error.status >= 400 && error.status < 500 &&
         ![408,429].includes(error.status);
       const linkLost = error.name === 'TypeError' || error.code === 'request_timeout';
-      const maxAttempts = hasWifiRecovery && linkLost ? 9 : exportPolicy.maxAttempts;
-      if (permanent || attempt >= maxAttempts || Date.now() >= deadline) throw error;
+      const busy = [408,429,502,503,504].includes(error.status);
+      const maxAttempts = canResume && (linkLost || busy) ? 20 :
+        hasWifiRecovery && linkLost ? 9 : exportPolicy.maxAttempts;
+      if (tryOnce || permanent || attempt >= maxAttempts || Date.now() >= deadline) throw error;
       transferNote({retries:transferDiagnostic.retries + 1});
       $('transfer').textContent = `${label} · 通信を再試行 ${attempt}/${maxAttempts - 1}`;
       await waitForTransfer(Math.min(1000 * 2 ** (attempt - 1), 12000, deadline - Date.now()));
@@ -883,9 +906,9 @@ async function download() {
   transferAbort = new AbortController();
   const session = latest?.wifi_export_recovery === true && Number.isInteger(latest.boot_id) && Number.isInteger(latest.run_id)
     ? {client:Math.floor(Math.random() * 0xffffffff) + 1, boot_id:latest.boot_id, run_id:latest.run_id} : null;
-  transferDiagnostic = {revision:'resumable_export_retry_v2', phase:'prepare',
+  transferDiagnostic = {revision:'resumable_export_batch_v3', phase:'prepare',
     started_at:new Date().toISOString(), boot_id:latest?.boot_id ?? null, run_id:latest?.run_id ?? null,
-    confirmed_bytes:0, cached_bytes:0, received_bytes:0, retries:0, manifest:null, last_failure:null};
+    confirmed_bytes:0, cached_bytes:0, received_bytes:0, retries:0, chunk_requests:0, manifest:null, last_failure:null};
   try {
     $('transfer').textContent = 'ログを確定中…';
     // A poll may already hold the device's single HTTP client when clicked.
@@ -927,21 +950,51 @@ async function download() {
     await pruneCache(m.token);
     transferNote({phase:'chunks'});
     const file = new Uint8Array(m.bytes); $('progress').max = m.bytes; $('progress').value = 0;
+    const group = m.chunks_per_response === 4 ? 4 : 1;
+    let singleRemaining = 0, failedBatches = 0;
     for (let offset = 0; offset < m.bytes;) {
       transferCheck();
       const length = Math.min(m.chunk_bytes, m.bytes - offset), key = `${m.token}:${offset}`;
-      let payload, packet = await cacheGet(key);
-      if (packet) { try { payload = validateChunk(packet, offset, length); } catch { packet = null; } }
-      if (payload) transferNote({cached_bytes:transferDiagnostic.cached_bytes + length});
-      else {
-        packet = await exportRequest(`/export/chunk?token=${m.token}&offset=${offset}&length=${length}`,
-          {kind:'bytes'}, `${offset} bytesまで取得済み`, bytes => { validateChunk(bytes, offset, length); return bytes; });
-        payload = validateChunk(packet, offset, length); await cachePut(key, packet);
-        transferNote({received_bytes:transferDiagnostic.received_bytes + length});
+      let cached = await cacheGet(key);
+      if (cached) { try { validateChunk(cached, offset, length); } catch { cached = null; } }
+      let packets = [cached];
+      if (!cached) {
+        // End a batch before an already retained packet, including after a page reload.
+        let requested = length;
+        const limit = (!singleRemaining && failedBatches < 2 ? group : 1) * m.chunk_bytes;
+        while (requested < limit && offset + requested < m.bytes &&
+               !await cacheGet(`${m.token}:${offset + requested}`))
+          requested += Math.min(m.chunk_bytes, m.bytes - offset - requested);
+        const batched = requested > m.chunk_bytes;
+        const path = `/export/chunk?token=${m.token}&offset=${offset}&length=${requested}` + (batched ? '&batch=1' : '');
+        try {
+          packets = await exportRequest(path, {kind:'bytes'}, `${offset} bytesまで取得済み`,
+            bytes => exportPackets(bytes, offset, requested, m.chunk_bytes), batched);
+          if (batched) failedBatches = 0;
+          else if (singleRemaining) --singleRemaining;
+        } catch (error) {
+          transferCheck();
+          if (!batched || (error.status >= 400 && error.status < 500 && ![408,429].includes(error.status))) throw error;
+          // Retry this offset as individual packets. After eight successful reads, try a batch
+          // again. Two consecutive unsuccessful batches keep this connection in single-packet mode.
+          ++failedBatches;
+          singleRemaining = 8;
+          transferNote({batch_fallback_at:offset, batch_failure:transferDiagnostic.last_failure,
+            batch_fallbacks:(transferDiagnostic.batch_fallbacks || 0) + 1});
+          continue;
+        }
       }
-      file.set(payload, offset); offset += length; $('progress').value = offset;
-      transferNote({confirmed_bytes:offset});
-      $('transfer').textContent = `${(100 * offset / m.bytes).toFixed(1)}% · ${offset} / ${m.bytes} bytes`;
+      for (const packet of packets) {
+        transferCheck();
+        const payload = packet.subarray(16);
+        if (!cached) await cachePut(`${m.token}:${offset}`, packet);
+        file.set(payload, offset);
+        offset += payload.length;
+        const counter = cached ? 'cached_bytes' : 'received_bytes';
+        transferNote({confirmed_bytes:offset, [counter]:transferDiagnostic[counter] + payload.length});
+        $('progress').value = offset;
+        $('transfer').textContent = `${(100 * offset / m.bytes).toFixed(1)}% · ${offset} / ${m.bytes} bytes`;
+      }
     }
     transferCheck(); transferNote({phase:'verifying'});
     const v = new DataView(file.buffer), crc = crc32(file.subarray(0, file.length - 4));

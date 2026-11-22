@@ -65,6 +65,8 @@ fixture = fixture.replace('class ExperimentRunner {public:', '''class Experiment
  bool history_trial=false;
  bool prediction_trial=false;
  bool transfer_carry=false;
+ bool transfer_priority=false;
+ bool isTransferPriorityProfile()const{return transfer_priority;}
  bool isLeftTransferCarryProfile()const{return transfer_carry;}
  bool returnPredictionTrialSelected()const{return prediction_trial || transfer_carry;}
  bool carryHistoryTrialSelected()const{return returnPredictionTrialSelected() || history_trial;}
@@ -619,6 +621,74 @@ int main(){
 #endif
 #if SUPPORT_TRANSFER_STALL_V3
 #if WALKING_RETURN_HISTORY
+ // Run 37339215: both observed foot/IMU frames that triggered the final
+ // 2 ms aid, including the prior main's actual 78 ms duration.
+ for(unsigned mode=0;mode<5;++mode) {
+  ExperimentRunner r;ready19(r);r.tilt_priority_.reset();r.transfer_carry=true;r.transfer_priority=mode!=0;
+  r.energy_control_autonomous_last_peak_side_=1;r.energy_control_autonomous_last_peak_ms_=2861;
+  r.energy_control_autonomous_last_peak_amplitude_deg_=6.33608f;
+  r.walking_energy_peaks_[0]=3.96122f;r.walking_energy_peak_ms_[0]=2441;
+  assert(r.walking_half_cycle_budget_.sourcePeak(2861));
+  r.walking_main_reserve_.observe(-1,false,mode==4?80:78);
+  r.wheel_cycle_guard_.limit(1,-608.98f,true,2639,20);
+  assert(r.walking_energy_current_.prepare(.031652216f));r.simulated_goal_ma=349.58191f;
+  const unsigned epoch=800000u;
+  for(bool second:{false,true}) {
+    const unsigned t=second?3129:3104;clock19(r,t);
+    auto& f=r.walking_return_frame_;auto& p=r.periodic_foot_packet_;
+    p.epoch_us=epoch;p.count=second?125:124;p.scheduled_us=epoch+25000u*p.count;
+    p.published_us=epoch+(second?3127684:3101752);
+    f.run_id=r.status_.run_id;f.sequence=second?1649:1647;
+    f.image_us=p.published_us-(second?31691:46268);
+    f.received_us=p.published_us;
+    f.frame_ms=(f.image_us-epoch)/1000;f.ready_ms=(f.received_us-epoch)/1000;
+    f.timestamp_valid=f.frame_valid=f.zero_ready=f.left_detected=f.right_detected=f.left_range_ok=f.right_range_ok=true;
+    f.left_deg=second?1.85704f:1.87887f;f.right_deg=second?-.17128f:-.16319f;
+    p.left.sequence=p.right.sequence=f.sequence;p.left.image_us=p.right.image_us=f.image_us;
+    p.left.measured=f.left_deg;p.right.measured=f.right_deg;
+    r.transfer_packet_=p.count;r.transfer_previous_sample_us_=mock_us;
+    r.transfer_acceleration_dps2_=second?93.27908f:84.01647f;
+    r.walking_fore_aft_last_.angle_deg=-.2372f;
+    assert(r.observeInwardStallRescue(t,false,false,second?1.772745f:2.12006f,
+          second?-12.4978828f:-14.76018f)==second);
+  }
+  assert(r.walking_return_observation_.evidence==return_observation_policy::Evidence::MeasuredArcShortfall &&
+         near(r.walking_return_observation_.previous_arc_deceleration_dps2,84.01647f));
+  r.stall_rescue_event_=true;r.roller_obj.write_ok=mode!=2;
+  Event e;e.physical_next_peak_side=-1;e.zero_cross_time_ms=3129;e.target_peak_deg=8;
+  e.previous_peak_time_ms=2861;e.previous_peak_amplitude_deg=6.33608f;e.detector_angle_after_deg=1.772745f;
+  e.zero_cross_rate_dps=-12.4978828f;e.zero_cross_abs_rate_dps=-e.zero_cross_rate_dps;
+  e.vbat_mV=7950;e.i0_estimated_mA=.1991f;e.pre_input_wheel_speed_valid=true;
+  e.pre_input_wheel_speed_age_us=1000;e.pre_input_wheel_speed_rpm=-94.64f;
+  bool healthy=false;assert(r.tryWalkingEnergy(e,3129,&healthy) && healthy);
+  const auto a=r.walking_energy_audit_[0];
+  assert(a.return_evidence==5 && a.main_reserve_ms==(mode==4?80:78));
+  assert(std::fabs(a.return_work_j-36.644e-6f)<.01e-6f);
+  if(mode==0){assert(a.executed && a.guarded_ms==2 && a.decision.predicted_work_j<.19e-6f);continue;}
+  assert(a.arc_priority.base_ms==(mode==4?0:2) && a.arc_priority.base_work_j<.19e-6f);
+  assert(a.arc_priority.zero_work_j>9e-6f && a.arc_priority.zero_work_j<10e-6f);
+  assert(a.guarded_ms==25 && a.requested_ms==31 && a.requested_ms==a.arc_priority.cap_ms);
+  assert(std::fabs(a.decision.predicted_work_j-24.725e-6f)<.01e-6f && a.decision.charge_supported);
+  if(mode==2){assert(!a.executed && r.walking_half_cycle_budget_.remaining()==80);continue;}
+  assert(a.executed && r.roller_obj.last_command==-1200);
+  unsigned elapsed=a.guarded_ms;
+  if(mode==3){
+    elapsed=8;clock19(r,a.output_start_ms+elapsed);
+    r.energy_control_autonomous_previous_detector_test_ms_=a.output_start_ms+6;
+    r.energy_control_autonomous_previous_detector_rate_dps_=1.2f;
+    r.processCrossingSample(mock_ms,mock_us,1.20f,1.21f,2.1f);
+    assert(r.walking_energy_active_pulse_.completion_reason==6);
+  }else{
+    clock19(r,a.output_start_ms+elapsed);r.updateEnergyControlAutonomousPulse(mock_ms);
+    assert(r.walking_energy_active_pulse_.completion_reason==1);
+  }
+  assert(!r.status_.pulse_active && r.walking_half_cycle_budget_.remaining()==80-elapsed);
+  assert(r.walking_half_cycle_budget_.allowMain(2861));
+  if(mode==1)std::cout<<"37339215: reserve 78 ms, old=2, new request="<<a.requested_ms
+       <<" ms, guarded="<<a.guarded_ms<<" ms, old work="<<a.arc_priority.base_work_j*1e6f
+       <<" uJ, zero minimum="<<a.arc_priority.zero_work_j*1e6f
+       <<" uJ, new work="<<a.decision.predicted_work_j*1e6f<<" uJ"<<std::endl;
+ }
  // 195727101, final right peak. For the unexecuted event use the archived
  // shadow current/voltage and the last RPM delivered before capture. The
  // archived snapshots give fresh IMU derivatives but not their exact age.

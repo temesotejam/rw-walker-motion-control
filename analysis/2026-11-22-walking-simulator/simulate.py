@@ -213,7 +213,7 @@ def print_summary(result):
                         detail = f" ({speed:.2f} °/s)" if speed is not None else ""
                         outcomes.append(f"{label} {result_at.get('status', '欠測')}{detail}")
                     print("      実測：" + "、".join(outcomes))
-        if history['profile'] in ('left_return_history_v1', 'left_return_prediction_v1', 'left_transfer_carry_v1', 'left_transfer_carry_v2', 'left_transfer_carry_v3'):
+        if history['profile'] in ('left_return_history_v1', 'left_return_prediction_v1', 'left_transfer_carry_v1', 'left_transfer_carry_v2', 'left_transfer_carry_v3', 'left_transfer_carry_v4'):
             if history['status'] == 'complete':
                 print(f"  左補助を評価 {history['evaluated']} 件、過去2回と一致 {history['matching_donors']} 件、"
                       f"延長を選択 {history['width_increased']} 件、延長指令を実行 {history['executed_increased']} 件")

@@ -251,7 +251,31 @@ static void testPassageWork() {
   assert(!plan(f,passages,3022,80).final_ms); // Required charge above the measured range.
 }
 
+static void testMeasuredArcPriority() {
+  // The matched 195727101 return reached ZERO. The same 80 ms envelope
+  // and old 58 ms reserve already paid the minimum work for that event.
+  walking_return_energy::Input in;
+  in.side=-1;in.rate_dps=12.278204f;in.body_angle_deg=2.145408f;
+  in.previous_peak_deg=6;in.same_side_peak_deg=4;in.target_deg=4.5f;
+  in.initial_current_ma=-.2046f;in.goal_current_ma=343.6316f;
+  in.cap_ms=80;in.return_work_j=42.812e-6f;
+  lateral_energy::Geometry geometry;lateral_energy::CurrentTable current;
+  assert(current.prepare(.031652216f));
+  wheel_cycle_guard::Controller wheel;wheel.limit(1,-426.91f,true,1756,15);
+  const auto plan=[&](float previous,float latest,unsigned reserve) {
+    return return_crossing_work::prioritizeMeasuredArc(geometry,current,in,previous,latest,reserve,-26.02f,2228,wheel);
+  };
+  const auto matched=plan(83.46254f,95.57413f,58);
+  assert(matched.base_ms==21 && matched.base_work_j>matched.zero_work_j && !matched.cap_ms);
+  assert(!plan(NAN,95,80).cap_ms && !plan(84,0,80).cap_ms);
+  assert(!plan(84,700,80).cap_ms); // Too little time for the current to rise.
+  assert(!plan(84,95,0).cap_ms);  // Nothing to recover from a later event.
+  in.side=1;
+  assert(!plan(84,95,80).cap_ms);
+}
+
 int main() {
+  testMeasuredArcPriority();
   testPredictedReturn();
   testPostAidReplan();
   testPostAidWork();

@@ -32,8 +32,10 @@ bool ExperimentRunner::cutReturnAidAtZero(uint32_t now_ms,uint32_t sample_us,
 #if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
   // If a corrected pulse cannot avert reversal, further leftward reaction
   // torque on a body already moving right no longer adds leftward motion.
-  const bool reversed=walking_energy_active_pulse_.return_evidence==
-      static_cast<uint8_t>(return_observation_policy::Evidence::PostAidShortfall) && side==1 &&
+  const bool reversal_cut=walking_energy_active_pulse_.return_evidence==
+      static_cast<uint8_t>(return_observation_policy::Evidence::PostAidShortfall) ||
+      walking_energy_active_pulse_.arc_priority.cap_ms>0;
+  const bool reversed=reversal_cut && side==1 &&
       before>0 && after>=before && rate>0 && energy_control_autonomous_previous_detector_rate_dps_>0;
   if (!centre && !reversed) return false;
 #else
@@ -273,10 +275,6 @@ bool ExperimentRunner::tryWalkingEnergy(
   }
   const bool reserve_for_arc_aid=return_aid && (evidence==return_observation_policy::Evidence::MeasuredArcShortfall ||
                                                 evidence==return_observation_policy::Evidence::PredictedArcShortfall);
-  if (reserve_for_arc_aid) {
-    a.main_reserve_ms=walking_main_reserve_.forSide(side);
-    in.cap_ms=in.cap_ms>a.main_reserve_ms ? in.cap_ms-a.main_reserve_ms : 0;
-  }
 #endif
 #endif
 #if defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
@@ -295,6 +293,19 @@ bool ExperimentRunner::tryWalkingEnergy(
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
   if(return_aid){in.arrival_bias_j=0;a.arrival_bias_j=0;}
 #if SUPPORT_TRANSFER_STALL_V3
+  if (reserve_for_arc_aid) {
+    a.main_reserve_ms=walking_main_reserve_.forSide(side);
+    uint16_t cap=in.cap_ms>a.main_reserve_ms ? in.cap_ms-a.main_reserve_ms : 0;
+#if WALKING_RETURN_HISTORY
+    if (isTransferPriorityProfile() && evidence==return_observation_policy::Evidence::MeasuredArcShortfall) {
+      a.arc_priority=return_crossing_work::prioritizeMeasuredArc(lateral_energy_geometry_,walking_energy_current_,
+          in,walking_return_observation_.previous_arc_deceleration_dps2,a.return_deceleration_dps2,
+          a.main_reserve_ms,e.pre_input_wheel_speed_rpm,t,wheel_cycle_guard_);
+      if (a.arc_priority.cap_ms) cap=a.arc_priority.cap_ms;
+    }
+#endif
+    in.cap_ms=cap;
+  }
   if (reserve_for_arc_aid && !in.cap_ms) {
     a.arc_aid.reason=receiving_arc_aid::Reason::NoMainRoom;
     save();return true;
@@ -1043,6 +1054,9 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     if(a.return_event && carryHistoryTrialSelected()) extra_table_bytes+=180;
     if(a.return_event && returnPredictionTrialSelected()) extra_table_bytes+=140;
     if(a.return_event && isLeftTransferCarryProfile()) extra_table_bytes+=216;
+#if SUPPORT_TRANSFER_STALL_V3
+    if(a.return_event && isTransferPriorityProfile()) extra_table_bytes+=144;
+#endif
 #endif
 #endif
   }
@@ -1089,6 +1103,12 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
       row+=",\"arc_post_cap_ms\":"+String(a.post_cap_ms)+",\"arc_post_increment_j\":"+n(a.post_increment_j)+
            ",\"arc_post_elapsed_increment_j\":"+n(a.post_elapsed_increment_j);
     }
+#if SUPPORT_TRANSFER_STALL_V3
+    if (isTransferPriorityProfile()) {
+      row+=",\"arc_priority_base_ms\":"+String(a.arc_priority.base_ms)+",\"arc_priority_base_j\":"+n(a.arc_priority.base_work_j);
+      row+=",\"arc_priority_zero_j\":"+n(a.arc_priority.zero_work_j)+",\"arc_priority_cap_ms\":"+String(a.arc_priority.cap_ms);
+    }
+#endif
 #endif
     row+="}";
     if(!arc_table.append(row)){json.fail();return;}

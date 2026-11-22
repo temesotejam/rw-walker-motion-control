@@ -675,11 +675,12 @@ void WebUi::manifest() {
   char body[800];
   snprintf(body, sizeof(body),
       "{\"phase\":\"%s\",\"token\":\"%s\",\"bytes\":%lu,\"hashed_bytes\":%lu,\"crc32\":%lu,"
-      "\"chunk_bytes\":4096,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"run_id\":%u,\"metadata_bytes\":%lu,"
+      "\"chunk_bytes\":%u,\"chunks_per_response\":%u,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"run_id\":%u,\"metadata_bytes\":%lu,"
       "\"completion_ack\":true,\"wifi_recovery_count\":%lu,"
       "\"export_memory\":{\"sampled_ms\":%lu,\"internal_free\":%lu,\"internal_min_free\":%lu,\"internal_largest\":%lu}}",
       phase(s.phase), s.token, static_cast<unsigned long>(s.bytes), static_cast<unsigned long>(s.hashed_bytes),
-      static_cast<unsigned long>(s.crc), s.filename, s.error,
+      static_cast<unsigned long>(s.crc), static_cast<unsigned>(export_protocol::kChunkBytes),
+      static_cast<unsigned>(export_protocol::kChunksPerResponse), s.filename, s.error,
       static_cast<unsigned long>(boot_id_), static_cast<unsigned>(s.run_id), static_cast<unsigned long>(s.metadata_bytes),
       static_cast<unsigned long>(wifi_restart_.count()),
       static_cast<unsigned long>(millis()),
@@ -718,18 +719,31 @@ void WebUi::chunk() {
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpChunk);
   if (!reserveChunkBuffer()) { server_->send(503, "text/plain", "chunk_buffer_unavailable"); return; }
   uint32_t offset = 0, length = 0;
+  const bool batch = server_->arg("batch") == "1";
+  const uint32_t chunkBytes = export_protocol::kChunkBytes;
+  const uint32_t limit = batch ? chunkBytes * export_protocol::kChunksPerResponse : chunkBytes;
+  const auto info = export_->status();
+  const String token = server_->arg("token");
   if (!unsignedArg(server_->arg("offset"), offset) || !unsignedArg(server_->arg("length"), length) ||
-      !export_->chunk(server_->arg("token").c_str(), offset, length, chunk_buffer_ + 16)) {
+      info.phase != ImmutableExport::Phase::Ready || token != info.token ||
+      !export_protocol::validRange(info.bytes, offset, length, limit)) {
     server_->send(409, "text/plain", "export_token_or_range_mismatch"); return;
   }
-  const uint32_t header[] = {export_protocol::kChunkMagic, offset, length,
-      export_protocol::crc32(0, chunk_buffer_ + 16, length)};
   recovery_.chunkRequested(millis(), offset);
-  memcpy(chunk_buffer_, header, 16);
   server_->sendHeader("Cache-Control", "no-store");
-  server_->setContentLength(length + 16);
+  server_->setContentLength(length + 16 * ((length + chunkBytes - 1) / chunkBytes));
   server_->send(200, "application/octet-stream", "");
-  server_->sendContent(reinterpret_cast<const char*>(chunk_buffer_), length + 16);
+  // Keep the same validated 4 KiB packets and PSRAM buffer for old and new clients.
+  while (length && server_->lastResponse() == BoundedWriteWebServer::Response::Complete) {
+    const uint32_t n = length < chunkBytes ? length : chunkBytes;
+    if (!export_->chunk(token.c_str(), offset, n, chunk_buffer_ + 16)) { server_->client().stop(); return; }
+    const uint32_t header[] = {export_protocol::kChunkMagic, offset, n,
+        export_protocol::crc32(0, chunk_buffer_ + 16, n)};
+    memcpy(chunk_buffer_, header, 16);
+    server_->sendContent(reinterpret_cast<const char*>(chunk_buffer_), n + 16);
+    offset += n;
+    length -= n;
+  }
 }
 
 bool WebUi::previewAllowed() const {

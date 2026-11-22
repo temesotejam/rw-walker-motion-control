@@ -5,6 +5,7 @@
 
 namespace export_protocol {
 constexpr uint32_t kChunkBytes = 4096;
+constexpr uint32_t kChunksPerResponse = 4;
 constexpr uint32_t kChunkMagic = 0x31484346; // FCH1, little endian
 inline uint32_t crc32(uint32_t crc, const uint8_t* data, size_t length) {
   crc = ~crc;

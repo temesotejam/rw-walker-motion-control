@@ -52,6 +52,7 @@ struct Choice {
   float predicted_transfer_ms=NAN,terminal_deg=NAN;
   uint16_t loss_cap_ms=0;
   float aligned_current_ma=NAN, gross_work_limit_j=NAN;
+  float previous_arc_deceleration_dps2=NAN;
 #endif
 };
 
@@ -254,6 +255,7 @@ class Observer {
     const float deceleration=in.periodic_acceleration_dps2;
     arc_packet_=p->count; arc_sample_us_=in.sample_us; arc_slot_us_=p->scheduled_us;
     const bool previous=arc_confirming_;
+    const float previous_deceleration=arc_deceleration_;
     const uint64_t previous_image=arc_image_us_;
     const float previous_gap=approaching_gap_;
     const uint64_t previous_gap_image=approaching_image_;
@@ -275,8 +277,11 @@ class Observer {
     const float gap=support_transfer_plan::supportGap(l.measured,r.measured,in.fore_aft_deg,in.angle_deg);
     Evidence reason=Evidence::Unavailable;
     if (gap<0 && l.image_us>previous_image) {
-      arc_confirming_=true; arc_image_us_=l.image_us;
-      if (adjacent && previous) reason=Evidence::MeasuredArcShortfall;
+      arc_confirming_=true; arc_image_us_=l.image_us;arc_deceleration_=deceleration;
+      if (adjacent && previous) {
+        reason=Evidence::MeasuredArcShortfall;
+        out.previous_arc_deceleration_dps2=previous_deceleration;
+      }
     }
     // During current rise a still-higher receiving sole can reach the ground.
     // Forecast its gap from consecutive measured poses, only while the body
@@ -312,6 +317,7 @@ class Observer {
   uint32_t arc_packet_=0,arc_sample_us_=0;
   uint64_t arc_image_us_=0,arc_slot_us_=0;
   bool arc_confirming_=false;
+  float arc_deceleration_=NAN;
   float approaching_gap_=NAN,approaching_speed_=0;
   uint64_t approaching_image_=0;
   bool approach_reversed_=false;

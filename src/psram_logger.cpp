@@ -520,7 +520,8 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
   const bool inverse_mode = energy_bridge_enabled_ && !negative_probe_mode_ &&
       autonomous_brake_max_ms_ == 25;
   const bool small_step = walking_profile_ == walking_trial::Profile::SmallStep;
-  const bool post_aid_recheck = walking_profile_ == walking_trial::Profile::LeftTransferCarryV3;
+  const bool post_aid_recheck = walking_profile_ == walking_trial::Profile::LeftTransferCarryV3 ||
+                                walking_profile_ == walking_trial::Profile::LeftTransferCarryV4;
 #if WALKING_SMALL_STEP_AB
   json += "\"walking_profile\":\"" + String(walking_trial::name(walking_profile_)) + "\",";
 #endif

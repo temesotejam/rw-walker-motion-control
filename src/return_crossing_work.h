@@ -82,6 +82,49 @@ inline Audit apply(const Reference& source,uint32_t departure,uint32_t now,float
 }
 
 #if SUPPORT_TRANSFER_STALL_V3
+struct MeasuredArcPriority {
+  uint16_t base_ms=0, cap_ms=0;
+  float base_work_j=NAN, zero_work_j=NAN;
+};
+
+// A post-ZERO reservation is only usable if the body can first reach ZERO.
+// The caller has already observed the receiving sole and a stopping shortfall
+// on two consecutive frames. Compare the reserved plan with the lower of
+// those two decelerations before giving the first event priority.
+inline MeasuredArcPriority prioritizeMeasuredArc(const lateral_energy::Geometry& geometry,
+    const lateral_energy::CurrentTable& current,const walking_return_energy::Input& in,
+    float previous_decel,float current_decel,uint16_t main_reserve,float rpm,uint32_t now,
+    const wheel_cycle_guard::Controller& wheel) {
+  MeasuredArcPriority audit;
+  if (!(in.side==-1 && in.cap_ms>0 && in.cap_ms<=half_cycle_energy_budget::kEnvelopeMs &&
+        main_reserve>0 && current.ready && in.body_angle_deg>0 && in.body_angle_deg<=12 &&
+        in.rate_dps>=3 && in.rate_dps<=35 && previous_decel>0 && current_decel>0 &&
+        std::isfinite(previous_decel) && std::isfinite(current_decel) && std::isfinite(rpm))) return audit;
+  audit.zero_work_j=std::fmax(0.f,energyShortfall(in.body_angle_deg,0,in.rate_dps,0,
+                                                 std::fmin(previous_decel,current_decel)));
+  const auto demand=half_cycle_energy_budget::decideReturnAid(geometry,current,in);
+  if (!demand.valid || !demand.width_ms) return audit;
+  const uint16_t available=in.cap_ms>main_reserve ? in.cap_ms-main_reserve : 0;
+  auto guard=wheel;
+  audit.base_ms=guard.limit(-1,rpm,true,now,available<demand.width_ms ? available : demand.width_ms);
+  const auto coeff=lateral_energy::coefficients(-1);
+  const float omega=in.rate_dps*lateral_energy::kRadPerDeg;
+  const float base_q=lateral_energy::charge(current,audit.base_ms,in.initial_current_ma,in.goal_current_ma);
+  audit.base_work_j=lateral_energy::work(coeff,omega,base_q);
+  if (!(demand.width_ms>available && audit.zero_work_j>0 && base_q>=0 &&
+        audit.base_work_j+walking_energy_policy_v15::kEnergyRoundoffJ<audit.zero_work_j)) return audit;
+  const float stop_s=in.rate_dps/std::fmax(previous_decel,current_decel);
+  if (!(current.tau>0 && stop_s>current.tau+.005f)) return audit;
+  const auto cap=static_cast<uint16_t>(std::fmin(demand.width_ms,1000.f*stop_s-5.f));
+  guard=wheel;
+  const uint16_t width=guard.limit(-1,rpm,true,now,cap);
+  const float q=lateral_energy::charge(current,width,in.initial_current_ma,in.goal_current_ma);
+  const float work=lateral_energy::work(coeff,omega,q);
+  if (width>audit.base_ms && q>0 && q<=coeff.charge_max_mAs && work>audit.base_work_j &&
+      work<=.5f*demand.target_j) audit.cap_ms=cap;
+  return audit;
+}
+
 // Recent leftward centre passages that subsequently reached the receiving
 // sole's CAD entry. The speed was sampled before that particular main pulse.
 struct MainPassage {

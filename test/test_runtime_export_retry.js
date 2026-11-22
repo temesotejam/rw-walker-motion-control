@@ -11,7 +11,7 @@ const manifest={phase:'ready',token:'0123456789abcdef',bytes:fixture.length,chun
 function harness(scenario={}) {
   const elements=new Map(),requests=[],saves=[];
   const element=id=>{if(!elements.has(id))elements.set(id,{textContent:'',style:{}});return elements.get(id);};
-  let context,clock=0,prepareCount=0,manifestCount=0;
+  let context,clock=0,prepareCount=0,manifestCount=0,chunkFailures=0;
   class Clock extends Date {static now(){return clock;}}
   const abort=signal=>new Promise((_,reject)=>{
     if(signal.aborted)reject(new DOMException('signal is aborted without reason','AbortError'));
@@ -69,6 +69,24 @@ function harness(scenario={}) {
       const offset=Number(url.searchParams.get('offset')),length=Number(url.searchParams.get('length'));
       if(scenario.chunkDisconnect && offset>=8192)throw new TypeError('Failed to fetch');
       if(scenario.chunkStatus)return {ok:false,status:scenario.chunkStatus,text:async()=>'export_token_or_range_mismatch'};
+      if(scenario.changedRunAt===offset)return {ok:false,status:409,text:async()=>'export_token_or_range_mismatch'};
+      if(url.searchParams.get('batch')==='1'){
+        assert.equal(scenario.manifest?.chunks_per_response,4);
+        assert(length>4096 && length<=16384);
+        const combined=new Uint8Array(length+16*Math.ceil(length/4096));
+        for(let i=0, at=0;i<length;i+=4096){
+          const p=packet(offset+i,Math.min(4096,length-i));
+          combined.set(p,at);at+=p.length;
+        }
+        if(scenario.brokenBatchAt===offset || scenario.allBatchesBad)combined[combined.length-1]^=1;
+        if(scenario.truncatedBatchAt===offset)return {ok:true,arrayBuffer:async()=>combined.slice(0,5000).buffer};
+        return {ok:true,arrayBuffer:async()=>combined.buffer};
+      }
+      assert(length<=4096);
+      if(offset===16384 && chunkFailures < (scenario.interruptions || 0)){
+        ++chunkFailures;clock+=8000;
+        throw new TypeError('Failed to fetch');
+      }
       const bytes=packet(offset,length);if(scenario.badCrc)bytes[16]^=1;
       return {ok:true,arrayBuffer:async()=>bytes.buffer};
     }});
@@ -95,6 +113,48 @@ function harness(scenario={}) {
   const same=harness({manifest:{boot_id:123,metadata_bytes:12345}});await same.run();
   assert.equal(same.diagnostic().browser_transfer.phase,'complete');
   assert(!same.requests.some(path=>path.startsWith('/export/complete')));
+  // Production walks use one HTTP connection per response. Each batched response
+  // keeps the existing packet layout and the unaligned final packet with its own CRC.
+  const grouped=harness({manifest:{chunks_per_response:4}});await grouped.run();
+  let transfer=grouped.diagnostic().browser_transfer;
+  assert.equal(transfer.chunk_requests,Math.ceil(fixture.length/16384));
+  assert(Buffer.from(vm.runInContext('completedFile',grouped.context)).equals(fixture));
+  assert.equal(vm.runInContext('memoryCache.size',grouped.context),Math.ceil(fixture.length/4096));
+  const fallback=harness({manifest:{chunks_per_response:4},brokenBatchAt:16384,interruptions:10});
+  vm.runInContext('latest.wifi_export_recovery=true',fallback.context);
+  await fallback.run();
+  transfer=fallback.diagnostic().browser_transfer;
+  assert.equal(transfer.phase,'complete');assert.equal(transfer.batch_fallback_at,16384);
+  assert.match(transfer.batch_failure.message,/CRC/);
+  assert.equal(transfer.retries,10);
+  const spans=fallback.requests.filter(p=>p.startsWith('/export/chunk')).map(p=>new URL(p,'http://device').searchParams);
+  const resumeBatchAt = 16384 + 8*4096;
+  const remaining = Math.max(0,fixture.length-resumeBatchAt);
+  const thirdBatch = spans.filter(p=>p.has('batch'))[2];
+  if (remaining>4096) assert.equal(thirdBatch.get('offset'),String(resumeBatchAt));
+  else assert.equal(thirdBatch,undefined);
+  assert.deepEqual(spans.slice(0,3).map(p=>[p.get('offset'),p.get('length')]),
+    [['0','16384'],['16384',String(Math.min(16384,fixture.length-16384))],['16384','4096']]);
+  assert.equal(spans.filter(p=>Number(p.get('offset'))<16384).length,1);
+  const singleReads = Math.min(8, Math.ceil((fixture.length-16384)/4096));
+  assert.equal(transfer.chunk_requests,2+10+singleReads+Math.ceil(remaining/16384));
+  assert.equal(transfer.batch_fallbacks,1);
+  assert(Buffer.from(vm.runInContext('completedFile',fallback.context)).equals(fixture));
+  const partial=harness({manifest:{chunks_per_response:4},truncatedBatchAt:16384});
+  await partial.run();
+  assert(Buffer.from(vm.runInContext('completedFile',partial.context)).equals(fixture));
+  assert.match(partial.diagnostic().browser_transfer.batch_failure.message,/長の不一致/);
+  const weak=harness({manifest:{chunks_per_response:4},allBatchesBad:true});await weak.run();
+  const failedBatches = fixture.length > 8*4096+4096 ? 2 : 1;
+  assert.equal(weak.diagnostic().browser_transfer.batch_fallbacks,failedBatches);
+  assert.equal(weak.diagnostic().browser_transfer.chunk_requests,failedBatches+Math.ceil(fixture.length/4096));
+  assert(Buffer.from(vm.runInContext('completedFile',weak.context)).equals(fixture));
+  const staleBatch=harness({manifest:{chunks_per_response:4},changedRunAt:16384});await staleBatch.run();
+  assert.equal(staleBatch.saves.length,0);
+  assert.equal(staleBatch.diagnostic().browser_transfer.chunk_requests,2);
+  assert.equal(staleBatch.diagnostic().browser_transfer.confirmed_bytes,16384);
+  assert.equal(staleBatch.diagnostic().browser_transfer.batch_fallback_at,undefined);
+  assert.equal(vm.runInContext('memoryCache.size',staleBatch.context),4);
   for (const capability of ["latest.diagnostic_build_id='walking-support-transfer-v39-webfix2'",
                             "latest.wifi_export_recovery=true"]) {
     const reconnect=harness({disconnectedPrepares:6});
@@ -245,5 +305,5 @@ function harness(scenario={}) {
     {version:1,rows:[[0,20]]})`,h.context);
   assert.deepEqual(Array.from(expanded,x=>x.control_observed_us),[120,230,null]);
   assert(h.requests.every(p=>p.startsWith('/export/')));
-  console.log('Export retry PASS: prepare/header + manifest/body timeout, building, bounded failure, cache resume, cancellation, CRC/token rejection, saved diagnostics, v20 receipts');
+  console.log(`Export retry PASS: ${fixture.length} bytes in ${grouped.diagnostic().browser_transfer.chunk_requests} batched requests; corrupt batch + 10 temporary failures auto-resumed at 16384; prepare/body, bounded failure, cache, cancellation, CRC/token, diagnostics, receipts`);
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -161,6 +161,20 @@ class InterventionReport(unittest.TestCase):
         self.assertIsNone(event['motion'])
         self.assertIsNone(event['post_aid']['actual_elapsed_ms'])
 
+    def test_pre_center_priority_reports_a_measured_aid_and_actual_duration(self):
+        self.meta['walking_profile'] = 'left_transfer_carry_v4'
+        self.meta['walking_energy']['records'][1].update(return_evidence=5, guarded_ms=25)
+        self.meta['walking_energy']['arc_aids'][1].update(
+            arc_priority_cap_ms=31, arc_priority_base_ms=2, arc_priority_base_j=.18e-6,
+            arc_priority_zero_j=9.34e-6)
+        self.read()
+        event, = observed_prediction(self.folder)['events']
+        priority = event['center_priority']
+        self.assertEqual((priority['before_ms'],priority['cap_ms'],priority['final_ms'],priority['actual_elapsed_ms']),
+                         (2,31,25,13))
+        self.assertEqual(priority['center_work_j'],9.34e-6)
+        self.assertFalse(event['width_extended'])
+
     def test_true_zero_and_veto(self):
         self.meta['walking_energy']['records'][1]['executed'] = False
         result = self.read()

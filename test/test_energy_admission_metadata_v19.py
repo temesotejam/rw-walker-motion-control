@@ -34,6 +34,7 @@ fixture = fixture.replace(marker, marker + r'''
   bool prediction_trial=false;
   bool transfer_carry=false;
   bool isLeftTransferCarryProfile() const { return transfer_carry; }
+  bool isTransferPriorityProfile() const { return transfer_carry; }
   bool returnPredictionTrialSelected() const { return prediction_trial || transfer_carry; }
   bool carryHistoryTrialSelected() const { return returnPredictionTrialSelected() || history_trial; }
 #endif
@@ -98,6 +99,8 @@ fixture = fixture.replace(marker, marker + r'''
         a.crossing_work.transfer_ms=39.f;
         a.crossing_work.terminal_deg=-1.91f;
         a.crossing_work.arc_request_j=.000036f;
+        a.arc_priority.base_ms=2;a.arc_priority.cap_ms=30;
+        a.arc_priority.base_work_j=.00000018f;a.arc_priority.zero_work_j=.00000936f;
       }
 #endif
     }
@@ -146,7 +149,7 @@ fixture = fixture.replace('json+="{";', 'json+="{";\n#if WALKING_SMALL_STEP_AB\n
                           '#if WALKING_RETURN_HISTORY\n  if(runner.history_trial) walking_profile_=walking_trial::Profile::CarryHistory;\n#endif\n'
                           '#if WALKING_RETURN_HISTORY\n  if(runner.prediction_trial) walking_profile_=walking_trial::Profile::ReturnPrediction;\n#endif\n'
                           + profile_line + '\n#endif\n'
-                          '#if WALKING_SMALL_STEP_AB\n  const bool post_aid_recheck=walking_profile_==walking_trial::Profile::LeftTransferCarryV3;\n'
+                          '#if WALKING_SMALL_STEP_AB\n  const bool post_aid_recheck=walking_profile_==walking_trial::Profile::LeftTransferCarryV3 || walking_profile_==walking_trial::Profile::LeftTransferCarryV4;\n'
                           '#else\n  const bool post_aid_recheck=false;\n#endif\n')
 with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
     temp = Path(folder)
@@ -175,11 +178,11 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 assert raw['walking_profile'] == ('v14_small_step' if mode=='small-step' else
                                                   'left_return_history_v1' if mode=='history' else
                                                   'left_return_prediction_v1' if mode=='prediction' else
-                                                  'left_transfer_carry_v3' if arrival else 'turn3')
+                                                  'left_transfer_carry_v4' if arrival else 'turn3')
             if arrival and mode!='small-step':
                 model=metadata['walking_energy']
                 assert model['right_arrival_model']==('positive_unassisted_real_zero_startup_4p5_5_v1'
-                       if raw['walking_profile']=='left_transfer_carry_v3' else 'positive_unassisted_real_zero_startup_4p5_v1')
+                       if raw['walking_profile']=='left_transfer_carry_v4' else 'positive_unassisted_real_zero_startup_4p5_v1')
                 if rows:
                     r=rows[0]
                     assert r['right_arrival_checked'] and r['right_arrival_eligible']
@@ -322,6 +325,9 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                         assert int(csv_rows[1]['arc_crossing_ref_zero_ms'])==3132
                         assert int(csv_rows[1]['arc_crossing_selected_ms'])==31
                     if arrival and mode=='':
+                        assert (int(csv_rows[1]['arc_priority_base_ms']),int(csv_rows[1]['arc_priority_cap_ms']))==(2,30)
+                        assert abs(float(csv_rows[1]['arc_priority_base_j'])-.00000018)<1e-9
+                        assert abs(float(csv_rows[1]['arc_priority_zero_j'])-.00000936)<1e-9
                         assert float(csv_rows[1]['arc_approach_transfer_ms'])==39
                         assert abs(float(csv_rows[1]['arc_approach_terminal_deg'])+1.91)<1e-5
                         assert abs(float(csv_rows[1]['arc_approach_request_j'])-.000036)<1e-9
