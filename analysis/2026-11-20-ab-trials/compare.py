@@ -97,7 +97,8 @@ if __name__ == "__main__":
         if metadata.get("walking_profile") == "right_arrival_v1":
             arrival1_outcomes(metadata)
         for row in right_startup_trials(metadata):
-            print("positive ZERO: ms, width, predicted, observed, error", *(round(x, 4) for x in row))
+            print("positive ZERO: ms, width, legacy predicted deg, observed deg, observed minus legacy deg",
+                  *(round(x, 4) for x in row))
             errors.append(row[-1])
         if args.returns:
             return_motion(folder, metadata)
