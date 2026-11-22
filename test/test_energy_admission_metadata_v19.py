@@ -29,6 +29,7 @@ fixture = fixture.replace(marker, marker + r'''
   bool smallStepBaselineSelected() const { return baseline; }
 #if WALKING_RETURN_HISTORY
   bool history_trial=false;
+  bool passage=false;
   bool prediction_trial=false;
   bool transfer_carry=false;
   bool isLeftTransferCarryProfile() const { return transfer_carry; }
@@ -80,7 +81,14 @@ fixture = fixture.replace(marker, marker + r'''
         a.return_evidence=6;a.predicted_transfer_ms=28.75f;a.predicted_terminal_deg=-1.91f;
         a.crossing_work={3132,3309,25.25f,.000079f,28,31};
       }
-      if (runner.transfer_carry) {
+      if (runner.passage) {
+        a.return_evidence=1;
+        a.crossing_work={1351,1512,19.134f,.00003209f,11,21};
+        a.crossing_work.passage_main_ms=40;
+        a.crossing_work.passage_reserve_ms=54;
+        a.crossing_work.passage_main_j=.00012f;
+        a.crossing_work.passage_zero_dps=17.03f;
+      } else if (runner.transfer_carry) {
         a.return_evidence=1;
         a.crossing_work={3168,3321,31.3949f,.000079f,15,32};
         a.crossing_work.transfer_ms=39.f;
@@ -119,6 +127,7 @@ fixture = fixture.replace('const bool small_step=false;', '''
   runner.baseline=argc>1 && std::string(argv[1])=="small-step";
 #if WALKING_RETURN_HISTORY
   runner.history_trial=argc>1 && std::string(argv[1])=="history";
+  runner.passage=argc>1 && std::string(argv[1])=="passage";
   runner.prediction_trial=argc>1 && std::string(argv[1])=="prediction";
   runner.transfer_carry=!runner.baseline && !runner.history_trial && !runner.prediction_trial;
 #endif
@@ -149,7 +158,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                         '-DWALKING_RETURN_HISTORY=' + str(int(arrival)),
                         '-I' + str(ROOT / 'test/fixtures/arduino'),
                         '-I' + str(ROOT / 'src'), str(temp / 'test.cpp'), '-o', str(exe)], check=True)
-        modes = [('', 7), ('empty', 0)] + ([('small-step', 7)] if turn else []) + ([('history', 7),('prediction', 7)] if arrival else [])
+        modes = [('', 7), ('empty', 0)] + ([('small-step', 7)] if turn else []) + ([('history', 7),('prediction', 7),('passage', 7)] if arrival else [])
         for mode, count in modes:
             output = subprocess.check_output([str(exe)] + ([mode] if mode else []), text=True).splitlines()
             raw, _ = map(parse, output)
@@ -159,7 +168,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 assert raw['walking_profile'] == ('v14_small_step' if mode=='small-step' else
                                                   'left_return_history_v1' if mode=='history' else
                                                   'left_return_prediction_v1' if mode=='prediction' else
-                                                  'left_transfer_carry_v1' if arrival else 'turn3')
+                                                  'left_transfer_carry_v2' if arrival else 'turn3')
             if arrival and mode!='small-step':
                 model=metadata['walking_energy']
                 assert model['right_arrival_model']=='positive_unassisted_real_zero_startup_4p5_v1'
@@ -256,7 +265,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
             fields = raw['walking_energy']['records']['fields']
             assert len(fields) == len(set(fields))
             assert all(len(row) == len(fields) for row in raw['walking_energy']['records']['rows'])
-            for prior, current in zip(previous_rows['' if mode in ('history','prediction') else mode], rows):
+            for prior, current in zip(previous_rows['' if mode in ('history','prediction','passage') else mode], rows):
                 for key in ['available_j', 'target_j', 'potential_j', 'request_j', 'predicted_work_j',
                             'predicted_arrival_j', 'unmet_j', 'q_mas', 'requested_ms', 'guarded_ms']:
                     assert current[key] == prior[key], (key, current[key], prior[key])
@@ -291,7 +300,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 if carry:
                     assert csv_rows[1]['arc_base_guarded_ms'] == '28' and csv_rows[1]['arc_main_reserve_ms'] == '50'
                     assert all(row['arc_aid_reason'] == '' for i, row in enumerate(csv_rows) if i != 1)
-                    if arrival and mode in ('','history','prediction'):
+                    if arrival and mode in ('','history','prediction','passage'):
                         assert csv_rows[1]['arc_history_base_ms']=='19' and csv_rows[1]['arc_history_selected_ms']=='24'
                         assert csv_rows[1]['arc_history_first_peak_ms']=='2519' and csv_rows[1]['arc_history_second_peak_ms']=='4242'
                         assert csv_rows[1]['arc_history_limit_ms']=='28' and float(csv_rows[1]['arc_history_request_j'])>0
@@ -310,6 +319,14 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                         assert abs(float(csv_rows[1]['arc_approach_request_j'])-.000036)<1e-9
                         assert int(csv_rows[1]['arc_crossing_ref_zero_ms'])==3168
                         assert int(csv_rows[1]['arc_crossing_selected_ms'])==32
+                    elif arrival and mode=='passage':
+                        row=csv_rows[1]
+                        assert row['arc_approach_transfer_ms']==''
+                        assert int(row['arc_crossing_ref_zero_ms'])==1351
+                        assert (int(row['arc_crossing_base_ms']),int(row['arc_crossing_selected_ms']))==(11,21)
+                        assert (int(row['arc_passage_main_ms']),int(row['arc_passage_reserve_ms']))==(40,54)
+                        assert abs(float(row['arc_passage_main_j'])-.00012)<1e-9
+                        assert abs(float(row['arc_passage_zero_dps'])-17.03)<1e-4
                     else:
                         assert 'arc_approach_transfer_ms' not in csv_rows[1]
                 if turn:

@@ -2677,6 +2677,9 @@ void ExperimentRunner::resetEnergyControlAutonomous() {
   walking_main_reserve_={};
 #if WALKING_RETURN_HISTORY
   walking_crossing_reference_={};
+#if SUPPORT_TRANSFER_STALL_V3
+  walking_main_passages_={};
+#endif
   walking_return_history_={};
 #endif
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
@@ -3403,12 +3406,20 @@ bool ExperimentRunner::recordEnergyControlAutonomousPeak(uint32_t peak_ms, int8_
       completed.completion.valid && completed.completion.work_valid &&
       completed.trigger_ms==energy_control_autonomous_pending_zero_ms_;
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
-  const bool matched_assisted_main=event.pending_command_matched && complete_match &&
-      completed.assisted_cycle && !completed.optional && !completed.rescue && !completed.return_event &&
+  const bool matched_main=event.pending_command_matched && complete_match &&
+      !completed.optional && !completed.rescue && !completed.return_event &&
       completed.side==physical_side && imu_ && imu_->acquisitionHealthy() && !imu_->stale(millis());
+  const bool matched_assisted_main=matched_main && completed.assisted_cycle;
   walking_arc_feedback_.peak(lateral_energy_geometry_,physical_side,peak_ms,amplitude_deg,
       completed.peak_ms,completed.trigger_ms,matched_assisted_main);
 #if WALKING_RETURN_HISTORY
+#if SUPPORT_TRANSFER_STALL_V3
+  if (isLeftTransferCarryProfile() && physical_side==-1 && matched_main)
+    walking_main_passages_.observe(completed.trigger_ms,peak_ms,amplitude_deg,completed.start_rate_dps,
+        completed.decision.target_j,completed.completion.actual_elapsed_ms,completed.completion.work_j,
+        completed.completion.duration_completed && completed.completion.charge_supported &&
+        completed.completion.width_supported);
+#endif
   if (returnPredictionTrialSelected() && physical_side==-1 && matched_assisted_main)
     walking_crossing_reference_.observe(completed.trigger_ms,peak_ms,amplitude_deg,
         completed.start_rate_dps,completed.decision.target_j,completed.completion.duration_completed &&

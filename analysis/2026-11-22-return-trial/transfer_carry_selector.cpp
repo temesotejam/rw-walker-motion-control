@@ -25,6 +25,7 @@ int main(int argc, char** argv) {
   feet.start(epoch);
   receiving_arc_aid::MainReserve reserve;
   return_crossing_work::Reference reference;
+  return_crossing_work::MainPassages passages;
   wheel_cycle_guard::Controller wheel;
   lateral_energy::Geometry geometry;
   std::cout << std::setprecision(9);
@@ -59,12 +60,16 @@ int main(int argc, char** argv) {
       std::cin >> side >> assisted >> elapsed;
       reserve.observe(side,assisted,elapsed);
     } else if (kind=='P') {
-      unsigned t, zero;
-      int side, powered, matches, complete;
-      std::cin >> t >> side >> powered >> matches >> zero >> complete;
+      unsigned t, zero, elapsed;
+      int side, powered, matches, duration_ok, ordinary;
+      std::cin >> t >> side >> powered >> matches >> zero >> duration_ok;
       const float angle=number(), speed=number(), target=number();
+      std::cin >> ordinary >> elapsed;
+      const float elapsed_work=number(), elapsed_q=number();
+      const bool complete=duration_ok && elapsed_q>=0 && elapsed_q<=lateral_energy::coefficients(side).charge_max_mAs;
       wheel.peak(side,angle,t,powered);
       if (side==-1 && matches) reference.observe(zero,t,angle,speed,target,complete);
+      if (side==-1 && ordinary) passages.observe(zero,t,angle,speed,target,elapsed,elapsed_work,complete);
     } else if (kind=='C') {
       reference={};
     } else if (kind=='A') {
@@ -129,6 +134,18 @@ int main(int argc, char** argv) {
         }
       }
       std::cout << '\n';
+      if (present.reason==receiving_arc_aid::Reason::NotReceiving && source && width) {
+        const uint16_t walk1=width;
+        return_crossing_work::Audit passage;
+        if (width==start_width)
+          passage=return_crossing_work::applyPassage(arc,passages,departure,t,envelope,rpm,
+              wheel,guard,geometry,current,in,selected,width);
+        const auto final=half_cycle_energy_budget::evaluateReturnAidWidth(geometry,current,in,width);
+        std::cout << "J " << t << ' ' << walk1 << ' ' << width << ' ' << passage.zero_ms << ' '
+                  << passage.peak_ms << ' ' << passage.speed_dps << ' ' << passage.request_j << ' '
+                  << final.predicted_work_j << ' ' << passage.passage_main_ms << ' ' << passage.passage_reserve_ms
+                  << ' ' << passage.passage_main_j << ' ' << passage.passage_zero_dps << '\n';
+      }
     } else return 6;
     if (!std::cin) return 7;
   }

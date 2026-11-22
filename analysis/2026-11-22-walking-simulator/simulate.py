@@ -192,7 +192,24 @@ def print_summary(result):
                 print(f"    {e['decision_ms']} ms  先読み開始 {e['predicted_support']}  移行前の仕事補正 {e['forecast_before_transfer']}  "
                       f"幅延長 {e['width_extended']}  指令幅 {e['guarded_ms']} ms  実通電 {e['executed']}  "
                       f"延長指令の実通電 {e['executed_extension']}")
-        if history['profile'] in ('left_return_history_v1', 'left_return_prediction_v1', 'left_transfer_carry_v1'):
+                if 'passage' in e:
+                    allocation = e['passage']
+                    print(f"      中心前の補助 {e['base_ms']}→{e['selected_ms']} ms、"
+                          f"中心後の予約 {allocation['previous_reserve_ms']}→{allocation['selected_reserve_ms']} ms、"
+                          f"予測した中心速度 {allocation['predicted_zero_speed_dps']} °/s")
+                    if e['executed_extension'] and e.get('motion'):
+                        motion = e['motion']
+                        zero = motion.get('mechanical_zero') or {}
+                        receiving = next((r for r in trial['first_receiving_outcomes']
+                                          if r['peak_ms'] == motion['departure_peak_ms']), {})
+                        outcomes = []
+                        for label, result_at, key in (('中心', zero, 'crossing_speed_dps'),
+                                                      ('左円弧端', receiving, 'inward_speed_dps')):
+                            speed = result_at.get(key)
+                            detail = f" ({speed:.2f} °/s)" if speed is not None else ""
+                            outcomes.append(f"{label} {result_at.get('status', '欠測')}{detail}")
+                        print("      実測：" + "、".join(outcomes))
+        if history['profile'] in ('left_return_history_v1', 'left_return_prediction_v1', 'left_transfer_carry_v1', 'left_transfer_carry_v2'):
             if history['status'] == 'complete':
                 print(f"  左補助を評価 {history['evaluated']} 件、過去2回と一致 {history['matching_donors']} 件、"
                       f"延長を選択 {history['width_increased']} 件、延長指令を実行 {history['executed_increased']} 件")

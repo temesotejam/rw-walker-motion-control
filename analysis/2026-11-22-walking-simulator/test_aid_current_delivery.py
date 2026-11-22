@@ -27,8 +27,23 @@ class DeliveryTest(unittest.TestCase):
             return (t, t+3, dict(side=side, phase=phase, anchor=anchor))
         rows = [frame(80, '-1', '2', '2'), frame(30, '1', '2', '1'), frame(43, '-1', '2', '0'),
                 frame(55, '-1', '2', '1')]
-        self.assertEqual(delivery.first_receiving_capture(rows, 60), (55, 58, 1))
-        self.assertIsNone(delivery.first_receiving_capture(rows, 50))
+        self.assertEqual(delivery.first_receiving_state(rows, 60), rows[-1])
+        self.assertIsNone(delivery.first_receiving_state(rows, 50))
+
+    def test_receiving_state_indexes_actual_publications_then_each_foot_image(self):
+        archive = dict(columns=['slot_us', 'publish_us', 'left_sequence', 'right_sequence'],
+                       samples=[[25000, 25200, 1, 1], [75000, 75500, 8, 5]])
+        def foot(img, receipt):
+            return dict(timestamp_valid=True, frame_us=img, control_observed_us=receipt)
+        frames = {8: foot(1022000, 1060000), 5: foot(1010000, 1035000)}
+        sources = delivery.source_image_times(2, 78., archive, frames, 1000000)
+        self.assertEqual(sources['publish_ms'], 75.5)
+        self.assertEqual(sources['left'], dict(sequence=8, image_ms=22., control_received_ms=60.))
+        self.assertEqual(sources['right']['image_ms'], 10.)
+        self.assertIsNone(delivery.source_image_times(2, 74., archive, frames, 1000000)['publish_ms'])
+        self.assertIsNone(delivery.source_image_times(2, 78., archive, {8: foot(1022000, 1080000)},
+                                                       1000000)['left'])
+        self.assertIsNone(delivery.source_image_times(2, 78., archive, {}, 1000000)['right'])
 
     def test_endpoint_tracking_starts_at_first_completed_receiving_solution(self):
         anchor = dict(side='-1', phase='2', anchor='1', terminal_deg='-1.91')

@@ -2,13 +2,13 @@
 #include <cstdint>
 
 namespace walking_trial {
-enum class Profile : uint8_t { None, Turn3, SmallStep, RightArrival, CarryHistory, ReturnPrediction, LeftTransferCarryV1 };
+enum class Profile : uint8_t { None, Turn3, SmallStep, RightArrival, CarryHistory, ReturnPrediction, LeftTransferCarryV1, LeftTransferCarryV2 };
 // The accepted run settings determine the logged and executed policy. Earlier
 // names remain available for interpreting archived measurements.
 inline Profile forRun(bool wheel_work, float target_deg, float input_percent) {
   if (!wheel_work || target_deg!=8.f || input_percent!=0.f) return Profile::None;
 #if WALKING_SMALL_STEP_AB && WALKING_RETURN_HISTORY
-  return Profile::LeftTransferCarryV1;
+  return Profile::LeftTransferCarryV2;
 #elif WALKING_SMALL_STEP_AB && WALKING_RIGHT_ARRIVAL
   return Profile::RightArrival;
 #elif WALKING_SMALL_STEP_AB
@@ -25,6 +25,7 @@ inline const char* name(Profile profile) {
     case Profile::CarryHistory: return "left_return_history_v1";
     case Profile::ReturnPrediction: return "left_return_prediction_v1";
     case Profile::LeftTransferCarryV1: return "left_transfer_carry_v1";
+    case Profile::LeftTransferCarryV2: return "left_transfer_carry_v2";
     default: return "none";
   }
 }

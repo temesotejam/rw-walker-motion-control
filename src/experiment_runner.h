@@ -175,7 +175,7 @@ public:
                        isLeftTransferCarryProfile());
   }
   bool isLeftTransferCarryProfile() const {
-    return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::LeftTransferCarryV1;
+    return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::LeftTransferCarryV2;
   }
   bool smallStepBaselineSelected() const {
     return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::SmallStep;
@@ -791,6 +791,9 @@ private:
   receiving_arc_aid::MainReserve walking_main_reserve_;
 #if WALKING_RETURN_HISTORY
   return_crossing_work::Reference walking_crossing_reference_;
+#if SUPPORT_TRANSFER_STALL_V3
+  return_crossing_work::MainPassages walking_main_passages_;
+#endif
   receiving_arc_aid::ReturnHistory walking_return_history_;
 #endif
 #if SUPPORT_TRANSFER_ARC_FEEDBACK

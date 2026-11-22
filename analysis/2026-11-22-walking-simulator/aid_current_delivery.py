@@ -40,14 +40,38 @@ def command_window(commands, event):
     return start, end, next_on
 
 
-def first_receiving_capture(rows, until):
-    """Earliest recorded CAD receiving anchor for this leftward return."""
-    for captured, ready, row in sorted(rows, key=lambda p: p[0]):
-        if captured > until:
+def first_receiving_state(rows, until):
+    """Earliest CAD receiving state, indexed by the control task's snapshot time."""
+    for state_ms, ready, row in sorted(rows, key=lambda p: p[0]):
+        if state_ms > until:
             break
         if row.get('side') == '-1' and row.get('phase') == '2' and row.get('anchor') in ('1', '2'):
-            return captured, ready, int(row['anchor'])
+            return state_ms, ready, row
     return None
+
+
+def source_image_times(packet_id, state_ms, periodic, frames, epoch):
+    """Follow the publication ordinal, then image sequence, separately for each foot."""
+    result = dict(packet_id=packet_id, publish_ms=None, left=None, right=None)
+    samples = periodic.get('samples', [])
+    if not 1 <= packet_id <= len(samples):
+        return result
+    # count increments once per publication even when a scheduled slot was skipped.
+    packet = dict(zip(periodic['columns'], samples[packet_id-1]))
+    published = packet.get('publish_us')
+    if published is None or not 0 <= published <= round(state_ms * 1000):
+        return result
+    result['publish_ms'] = published / 1000
+    for side in ('left', 'right'):
+        sequence = packet.get(side + '_sequence')
+        frame = frames.get(sequence)
+        if not sequence or not frame or not frame.get('timestamp_valid'):
+            continue
+        image, received = frame.get('frame_us'), frame.get('control_observed_us')
+        if image and received and epoch <= image <= received <= epoch + published:
+            result[side] = dict(sequence=sequence, image_ms=(image-epoch)/1000,
+                                control_received_ms=(received-epoch)/1000)
+    return result
 
 
 def evaluate_trial(folder, motion=None):
@@ -57,7 +81,12 @@ def evaluate_trial(folder, motion=None):
         return []
     if motion.clock is None:
         return [dict(peak_ms=e['peak_ms'], status='missing_measurement_epoch') for e in events]
-    _, traces = pulse_release.trace(folder)
+    meta, traces = pulse_release.trace(folder)
+    frames = {}
+    for frame in meta.get('foot_frames', ()):
+        if frame.get('state_id') == 3:
+            seq = frame['sequence']
+            frames[seq] = frame if seq not in frames else None
     points = traces['current']
     times = [t for t, _ in points]
     results = []
@@ -87,10 +116,15 @@ def evaluate_trial(folder, motion=None):
                       on_charge_mas=-on_charge if on_charge is not None else None,
                       tail_charge_mas=-tail_charge if tail_charge is not None else None,
                       modeled_on_charge_mas=e.get('elapsed_q_pred_mas') if e.get('completion_valid') else None)
-        receiving = first_receiving_capture(motion.by_peak.get(e['peak_ms'], ()), end)
+        receiving = first_receiving_state(motion.by_peak.get(e['peak_ms'], ()), end)
         if receiving:
-            captured, ready, anchor = receiving
-            pre = bracketed_charge(points, times, on, captured, next_command_ms=next_on) if captured > on else 0.
-            result.update(receiving_capture_ms=captured, receiving_ready_ms=ready, receiving_anchor=anchor,
-                          charge_by_receiving_capture_mas=0. - pre if pre is not None else None)
+            state_ms, ready, row = receiving
+            pre = bracketed_charge(points, times, on, state_ms, next_command_ms=next_on) if state_ms > on else 0.
+            q = -pre if pre is not None else None
+            result.update(receiving_state_ms=state_ms, receiving_ready_ms=ready, receiving_anchor=int(row['anchor']),
+                          charge_by_receiving_state_mas=q,
+                          receiving_foot_sources=source_image_times(int(row['packet']), state_ms,
+                              meta.get('foot_periodic', {}), frames, motion.clock),
+                          # Older JSON consumers call the CAD state snapshot "capture".
+                          receiving_capture_ms=state_ms, charge_by_receiving_capture_mas=q)
     return results

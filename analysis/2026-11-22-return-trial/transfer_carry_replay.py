@@ -1,4 +1,4 @@
-"""Compare left-transfer carry with prediction1 at the same recorded decisions.
+"""Compare consecutive left-aid policies at the same recorded decisions.
 
 The new work calculation runs only inside an accepted left aid. Replay the
 production camera track, reserve, reference, wheel guard and work selector.
@@ -85,13 +85,16 @@ def replay(folder, executable, legacy, audit_approach=False):
         j = bisect_right(imu_ms, seen)-1
         fresh = j>=0 and seen-imu_ms[j]<=10 and imu[j][1]<=10000
         powered = p['pending_command_matched'] and (p['pending_q_command_mA_s'] or 0)>0 and fresh
-        match = (fresh and p['pending_command_matched'] and w.get('assisted_cycle') and not w['optional']
-                 and not w['rescue'] and not w['return_event'] and w['completion_reason']==1
-                 and w['completion_valid'] and w['completion_work_valid'] and w['side']==p['physical_peak_side']
-                 and e['event_kind']=='energy_control_zero_cross')
-        full = all(w.get(k) for k in ('planned_duration_completed','completion_width_supported','charge_supported'))
+        ordinary = (fresh and p['pending_command_matched'] and w and not w['optional']
+                    and not w['rescue'] and not w['return_event'] and w['completion_reason']==1
+                    and w['completion_valid'] and w['completion_work_valid'] and w['side']==p['physical_peak_side']
+                    and e['event_kind']=='energy_control_zero_cross')
+        match = ordinary and w['assisted_cycle']
+        full_duration = w.get('planned_duration_completed') and w.get('completion_width_supported')
         append(epoch+1000*seen,2,'P',t,p['physical_peak_side'],int(bool(powered)),int(bool(match)),
-               e.get('zero_cross_time_ms',0),int(full),p['peak_amplitude_deg'],w.get('start_rate_dps'),w.get('target_j'))
+               e.get('zero_cross_time_ms',0),int(bool(full_duration)),p['peak_amplitude_deg'],
+               w.get('start_rate_dps'),w.get('target_j'),int(bool(ordinary)),w.get('actual_elapsed_ms',0),
+               w.get('elapsed_work_pred_j'),w.get('elapsed_q_pred_mas'))
     for i,(w,e) in enumerate(zip(records,events[1:])):
         t, peak, side = w['time_ms'], w['peak_ms'], w['side']
         if peak!=e['previous_peak_time_ms'] or w['executed']!=e['output_executed']:
@@ -109,7 +112,7 @@ def replay(folder, executable, legacy, audit_approach=False):
             continue
         ep=by_peak.get(peak,{})
         arc=arcs.get(i,{})
-        d=dict(ms=t,peak_ms=peak,evidence=w['return_evidence'],observed_ms=w['guarded_ms'],
+        d=dict(row_index=i,ms=t,peak_ms=peak,evidence=w['return_evidence'],observed_ms=w['guarded_ms'],
                observed_work_uJ=w['predicted_work_j']*1e6,outcome=ep.get('outcome'),
                prediction1_ms=previous_ms.get(t,w['guarded_ms']),archive_source=arc.get('arc_foot_source'),
                archive_reason=arc.get('arc_aid_reason'),archive_reserve=arc.get('arc_main_reserve_ms'),
@@ -118,6 +121,8 @@ def replay(folder, executable, legacy, audit_approach=False):
         append(stamp,5,'C')
         if w['return_evidence']!=1 or not w['fore_aft_allowed'] or w['return_foot_age_ms']>75:
             d['new_ms']=d['prediction1_ms']
+            d['walk2_ms']=d['new_ms']
+            d['walk2_changed']=False
             continue
         matches=[f for f in raw if f['measurement_time_us']//1000==t-w['return_foot_age_ms']
                  and f['control_observed_us']<=stamp and all(f[k] for k in (
@@ -143,6 +148,28 @@ def replay(folder, executable, legacy, audit_approach=False):
         raise ValueError(f'{folder}: adapter {result.returncode}: {result.stderr}')
     for line in result.stdout.splitlines():
         fields=line.split()
+        if fields[0]=='J':
+            _,t,walk1,width,zero,peak,speed,request,work,main,main_reserve,main_work,predicted_speed=fields
+            d=decisions[int(t)]
+            if d['new_ms']!=int(walk1):
+                raise ValueError(f'{folder.name}/{t}: inconsistent walk1 baseline')
+            d.update(walk2_ms=int(width),walk2_changed=int(width)!=int(walk1),
+                     passage_ref_zero_ms=int(zero),passage_ref_peak_ms=int(peak),
+                     passage_ref_dps=float(speed),passage_request_uJ=float(request)*1e6,
+                     walk2_predicted_work_uJ=float(work)*1e6)
+            if int(main):
+                d.update(passage_ref_main_ms=int(main),passage_reserve_ms=int(main_reserve),
+                         passage_main_request_uJ=float(main_work)*1e6,
+                         passage_predicted_zero_dps=float(predicted_speed))
+            if meta.get('walking_profile')=='left_transfer_carry_v2':
+                archived=arcs.get(d['row_index'],{})
+                if (d['observed_ms']!=int(width)
+                        or archived.get('arc_passage_main_ms',0)!=int(main)
+                        or archived.get('arc_passage_reserve_ms',0)!=int(main_reserve)):
+                    raise ValueError(f'{folder.name}/{t}: recorded walk2 width or main reservation mismatch')
+            if int(zero) and not 0<int(zero)<int(peak)<d['peak_ms']<int(t):
+                raise ValueError(f'{folder.name}/{t}: passage reference is not in the past')
+            continue
         (t,src,reason,res,inv,base,zero,speed,transfer,terminal,arc_j,ref_j,new_inv,width,work)=fields[:15]
         d=decisions[int(t)]
         if fields[15:]:
@@ -159,7 +186,7 @@ def replay(folder, executable, legacy, audit_approach=False):
             # This branch first became active in left_transfer_carry_v1.
             d['prediction1_ms']=int(base)
             expected=width if meta.get('walking_profile')=='left_transfer_carry_v1' else base
-            if d['observed_ms']!=int(expected):
+            if meta.get('walking_profile')!='left_transfer_carry_v2' and d['observed_ms']!=int(expected):
                 raise ValueError(f'{folder.name}/{t}: recorded profile width mismatch')
         # For old versions without recorded arc decisions, the retained v1 arc
         # extension may be unknown. A different geometry path cannot trigger the
@@ -176,6 +203,10 @@ def replay(folder, executable, legacy, audit_approach=False):
                  candidate_inverse_ms=int(new_inv),new_work_uJ=float(work)*1e6 if int(reason)==3 else None,
                  new_ms=int(width) if int(reason)==3 else d['prediction1_ms'] if known_v1 else None,
                  other_path_unchanged=int(reason)!=3)
+        if int(reason)!=3:
+            d.update(walk2_ms=d['new_ms'],walk2_changed=False)
+    if any('walk2_changed' not in d for d in decisions.values() if 'unreconstructed' not in d):
+        raise ValueError(f'{folder.name}: missing walk2 comparison')
     return dict(run=folder.name, episodes=episodes, aids=list(decisions.values()))
 
 
@@ -201,9 +232,10 @@ def main():
     print('Runs:',len(runs),'right peaks:',len(episodes),'outcomes:',
           Counter((e['outcome'],e['pulse_before_end']) for e in episodes))
     print('Left aids:',len(aids),'unmatched:',sum('unreconstructed' in a for a in aids),
-          'new-path candidates:',sum(a.get('initial_arc_reason')==3 for a in aids))
+          'left sole not yet receiving:',sum(a.get('initial_arc_reason')==3 for a in aids))
+    print('Changed from walk1:',Counter(a['outcome'] for a in aids if a.get('walk2_changed')))
     for a in aids:
-        if a['run'] in ('135284989','70067320','195727101') or (
+        if a.get('walk2_changed') or a['run'] in ('135284989','70067320','195727101') or (
                 a.get('new_ms') is not None and a['new_ms']!=a['prediction1_ms']):
             print(a)
     if args.json_out:

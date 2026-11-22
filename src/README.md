@@ -1,6 +1,6 @@
 # 実機ファームウェアの読み方
 
-現在の歩行版 v39-walk1 は、左右の足角を25 ms周期で供給し、左の支持に移った後に必要な仕事をホイールの補助入力幅に反映します。通常の±8°開始で選ぶ制御は `walking_trial::forRun()` にあります。`main.cpp` の `setup()` が制御タスクやカメラを初期化し、`controlStep()` が歩行時の更新を進めます。Arduinoの `loop()` はWebとUSB診断を処理します。[開始時の方式決定](walking_trial_profile.h) · [制御タスク](main.cpp)
+現在の歩行版 v39-walk2 は、左右の足角を25 ms周期で供給し、左へ渡れたときの中心通過速度と主入力の仕事を、その後の左補助と主入力の時間配分に使います。通常の±8°開始で選ぶ制御は `walking_trial::forRun()` にあります。`main.cpp` の `setup()` が制御タスクやカメラを初期化し、`controlStep()` が歩行時の更新を進めます。Arduinoの `loop()` はWebとUSB診断を処理します。[開始時の方式決定](walking_trial_profile.h) · [仕事の配分](return_crossing_work.h) · [制御タスク](main.cpp)
 
 | 確認したいこと | 読む場所 | 処理の役割 |
 |---|---|---|

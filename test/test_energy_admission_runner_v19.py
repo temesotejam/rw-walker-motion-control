@@ -236,6 +236,59 @@ static void turn_main_response(){
 #endif
 int main(){
 #if WALKING_RETURN_HISTORY
+ // Run 68907120, 3.022 s. Exercise the two-event width through the real
+ // left-aid transport, timer and half-cycle ledger. The CAD path to the
+ // intermediate centre is the same for both the raw and compensated poses.
+ for (unsigned mode=0;mode<3;++mode) {
+  ExperimentRunner r;ready19(r);r.transfer_carry=true;
+  r.tilt_priority_.reset();r.tilt_priority_.peak(-1,1,4.5f);
+  for (unsigned k=0;k<4;++k) {
+    const int side=k%2?-1:1; const uint32_t t=100+400*k;
+    tilt_priority::Choice c;c.selected=true;c.direction=side;c.width_ms=30;c.current_ma=1200;c.target_deg=4.5f;
+    r.tilt_priority_.crossing(side,t);r.tilt_priority_.confirm(side,t,c,true,true,false);
+    r.tilt_priority_.peak(side,t+150,4.5f);
+  }
+  const float old_target=lateral_energy::potential(r.lateral_energy_geometry_,4.5f);
+  r.walking_main_passages_.observe(476,657,4.09752f,17.9472f,old_target,48,113.396e-6f,mode!=1);
+  r.walking_main_passages_.observe(1351,1512,3.37284f,19.13394f,old_target,40,85.456e-6f,mode!=1);
+  r.walking_main_reserve_.observe(-1,false,78);
+  r.walking_energy_peaks_[0]=3.65731f;r.walking_energy_peak_ms_[0]=2450;
+  r.energy_control_autonomous_last_peak_side_=1;r.energy_control_autonomous_last_peak_ms_=2855;
+  assert(r.walking_half_cycle_budget_.sourcePeak(2855));
+  r.walking_return_event_=r.stall_rescue_event_=true;
+  r.walking_return_choice_.request_j=7.947e-6f;r.walking_return_choice_.deceleration_dps2=55.27f;
+  r.walking_return_observation_.evidence=return_observation_policy::Evidence::ObservedShape;
+  r.walking_return_observation_.foot_age_ms=33;clock19(r,3022);
+  r.walking_fore_aft_last_.angle_deg=-.45944f;r.walking_fore_aft_last_.rate_dps=-2.873f;
+  auto& raw=r.walking_return_frame_;raw.run_id=r.status_.run_id;raw.sequence=3160;raw.image_us=mock_us-33000;
+  raw.received_us=mock_us-3000;raw.left_deg=3.11881f;raw.right_deg=-.15315f;
+  auto& p=r.periodic_foot_packet_;p.count=121;p.epoch_us=1;p.published_us=mock_us-1000;
+  p.left.sequence=p.right.sequence=raw.sequence;p.left.image_us=p.right.image_us=raw.image_us;
+  p.left.estimated=3.06555f;p.right.estimated=-.15315f;p.left.rate_dps=-2.1305f;p.right.rate_dps=0;
+  r.wheel_cycle_guard_.limit(1,-596.2f,true,2631,26);r.roller_obj.write_ok=mode!=2;
+  assert(r.walking_energy_current_.prepare(.031652216f));r.simulated_goal_ma=340.88391f;
+  Event e;e.zero_cross_time_ms=3022;e.zero_cross_rate_dps=-20.1508f;e.zero_cross_abs_rate_dps=20.1508f;
+  e.detector_angle_after_deg=4.76397f;e.physical_next_peak_side=-1;
+  e.previous_peak_time_ms=2855;e.previous_peak_amplitude_deg=7.44456f;e.target_peak_deg=8;
+  e.pre_input_wheel_speed_valid=true;e.pre_input_wheel_speed_age_us=1524;e.pre_input_wheel_speed_rpm=-18.81f;
+  e.i0_estimated_mA=1.0831f;e.vbat_mV=7760;bool healthy=false;
+  assert(r.tryWalkingEnergy(e,3022,&healthy));
+  const auto& a=r.walking_energy_audit_[0];
+  assert(a.main_reserve_ms==78 && a.base_aid_ms==11);
+  assert(a.guarded_ms==(mode==1?11:21));
+  if(mode!=1) assert(a.crossing_work.zero_ms==1351 && a.crossing_work.passage_main_ms==40 &&
+      a.crossing_work.passage_reserve_ms==54 && a.crossing_work.passage_zero_dps>16 &&
+      a.crossing_work.passage_zero_dps<18 && a.decision.extrapolated);
+  if(mode==2) {
+    assert(!a.executed && !e.output_executed && !r.walking_half_cycle_budget_.aidUsed());
+    assert(r.walking_half_cycle_budget_.remaining()==80); continue;
+  }
+  assert(healthy && a.executed && e.output_executed && r.roller_obj.last_command==-1200);
+  const auto width=a.guarded_ms;
+  assert(e.pulse_width_ms==width && r.walking_half_cycle_budget_.reservedMs()==width);
+  clock19(r,a.output_start_ms+width);r.updateEnergyControlAutonomousPulse(mock_ms);
+  assert(!r.status_.pulse_active && r.walking_half_cycle_budget_.remaining()==80-width);
+ }
  // Run 135284989. The left sole is still higher at the last actual aid.
  // Compare the previous profile, the new one, and a failed write of the new command.
  for (unsigned mode=0;mode<3;++mode) {

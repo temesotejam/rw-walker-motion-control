@@ -146,9 +146,57 @@ static void testApproachingAidWork() {
   ApproachFixture strong;strong.in.same_side_peak_deg=5.1f;assert(!strong.choose().final_ms);
 }
 
+static void testPassageWork() {
+  ApproachFixture f;
+  using namespace return_crossing_work;
+  MainPassages passages;
+  passages.observe(100,200,1.f,18.f,.00034f,40,85.e-6f,true); // Did not reach the receiving arc.
+  passages.observe(100,200,3.f,18.f,.00034f,40,85.e-6f,false); // Unfinished or unqualified pulse.
+  assert(!passages.recent[0].zero_ms);
+  passages.observe(100,200,3.f,18.f,.00034f,40,85.e-6f,true);
+  passages.observe(50,180,4.f,23.f,.00034f,50,110.e-6f,true); // Out of order.
+  assert(passages.recent[0].zero_ms==100 && !passages.recent[1].zero_ms);
+  f.arc.body_deg=f.in.body_angle_deg=4.76397f; f.arc.speed_dps=f.in.rate_dps=20.1508f;
+  f.arc.decel_dps2=55.27f;f.arc.fore_aft_deg=-.45944f;
+  f.arc.left_deg=3.11881f;f.arc.right_deg=f.arc.right_est=-.15315f;f.arc.left_est=3.06555f;
+  f.arc.left_rate=-2.1305f;f.arc.right_rate=0;
+  f.in.previous_peak_deg=7.44456f;f.in.same_side_peak_deg=3.65731f;
+  f.in.return_work_j=7.947e-6f;f.in.initial_current_ma=-1.0831f;f.in.goal_current_ma=340.8839f;
+  f.selected=half_cycle_energy_budget::decideReturnAid(f.geometry,f.current,f.in);
+  f.wheel.reset(); f.wheel.limit(1,-596.2f,true,2631,26);
+  f.chosen=f.wheel;f.width=f.chosen.limit(-1,-18.81f,true,3022,f.selected.width_ms);
+  assert(f.width==11);
+  const auto plan=[](ApproachFixture& data,const MainPassages& refs,unsigned now,uint16_t envelope) {
+    return applyPassage(data.arc,refs,now-167,now,envelope,-18.81f,data.wheel,data.chosen,
+        data.geometry,data.current,data.in,data.selected,data.width);
+  };
+  const float old_target=lateral_energy::potential(f.geometry,4.5f);
+  passages={};passages.observe(1351,1512,3.3728f,19.13394f,old_target,40,85.456e-6f,true);
+  auto copy=f;
+  const auto joint=plan(copy,passages,3022,80);
+  assert(joint.final_ms==21 && joint.passage_main_ms==40 && joint.passage_reserve_ms==54);
+  assert(joint.zero_ms==1351 && joint.passage_main_j>=85.456e-6f+f.selected.target_j-old_target);
+  assert(joint.passage_zero_dps>16 && joint.passage_zero_dps<joint.speed_dps);
+  assert(joint.final_ms+joint.passage_reserve_ms<=80);
+  // Without enough time for the second event, keep all original output state.
+  copy=f;assert(!plan(copy,passages,3022,70).final_ms && copy.width==11);
+  assert(copy.selected.width_ms==f.selected.width_ms && copy.chosen.legacyWidth()==f.chosen.legacyWidth());
+  copy=f;copy.arc.left_est=copy.arc.right_est;assert(!plan(copy,passages,3022,80).final_ms);
+  copy=f;copy.arc.decel_dps2=10;assert(!plan(copy,passages,3022,80).final_ms);
+  MainPassages stale;stale.observe(600,1512,3.f,19.f,old_target,40,85.e-6f,true);
+  assert(!plan(f,stale,5600,80).final_ms);
+  MainPassages future;future.observe(2700,2950,3.f,19.f,old_target,40,85.e-6f,true);
+  assert(!plan(f,future,3022,80).final_ms);
+  passages.recent[0].target_j=f.selected.target_j*1.2f;
+  assert(!plan(f,passages,3022,80).final_ms);
+  passages.recent[0].target_j=old_target;passages.recent[0].main_j=1;
+  assert(!plan(f,passages,3022,80).final_ms); // Required charge above the measured range.
+}
+
 int main() {
   testPredictedReturn();
   testApproachingAidWork();
+  testPassageWork();
   Fixture ok; ok.seed(); ok.frame(13,326);
   const auto hit=ok.check();
   assert(hit.selected && hit.evidence==Evidence::MeasuredArcShortfall);

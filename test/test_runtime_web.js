@@ -264,7 +264,7 @@ vm.runInContext(code,context);
   vm.runInContext('latest=null;lastSeen=0;controls()',context);
   assert.strictEqual(element('work-start').disabled,true);
   assert.match(element('work-start-status').textContent,/通信/);
-  gate.diagnostic_build_id='walking-support-transfer-v39-walk1';
+  gate.diagnostic_build_id='walking-support-transfer-v39-walk2';
   gate.foot_periodic=footPacket;
   vm.runInContext('adoptStatus(gate);render(gate)',context);
   assert.match(element('work-description').textContent,/左足に支持が移った後/);
@@ -290,13 +290,13 @@ vm.runInContext(code,context);
   assert.deepStrictEqual(Object.fromEntries(startRequests[0].searchParams),
     {target_deg:'8',input_peak_percent:'0',input_current_mA:'300',brake_max_ms:'40',peak_adaptation:'0',energy_model:'work_control'});
   assert.match(element('run-model').textContent,/開始要求.*左支持に移った後/);
-  context.fetch=async()=>({ok:true,json:async()=>({periodic_run:true,foot_periodic:footPacket,walking_profile:'left_transfer_carry_v1',
+  context.fetch=async()=>({ok:true,json:async()=>({periodic_run:true,foot_periodic:footPacket,walking_profile:'left_transfer_carry_v2',
     state:'RUNNING_BATCH_SWEEP',remaining_ms:24000,pitch_deg:1,motor_mA:0,actual_mA:0})});
   await vm.runInContext('refresh()',context);
   assert.match(element('run-model').textContent,/左支持に移った後/);
-  assert.match(element('run-percent').textContent,/足姿勢と胴体の減速/);
+  assert.match(element('run-percent').textContent,/胴体速度と通電時間/);
   assert.match(element('work-start-status').textContent,/歩行測定中/);
-  for (const [profile,text] of [['left_return_history_v1',/左への戻り/],['left_return_prediction_v1',/支持移行を予測/],['right_arrival_v1',/到達エネルギー/]]) {
+  for (const [profile,text] of [['left_transfer_carry_v1',/左支持に移った後/],['left_return_history_v1',/左への戻り/],['left_return_prediction_v1',/支持移行を予測/],['right_arrival_v1',/到達エネルギー/]]) {
     vm.runInContext(`renderWalkingProfile('${profile}')`,context);
     assert.match(element('run-model').textContent,text);
   }

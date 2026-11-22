@@ -26,6 +26,8 @@ struct Audit {
   float speed_dps=0, request_j=0;
   uint16_t base_ms=0, final_ms=0;
   float transfer_ms=NAN, terminal_deg=NAN, arc_request_j=NAN;
+  uint16_t passage_main_ms=0, passage_reserve_ms=0;
+  float passage_main_j=NAN, passage_zero_dps=NAN;
 };
 
 inline bool usableReference(const Reference& source,uint32_t departure,uint32_t now,float target) {
@@ -80,6 +82,117 @@ inline Audit apply(const Reference& source,uint32_t departure,uint32_t now,float
 }
 
 #if SUPPORT_TRANSFER_STALL_V3
+// Recent leftward centre passages that subsequently reached the receiving
+// sole's CAD entry. The speed was sampled before that particular main pulse.
+struct MainPassage {
+  uint32_t zero_ms,peak_ms;
+  float speed_dps,target_j,main_j;
+  uint16_t main_ms;
+};
+struct MainPassages {
+  MainPassage recent[3]{};
+
+  void observe(uint32_t zero,uint32_t peak,float magnitude,float speed,float target,
+               uint32_t elapsed,float work,bool completed) {
+    if (!completed || !zero || peak<=zero || peak-zero>1500 || peak<=recent[0].peak_ms ||
+        !(std::isfinite(magnitude) && magnitude>=-support_transfer_plan::arcEntryDeg(-1,0) &&
+          speed>=support_transfer_plan::kCarryDps && speed<=walking_energy_policy::passiveCoefficients(-1).rate_max_dps &&
+          std::isfinite(target) && target>0 && std::isfinite(work) && work>0 &&
+          elapsed>0 && elapsed<=half_cycle_energy_budget::kEnvelopeMs)) return;
+    recent[2]=recent[1]; recent[1]=recent[0];
+    recent[0]={zero,peak,speed,target,work,static_cast<uint16_t>(elapsed)};
+  }
+};
+
+// At the estimated crossing, reserve enough time to deliver the second
+// stage's work with the current battery model. Do not credit the aid's
+// unmeasured current tail. The real ZERO still re-solves from its fresh state.
+inline uint16_t mainDuration(const lateral_energy::CurrentTable& current,
+    const walking_return_energy::Input& in,float speed,float work,uint16_t cap) {
+  const auto c=lateral_energy::coefficients(-1);
+  const float q=lateral_energy::requiredCharge(c,speed*lateral_energy::kRadPerDeg,work);
+  const float initial=std::fmin(0.f,in.initial_current_ma);
+  if (!cap || !(q>0 && q<=c.charge_max_mAs) ||
+      lateral_energy::charge(current,cap,initial,in.goal_current_ma)<q) return 0;
+  uint16_t lo=0, hi=cap;
+  while (hi-lo>1) {
+    const uint16_t mid=(lo+hi)/2;
+    if (lateral_energy::charge(current,mid,initial,in.goal_current_ma)<q) lo=mid;
+    else hi=mid;
+  }
+  return lateral_energy::charge(current,hi,initial,in.goal_current_ma)<=c.charge_max_mAs ? hi : 0;
+}
+
+// Fallback for an accepted left aid while the receiving sole is still
+// higher. A fixed-foot path must change supporting side before body zero,
+// in both the measured and delay-compensated poses. Its exact impact time
+// is unknown. Use the necessary centre passage as the intermediate event.
+inline Audit applyPassage(const receiving_arc_aid::Input& arc,const MainPassages& passages,
+    uint32_t departure,uint32_t now,uint16_t envelope,float rpm,
+    const wheel_cycle_guard::Controller& wheel,wheel_cycle_guard::Controller& chosen_guard,
+    const lateral_energy::Geometry& geometry,const lateral_energy::CurrentTable& current,
+    walking_return_energy::Input& in,walking_return_energy::Decision& selected,uint16_t& width) {
+  Audit best;
+  if (!(arc.observed_shape && arc.side==-1 && in.side==-1 && now>departure && now-departure<=1500 &&
+        in.previous_peak_deg>in.target_deg && in.same_side_peak_deg>0 && in.same_side_peak_deg<in.target_deg &&
+        arc.body_deg>0 && arc.body_deg<=12 && arc.speed_dps>=support_transfer_plan::kCarryDps && arc.speed_dps<=35 &&
+        std::isfinite(arc.decel_dps2) && arc.decel_dps2>0 && std::fabs(arc.fore_aft_deg)<=10 &&
+        arc.left_deg-arc.right_deg>=3 && std::fabs(arc.left_deg)<=20 && std::fabs(arc.right_deg)<=20 &&
+        arc.left_est>arc.right_est && std::fabs(arc.left_est)<=20 && std::fabs(arc.right_est)<=20 &&
+        std::fabs(arc.left_rate)<=80 && std::fabs(arc.right_rate)<=80 && selected.valid && !selected.coast &&
+        current.ready && std::isfinite(rpm) && width>0 && width<envelope && envelope<=in.cap_ms)) return best;
+  const auto changes_side=[&](float left,float right) {
+    return support_transfer_plan::supportGap(left,right,arc.fore_aft_deg,arc.body_deg)>0 &&
+           support_transfer_plan::supportGap(left,right,arc.fore_aft_deg,0)<0;
+  };
+  if (!changes_side(arc.left_deg,arc.right_deg) || !changes_side(arc.left_est,arc.right_est)) return best;
+
+  const float to_zero=energyShortfall(arc.body_deg,0,arc.speed_dps,0,arc.decel_dps2);
+  const float rad=lateral_energy::kRadPerDeg;
+  const float kinetic=walking_energy_policy::passiveCoefficients(-1).omega2_j*rad*rad;
+  const float cap=.5f*selected.target_j;
+  if (!(to_zero>0 && to_zero<cap)) return best;
+  uint16_t best_total=envelope+1;
+  auto best_guard=chosen_guard;
+  auto best_inverse=selected;
+  for (const auto& pass : passages.recent) {
+    if (!pass.zero_ms || pass.peak_ms>=departure || now-pass.peak_ms>4000 ||
+        pass.target_j>selected.target_j+1.e-9f) continue;
+    const float reference_kinetic=kinetic*pass.speed_dps*pass.speed_dps;
+    auto proposed=in;
+    proposed.return_work_j=to_zero+reference_kinetic;
+    if (!(proposed.return_work_j>selected.request_j && proposed.return_work_j<=cap)) continue;
+    const auto inverse=half_cycle_energy_budget::decideReturnAid(geometry,current,proposed);
+    if (!inverse.valid || inverse.coast) continue;
+    auto trial_guard=wheel;
+    const uint16_t aid=trial_guard.limit(-1,rpm,true,now,inverse.width_ms);
+    if (aid<=width || aid>=envelope) continue;
+    const auto delivered=half_cycle_energy_budget::evaluateReturnAidWidth(geometry,current,proposed,aid);
+    if (!delivered.valid || !delivered.charge_supported || !(delivered.predicted_work_j<=cap)) continue;
+    const float crossing_kinetic=delivered.predicted_work_j-to_zero;
+    if (!(crossing_kinetic>=kinetic*support_transfer_plan::kCarryDps*support_transfer_plan::kCarryDps)) continue;
+    const float crossing_speed=std::sqrt(crossing_kinetic/kinetic);
+    // The reference main started at its own observed speed and target. Add
+    // only changes to that starting boundary, not the work spent before it.
+    const float main_work=pass.main_j+std::fmax(0.f,selected.target_j-pass.target_j)+
+                          std::fmax(0.f,reference_kinetic-crossing_kinetic);
+    const uint16_t reserve=mainDuration(current,in,crossing_speed,main_work,envelope-aid);
+    if (!reserve) continue;
+    const uint16_t total=aid+reserve;
+    if (total>best_total || (total==best_total && aid>=best.final_ms)) continue;
+    best_total=total;
+    best.base_ms=width; best.final_ms=aid; best.zero_ms=pass.zero_ms; best.peak_ms=pass.peak_ms;
+    best.speed_dps=pass.speed_dps; best.request_j=proposed.return_work_j;
+    best.passage_main_ms=pass.main_ms; best.passage_reserve_ms=reserve;
+    best.passage_main_j=main_work; best.passage_zero_dps=crossing_speed;
+    best_inverse=inverse; best_guard=trial_guard;
+  }
+  if (best.final_ms) {
+    in.return_work_j=best.request_j; selected=best_inverse; chosen_guard=best_guard; width=best.final_ms;
+  }
+  return best;
+}
+
 // Forecast using the deceleration that qualified the existing aid. Require a
 // closing gap over both halves of the interval, ending on the receiving sole.
 // Interpolate the time within the bracketing half; this is a predicted CAD

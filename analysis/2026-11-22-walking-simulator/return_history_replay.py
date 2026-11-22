@@ -220,7 +220,7 @@ def observed_prediction(folder):
     folder = Path(folder)
     meta = json.loads((folder / 'metadata.json').read_bytes())
     profile = meta.get('walking_profile')
-    carry = profile == 'left_transfer_carry_v1'
+    carry = profile in ('left_transfer_carry_v1', 'left_transfer_carry_v2')
     if profile != 'left_return_prediction_v1' and not carry:
         return None
     archive = meta.get('walking_energy') or {}
@@ -233,6 +233,8 @@ def observed_prediction(folder):
     if carry:
         expected += ('arc_approach_transfer_ms', 'arc_approach_terminal_deg', 'arc_approach_request_j',
                      'arc_crossing_request_j')
+    if profile == 'left_transfer_carry_v2':
+        expected += ('arc_passage_main_ms', 'arc_passage_reserve_ms', 'arc_passage_main_j', 'arc_passage_zero_dps')
     complete = (archive.get('archive_available') is True and archive.get('truncated') is False and
                 archive.get('stored') == archive.get('total') == len(rows) and
                 isinstance(archive.get('arc_aids'), list) and all(k in arc for _, arc in left_aids for k in expected))
@@ -263,6 +265,14 @@ def observed_prediction(folder):
                            executed_extension=executed_extension,
                            elapsed_exceeded_base=elapsed>base if executed_extension and elapsed is not None else None,
                            executed=executed, motion=None))
+        if profile == 'left_transfer_carry_v2' and extended and (arc.get('arc_passage_reserve_ms') or 0) > 0:
+            events[-1]['passage'] = dict(
+                reference_speed_dps=arc.get('arc_crossing_ref_dps'),
+                reference_main_ms=arc.get('arc_passage_main_ms'),
+                previous_reserve_ms=arc.get('arc_main_reserve_ms'),
+                selected_reserve_ms=arc['arc_passage_reserve_ms'],
+                main_work_j=arc.get('arc_passage_main_j'),
+                predicted_zero_speed_dps=arc.get('arc_passage_zero_dps'))
         if executed:
             events[-1]['motion'] = _observed_motion(folder, meta, row, terminal, complete)
     return dict(archive_complete=complete, events=events)
@@ -278,7 +288,7 @@ def observed_intervention(folder):
     stats = dict(evaluated=0, matching_donors=0, width_increased=0, executed_increased=0)
     empty = dict.fromkeys(stats)
     out = {'profile': profile, **empty, 'observed_minimum': None, 'first_executed_change': None}
-    if profile not in ('left_return_history_v1', 'left_return_prediction_v1', 'left_transfer_carry_v1'):
+    if profile not in ('left_return_history_v1', 'left_return_prediction_v1', 'left_transfer_carry_v1', 'left_transfer_carry_v2'):
         return dict(out, status='not_selected' if profile else 'history_not_logged')
     complete = (archive.get('archive_available') is True and archive.get('truncated') is False
                 and archive.get('stored') == archive.get('total') == len(rows))

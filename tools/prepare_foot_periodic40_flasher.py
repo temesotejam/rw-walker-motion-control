@@ -15,7 +15,7 @@ import webbrowser
 
 ROOT = Path(__file__).resolve().parents[1]
 ENVIRONMENT = "atoms3cam-foot-periodic40"
-BUILD_ID = "walking-support-transfer-v39-walk1"
+BUILD_ID = "walking-support-transfer-v39-walk2"
 PAGE = "support-transfer"
 URL = f"http://127.0.0.1:8767/{PAGE}/"
 PARTS = {"bootloader.bin": 0, "partitions.bin": 0x8000,

@@ -100,7 +100,7 @@ class CarryReplay:
         exposure = audit.command_overlap(self.archive, when, confirmed)
         carry = None
         if status == 'crossed':
-            carry = speed >= return_model.CARRY_SPEED_DPS
+            carry = bool(speed >= return_model.CARRY_SPEED_DPS)
         elif status == 'reversed':
             carry = False
         return {'status': status, 'end_ms': end, 'confirmed_ms': confirmed,

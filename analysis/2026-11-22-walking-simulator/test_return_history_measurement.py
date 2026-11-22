@@ -119,6 +119,28 @@ class InterventionReport(unittest.TestCase):
         self.read()
         self.assertIsNone(observed_prediction(self.folder))
 
+    def test_passage_allocation_keeps_planned_and_executed_changes_distinct(self):
+        self.meta['walking_profile'] = 'left_transfer_carry_v2'
+        for arc in self.meta['walking_energy']['arc_aids']:
+            arc.update(arc_predicted_terminal_deg=None, arc_predicted_transfer_ms=None,
+                       arc_approach_transfer_ms=None, arc_approach_terminal_deg=None, arc_approach_request_j=None,
+                       arc_crossing_base_ms=19, arc_crossing_selected_ms=24, arc_crossing_request_j=30e-6,
+                       arc_crossing_ref_zero_ms=40, arc_crossing_ref_dps=18., arc_main_reserve_ms=78,
+                       arc_passage_main_ms=40, arc_passage_reserve_ms=50, arc_passage_main_j=100e-6,
+                       arc_passage_zero_dps=17.)
+        self.read()
+        result = observed_prediction(self.folder)
+        self.assertTrue(result['archive_complete'])
+        veto, sent = result['events']
+        self.assertFalse(veto['executed_extension'])
+        self.assertTrue(sent['executed_extension'])
+        self.assertEqual(sent['passage']['selected_reserve_ms'], 50)
+        self.assertEqual(sent['passage']['predicted_zero_speed_dps'], 17.)
+        self.assertFalse(sent['forecast_before_transfer'])
+        self.meta['walking_energy']['arc_aids'][1].pop('arc_passage_main_j')
+        self.read()
+        self.assertFalse(observed_prediction(self.folder)['archive_complete'])
+
     def test_true_zero_and_veto(self):
         self.meta['walking_energy']['records'][1]['executed'] = False
         result = self.read()

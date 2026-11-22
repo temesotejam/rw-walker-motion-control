@@ -48,7 +48,7 @@ def main():
     last_aid = evaluate_trial(args.current)[-1]
     assert last_aid['status'] == 'reversed'
     on, off, reverse = (last_aid[key] / 1000 for key in ('driver_on_ms', 'driver_off_ms', 'end_ms'))
-    receiving = last_aid['receiving_capture_ms'] / 1000
+    receiving = last_aid['receiving_state_ms'] / 1000
     _, traces = trace(args.current)
     read_time, actual_current = np.array(traces['current']).T
 
