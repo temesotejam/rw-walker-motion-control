@@ -50,8 +50,8 @@ def registration(videos):
     return shift, min(scores)
 
 
-def measure(video, folder, shift, axis=None):
-    stamps, marks = optical.tracks(video, seeds, end_s=45)
+def aligned_observations(video, folder, shift, markers=seeds, floor_map=floor):
+    stamps, marks = optical.tracks(video, markers, end_s=45)
     marker_axis = marks[:,1] - marks[:,0]
     angle = np.degrees(np.arctan2(marker_axis[:,1], marker_axis[:,0]))
     columns = ('t_test_ms','state_id','pitch_mekf_detector_relative_deg')
@@ -69,8 +69,11 @@ def measure(video, folder, shift, axis=None):
     selected = (t>=-.8) & (t<30.1)
     if not np.isfinite(marks[selected]).all() or t[-1]<30:
         raise ValueError('Incomplete marker coverage')
-    feet = np.array([[floor(mark-shift) for mark in pair] for pair in marks[:,2:]])
+    feet = np.array([[floor_map(mark-shift) for mark in pair] for pair in marks[:,2:]])
+    return t, feet, marks, fits
 
+
+def measure_positions(folder, t, feet, marks, fits, axis=None):
     def pos(at, window):
         return feet[np.abs(t-at)<window].mean(axis=0)
 
@@ -121,6 +124,10 @@ def measure(video, folder, shift, axis=None):
     return dict(video_zero_and_correlation=fits, intervals=intervals,settled_forward_s=settle,
                 stationary_frames=len(at_rest),stationary_xy_span_px=np.ptp(at_rest,axis=0).tolist(),
                 swings=swings,between_peaks=between_peaks)
+
+
+def measure(video, folder, shift, axis=None):
+    return measure_positions(folder, *aligned_observations(video, folder, shift), axis=axis)
 
 
 if __name__=='__main__':
