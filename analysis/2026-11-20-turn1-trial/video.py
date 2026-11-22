@@ -8,11 +8,11 @@ import cv2
 import numpy as np
 
 
-def tracks(video):
+def tracks(video, initial_markers=((527., 252.), (739., 252.), (611., 391.), (651., 391.)), end_s=20):
     capture = cv2.VideoCapture(str(video))
     if not capture.isOpened():
         raise OSError(video)
-    position = np.array([[527., 252.], [739., 252.], [611., 391.], [651., 391.]])
+    position = np.array(initial_markers, dtype=float)
     velocity = np.zeros_like(position)
     stamps, samples = [], []
     while True:
@@ -20,7 +20,7 @@ def tracks(video):
         if not ok:
             break
         stamp = capture.get(cv2.CAP_PROP_POS_MSEC) / 1000
-        if stamp > 20:  # Both foot marks become intermittently occluded later.
+        if stamp > end_s:  # In the turn1 recording the feet become intermittently occluded after 20 s.
             break
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         points = np.full_like(position, np.nan)
