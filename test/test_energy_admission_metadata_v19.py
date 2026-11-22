@@ -9,9 +9,11 @@ from pathlib import Path
 import csv
 import subprocess
 import tempfile
+import zlib
 
 import _project  # Add the project tools directory for direct test runs.
 import convert_rwlog_to_csv as converter
+from fixtures.runtime_rwlog import write_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 base = ROOT / 'test/fixtures/energy/test_return_energy_metadata_v18.py'
@@ -21,7 +23,7 @@ parse = context['context']['parse']
 fixture = '#include "fore_aft_motion_guard.h"\n#include "energy_admission_v19.h"\n#include "receiving_arc_aid.h"\n#if WALKING_RETURN_HISTORY\n#include "return_crossing_work.h"\n#endif\n#if WALKING_RIGHT_ARRIVAL\n#include "right_arrival_energy.h"\n#endif\n' + context['fixture']
 fixture = fixture.replace('for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u})',
                           'for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u,24u})')
-fixture = '#if WALKING_RETURN_HISTORY\n#include "return_observation_policy.h"\n#endif\n' + fixture
+fixture = '#include "export_protocol.h"\n#include "foot_fast_policy.h"\n#if WALKING_RETURN_HISTORY\n#include "return_observation_policy.h"\n#endif\n' + fixture
 marker = 'class ExperimentRunner {public:\n'
 assert fixture.count(marker) == 1
 fixture = fixture.replace(marker, marker + r'''
@@ -118,6 +120,48 @@ fixture = fixture.replace(marker, marker + r'''
 marker = '  PsramString json;'
 assert fixture.count(marker) == 1
 fixture = fixture.replace(marker, r'''
+#if WALKING_RETURN_HISTORY
+  // A continuation and an ordinary aid coexist in the same sealed run. Both
+  // row orders must share one compact table schema, including after a retry.
+  if(argc==3) {
+    const bool first_continues=std::string(argv[1])=="mixed-first";
+    CHECK(first_continues || std::string(argv[1])=="mixed-last");
+    auto& first=runner.walking_energy_audit_[1];
+    auto& second=runner.walking_energy_audit_[2];
+    second=first;
+    auto& continuation=first_continues?first:second;
+    continuation.return_evidence=8;
+    continuation.post_release_deceleration_dps2=172.43f;
+    const std::string prefix(std::stoul(argv[2]),'x');
+    PsramString out;
+    host_psram_failure=true;
+    CHECK(!out.reserve(foot_fast_policy::kMetadataReserveBytes) && !out.ok());
+    CHECK(std::string(out.failureReason())=="reserve");
+    host_psram_failure=false;
+    out.clear();
+    CHECK(out.reserve(foot_fast_policy::kMetadataReserveBytes));
+    CHECK(!out.failureReason());
+    PsramString small;
+    CHECK(small.reserve(7));
+    small.append("12345678",8);
+    small.fail("walking_arc_row");
+    CHECK(!small.ok() && small.length()==0 && std::string(small.failureReason())=="capacity");
+    host_psram_failure=true;  // only the preallocated export buffer is available
+    for (unsigned attempt=0; attempt<2; ++attempt) {
+      out.clear();
+      out+="{\"prefix\":\"";out.append(prefix.c_str(),prefix.size());out+="\"";
+      runner.appendWalkingEnergyMetadata(out);out+="}";
+      if (!out.ok()) {
+        std::cerr<<"metadata_build_failed_at_"<<out.length()<<"_bytes\n";
+        return 2;
+      }
+      const auto crc=export_protocol::crc32(0,reinterpret_cast<const uint8_t*>(out.c_str()),out.length());
+      std::cout<<crc<<'\n';
+      std::cout.write(out.c_str(),out.length())<<'\n';
+    }
+    return 0;
+  }
+#endif
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
   if(!empty){
     auto& motion=runner.walking_fore_aft_last_;
@@ -169,9 +213,47 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                         '-DWALKING_SMALL_STEP_AB=' + str(int(turn)),
                         '-DWALKING_RIGHT_ARRIVAL=' + str(int(arrival)),
                         '-DSUPPORT_TRANSFER_V39=' + str(int(arrival)),
+                        '-DFOOT_LOW_LATENCY_V20=' + str(int(arrival)),
+                        '-DFOOT_STABLE40_V36=' + str(int(arrival)),
                         '-DWALKING_RETURN_HISTORY=' + str(int(arrival)),
                         '-I' + str(ROOT / 'test/fixtures/arduino'),
                         '-I' + str(ROOT / 'src'), str(temp / 'test.cpp'), '-o', str(exe)], check=True)
+        if arrival:
+            # Prior firmware failed at exactly byte 967452 with these synthetic
+            # prefixes. Their size represents preceding sensor metadata.
+            for mode, continuation_index, prefix_size in [('mixed-first', 1, 954133),
+                                                          ('mixed-last', 2, 954177)]:
+                first_crc, original, retry_crc, payload = subprocess.check_output(
+                    [str(exe), mode, str(prefix_size)]).splitlines()
+                assert original == payload and len(payload) > 967452
+                assert int(first_crc) == int(retry_crc) == zlib.crc32(payload)
+                raw = parse(payload)
+                assert raw['prefix'] == 'x' * prefix_size
+                metadata = converter.expand_tables(raw)
+                block = metadata['walking_energy']
+                assert block['stored'] == block['total'] == 7 and not block['truncated']
+                assert [aid['row_index'] for aid in block['arc_aids']] == [1, 2]
+                for aid in block['arc_aids']:
+                    index = aid['row_index']
+                    expected = index == continuation_index
+                    assert block['records'][index]['return_evidence'] == (8 if expected else 1)
+                    value = aid['arc_post_release_decel_dps2']
+                    if expected:
+                        assert abs(value - 172.43) < 1.e-4
+                    else:
+                        assert value is None
+                output_dir = temp / mode
+                rwlog = temp / (mode + '.rwlog')
+                write_fixture(rwlog, raw)
+                binary = rwlog.read_bytes()
+                assert converter.verify_crc(binary, converter.parse_header(binary))
+                converter.convert(rwlog, output_dir)
+                with (output_dir/'walking_energy.csv').open(newline='', encoding='utf8') as stream:
+                    rows = list(csv.DictReader(stream))
+                assert abs(float(rows[continuation_index]['arc_post_release_decel_dps2']) - 172.43) < 1.e-4
+                assert rows[3-continuation_index]['arc_post_release_decel_dps2'] == ''
+                print(f'{mode}: sealed metadata {len(payload)} bytes, CRC {int(retry_crc):08x}, '
+                      'identical on retry, combined RWLOG and CSV verified')
         modes = [('', 7), ('empty', 0)] + ([('small-step', 7)] if turn else []) + ([('history', 7),('prediction', 7),('passage', 7),('post-aid', 7)] if arrival else [])
         for mode, count in modes:
             output = subprocess.check_output([str(exe)] + ([mode] if mode else []), text=True).splitlines()
@@ -249,6 +331,8 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 assert 'arc_aid_reason' not in block['records']['fields']
                 if count:
                     assert aids[0]['row_index'] == 1 and aids[0]['arc_foot_source'] == 2
+                    if raw.get('walking_profile') != 'left_transfer_carry_v5':
+                        assert 'arc_post_release_decel_dps2' not in aids[0]
                     assert block['arc_aid_reason_names'][aids[0]['arc_aid_reason']] == 'applied'
                     assert block['arc_aid_reason_names'][10] == 'command_veto'
                     if turn:

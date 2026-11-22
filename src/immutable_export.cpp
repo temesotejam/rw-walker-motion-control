@@ -59,7 +59,7 @@ void ImmutableExport::build() {
   portENTER_CRITICAL(&mux_); status_.metadata_bytes = metadata_.length(); portEXIT_CRITICAL(&mux_);
   if (!metadata_ok) {
     portENTER_CRITICAL(&mux_);
-    snprintf(status_.error, sizeof(status_.error), "metadata_build_failed_at_%lu_bytes",
+    snprintf(status_.error, sizeof(status_.error), "metadata_%s_failed_at_%lu_bytes", metadata_.failureReason(),
         static_cast<unsigned long>(metadata_.length()));
     status_.phase = Phase::Error;
     portEXIT_CRITICAL(&mux_); return;

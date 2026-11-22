@@ -265,6 +265,8 @@ vm.runInContext(code,context);
   assert.strictEqual(element('work-start').disabled,true);
   assert.match(element('work-start-status').textContent,/通信/);
   gate.diagnostic_build_id='walking-support-transfer-v39-walk5';
+  assert.strictEqual(vm.runInContext('singleWalkingBuild(gate)',context), true);
+  gate.diagnostic_build_id='walking-support-transfer-v39-walk5-logfix1';
   gate.foot_periodic=footPacket;
   vm.runInContext('adoptStatus(gate);render(gate)',context);
   assert.match(element('work-description').textContent,/左足に支持が移った後/);

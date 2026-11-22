@@ -52,7 +52,6 @@ function harness(scenario={}) {
         if(scenario.pauseManifest){element('cancel').onclick();return abort(opts.signal);}
         if(scenario.manifestAbort==='always' || scenario.manifestAbort===manifestCount)
           return {ok:true,json:()=>abort(opts.signal)}; // received headers; body aborts
-        if(scenario.exportError)return {ok:true,json:async()=>({phase:'error',error:'metadata_build_failed'})};
         if(scenario.buildForever)return {ok:true,json:async()=>({phase:'building',hashed_bytes:0,bytes:0})};
         if(scenario.building && manifestCount===2)return {ok:true,json:async()=>({phase:'building',hashed_bytes:4096,bytes:fixture.length})};
         return {ok:true,json:async()=>({...manifest,...scenario.manifest})};
@@ -353,8 +352,22 @@ function harness(scenario={}) {
   await vm.runInContext('refresh(true)',h.context);assert.equal(statusCount,1);
   releasePrepare();await downloading;assert.equal(h.saves.length,1);
   await vm.runInContext('refresh()',h.context);assert.equal(statusCount,2);
-  h=harness({exportError:true});await h.run();assert.equal(h.manifestCount,1);
-  assert.match(h.element('transfer').textContent,/metadata_build_failed/);
+  for (const code of ['metadata_build_failed_at_967452_bytes','metadata_walking_arc_row_failed_at_967452_bytes']){
+    h=harness({manifest:{phase:'error', token:'', bytes:0, metadata_bytes:967452, error:code}});
+    h.element('progress').value=100;
+    await h.run();
+    assert.equal(h.manifestCount,1);
+    assert.equal(h.diagnostic().browser_transfer.chunk_requests,0);
+    assert.equal(h.diagnostic().browser_transfer.confirmed_bytes,0);
+    assert.equal(h.diagnostic().browser_transfer.error,code);
+    assert.equal(h.element('progress').value,0);
+    assert.match(h.element('transfer').textContent,/ログ付加情報.*967,452.*転送は始まっていません/);
+    assert.doesNotMatch(h.element('transfer').textContent,/取得済みの部分/);
+    h.scenario.manifest={};
+    await h.run();
+    assert.equal(h.prepareCount,2);
+    assert.equal(h.saves.length,1);
+  }
   h=harness({buildForever:true});await h.run();
   assert.match(h.element('transfer').textContent,/120秒/);assert(h.manifestCount<250);
   assert.equal(h.diagnostic().browser_transfer.manifest.phase,'building');

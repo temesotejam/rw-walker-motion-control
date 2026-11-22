@@ -501,7 +501,7 @@ void FootObserver::loop() {
 static String number(float v) { return isfinite(v) ? String(v, 5) : String("null"); }
 void FootObserver::appendMetadata(PsramString& json) const {
   PsramString row;
-  if (!row.reserve(8192)) { json.fail(); return; }
+  if (!row.reserve(8192)) { json.fail("foot_row_reserve"); return; }
   const auto s = snapshot();
   json += "\"foot_observation\":{\"revision\":\"freefoot_runtime_v2_0477\",\"observation_only\":false,\"balance_control_scope\":\"work_mode_target8_calibrated_phase_pair_positive_energy_cap_v1\",";
   json += "\"detector\":\"" + String(appcfg::kWhiteDetectorRevision) + "\",";

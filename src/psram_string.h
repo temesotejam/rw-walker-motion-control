@@ -17,17 +17,19 @@ class PsramString {
   bool reserve(size_t capacity) {
     if (data_) return capacity <= capacity_;
     data_ = static_cast<char*>(heap_caps_malloc(capacity + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (!data_) { failed_ = true; return false; }
+    if (!data_) { fail("reserve"); return false; }
     capacity_ = capacity; data_[0] = 0; return true;
   }
   void clear() {
-    length_ = 0; failed_ = false;
+    length_ = 0; failure_ = nullptr;
     if (data_) data_[0] = 0;
   }
   PsramString& operator+=(const char* s) { append(s, strlen(s)); return *this; }
   PsramString& operator+=(const String& s) { append(s.c_str(), s.length()); return *this; }
   void append(const char* s, size_t n) {
-    if (failed_ || !data_ || n > capacity_ - length_) { failed_ = true; return; }
+    if (failure_) return;
+    if (!data_) { fail("reserve"); return; }
+    if (n > capacity_ - length_) { fail("capacity"); return; }
     memcpy(data_ + length_, s, n); length_ += n; data_[length_] = 0;
     checkpoint();
   }
@@ -40,17 +42,19 @@ class PsramString {
   void checkpoint() const { if (progress_) progress_(progress_context_, length_); }
   size_t length() const { return length_; }
   const char* c_str() const { return data_ ? data_ : ""; }
-  bool ok() const { return data_ && !failed_; }
-  void fail() { failed_ = true; }
+  bool ok() const { return data_ && !failure_; }
+  const char* failureReason() const { return failure_ ? failure_ : (data_ ? nullptr : "reserve"); }
+  // Callers use string literals. Preserve the first error through cleanup and footer appends.
+  void fail(const char* reason = "build") { if (!failure_) failure_ = reason; }
  private:
   void swap(PsramString& s) {
     std::swap(data_, s.data_); std::swap(length_, s.length_);
-    std::swap(capacity_, s.capacity_); std::swap(failed_, s.failed_);
+    std::swap(capacity_, s.capacity_); std::swap(failure_, s.failure_);
     std::swap(progress_, s.progress_); std::swap(progress_context_, s.progress_context_);
   }
   char* data_ = nullptr;
   size_t length_ = 0, capacity_ = 0;
-  bool failed_ = false;
+  const char* failure_ = nullptr;
   Progress progress_ = nullptr;
   void* progress_context_ = nullptr;
 };

@@ -102,7 +102,7 @@ function supportTransferTrial(s) {
   return /^walking-support-transfer-v39(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function singleWalkingBuild(s = latest) {
-  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3', 'walking-support-transfer-v39-walk4', 'walking-support-transfer-v39-walk5'].includes(s?.diagnostic_build_id);
+  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3', 'walking-support-transfer-v39-walk4', 'walking-support-transfer-v39-walk5', 'walking-support-transfer-v39-walk5-logfix1'].includes(s?.diagnostic_build_id);
 }
 function foreAftStopText(reason) {
   return ({
@@ -974,6 +974,7 @@ async function download() {
     stream_responses:0, stream_gzip_responses:0, stream_length_advertised_responses:0, stream_advertised_wire_bytes:0,
     manifest:null, last_failure:null};
   try {
+    $('progress').value = 0;
     $('transfer').textContent = 'ログを確定中…';
     // A poll may already hold the device's single HTTP client when clicked.
     if (refreshInFlight) await refreshInFlight;
@@ -1112,9 +1113,20 @@ async function download() {
     const stage = {prepare:'本体へのログ確定要求', manifest:'ログ確定状況の確認',
       chunks:`ログデータの取得（${retained} bytesから）`, verifying:'取得データの検証'}[failedPhase];
     const progress = retained ? `今回の取得・再開で検証済み${retained} bytes。` : '';
-    $('transfer').textContent = transferDiagnostic.source_lost ?
-      `${error.message}（端末に取得済みの部分は保持しますが、失われた本体ログの続きは取得できません。）` :
-      `${stage} · ${error.message}（${progress}取得済みの部分は再開に利用します。）`;
+    const manifest = transferDiagnostic.manifest;
+    if (transferDiagnostic.source_lost) {
+      $('transfer').textContent = `${error.message}（端末に取得済みの部分は保持しますが、失われた本体ログの続きは取得できません。）`;
+    } else if (failedPhase === 'manifest' && manifest?.phase === 'error') {
+      const bytes = manifest.metadata_bytes;
+      const at = Number.isSafeInteger(bytes) && bytes >= 0 ? `（本体で${bytes.toLocaleString('ja-JP')}バイト作成）` : '';
+      const reason = /^metadata_/.test(manifest.error) ? `本体でログ付加情報の作成に失敗しました${at}。` :
+        `本体でログの確定に失敗しました（${error.message}）。`;
+      $('transfer').textContent = reason + 'この測定の転送は始まっていません。電源を入れたまま、同じ測定の「RWLOGを取得・再開」で確定を再試行できます。';
+    } else if (failedPhase === 'manifest' || failedPhase === 'prepare') {
+      $('transfer').textContent = `${stage} · ${error.message}（今回はログ本体の転送開始前です。）`;
+    } else {
+      $('transfer').textContent = `${stage} · ${error.message}（${progress}取得済みの部分は再開に利用します。）`;
+    }
     if (session && !transferDiagnostic.source_lost) {
       pendingExportPause = session;
       await sendExportPause(session);

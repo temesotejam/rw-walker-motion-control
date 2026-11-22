@@ -1068,7 +1068,7 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     row+=",\"passive_rate_supported\":"+String(d.passive_rate_supported?"true":"false")+",\"work_rate_supported\":"+String(d.work_rate_supported?"true":"false")+",\"charge_supported\":"+String(d.charge_supported?"true":"false");
     row+=",\"passive_intercept_rolloff\":"+String(d.passive_intercept_rolloff?"true":"false")+",\"early_state_transfer\":"+String(d.early_state_transfer?"true":"false");
     row+=",\"coast_residual_q_mas\":"+n(d.coast_residual_q_mas)+"}";
-    if(!table.append(row)){json.fail();return;}++stored;
+    if(!table.append(row)){json.fail("walking_record");return;}++stored;
 #if SUPPORT_TRANSFER_CARRY2
     if(a.return_event) extra_table_bytes+=128; // Reserve this compact audit row in the same log budget.
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
@@ -1087,7 +1087,7 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
 #endif
 #endif
   }
-  if(!table.finish()){json.fail();return;}
+  if(!table.finish()){json.fail("walking_record");return;}
 #if SUPPORT_TRANSFER_CARRY2
   json+=",\"arc_aids\":";
   CompactJsonTable<PsramString> arc_table(json);
@@ -1131,7 +1131,9 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
            ",\"arc_post_elapsed_increment_j\":"+n(a.post_elapsed_increment_j);
     }
 #if SUPPORT_TRANSFER_STALL_V3
-    if (a.return_evidence==static_cast<uint8_t>(return_observation_policy::Evidence::ContinuationShortfall))
+    // A compact table has one field list shared by every row. Ordinary aids
+    // have no release observation; their default NaN is serialized as null.
+    if (isContinuationPriorityProfile())
       row+=",\"arc_post_release_decel_dps2\":"+n(a.post_release_deceleration_dps2);
     if (isTransferPriorityProfile()) {
       row+=",\"arc_priority_base_ms\":"+String(a.arc_priority.base_ms)+",\"arc_priority_base_j\":"+n(a.arc_priority.base_work_j);
@@ -1140,9 +1142,9 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
 #endif
 #endif
     row+="}";
-    if(!arc_table.append(row)){json.fail();return;}
+    if(!arc_table.append(row)){json.fail("walking_arc_row");return;}
   }
-  if(!arc_table.finish()){json.fail();return;}
+  if(!arc_table.finish()){json.fail("walking_arc_row");return;}
 #endif
   json+=",\"stored\":"+String(stored)+",\"total\":"+String(walking_energy_total_)+",\"truncated\":"+String(stored<walking_energy_total_?"true":"false")+"}";
 }

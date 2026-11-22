@@ -2058,7 +2058,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
     final_size = candidate_size;
   }
   json += final_size_key + String(final_size) + "}";
-  if (json.length() > kMetadataJsonHardBudgetBytes) json.fail();
+  if (json.length() > kMetadataJsonHardBudgetBytes) json.fail("budget");
   return json.ok();
 }
 RwLogFileHeader PsramLogger::buildHeader(uint32_t metadata_size) const {
