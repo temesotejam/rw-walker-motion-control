@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from return_history_replay import observed_intervention
+from return_history_replay import observed_intervention, observed_prediction
 
 
 class InterventionReport(unittest.TestCase):
@@ -55,6 +55,30 @@ class InterventionReport(unittest.TestCase):
         self.assertEqual(first['left_peak_deg'],-1.2)
         self.assertEqual(first['subsequent_commands_observed'],[dict(start_ms=192,side=-1,width_ms=30)])
         self.assertEqual(first['observed_foot_angles']['left']['excursion_deg'],0.5)
+
+    def test_new_profile_distinguishes_veto_from_executed_width_change(self):
+        self.meta['walking_profile'] = 'left_return_prediction_v1'
+        rows = self.meta['walking_energy']['records']
+        arcs = self.meta['walking_energy']['arc_aids']
+        rows[0]['return_evidence'] = 6
+        for a in arcs:
+            a.update(arc_predicted_transfer_ms=None, arc_predicted_terminal_deg=None,
+                     arc_crossing_ref_zero_ms=0, arc_crossing_base_ms=0, arc_crossing_selected_ms=0)
+        arcs[0].update(arc_predicted_transfer_ms=28.5, arc_predicted_terminal_deg=-0.85)
+        arcs[1].update(arc_crossing_ref_zero_ms=50, arc_crossing_base_ms=19, arc_crossing_selected_ms=24)
+        self.read()
+        result = observed_prediction(self.folder)
+        self.assertTrue(result['archive_complete'])
+        veto, extended = result['events']
+        self.assertTrue(veto['predicted_support'])
+        self.assertFalse(veto['executed'])
+        self.assertIsNone(veto['motion'])
+        self.assertTrue(extended['executed'] and extended['width_extended'])
+        self.assertEqual(extended['motion']['mechanical_zero']['event_ms'],190)
+        self.assertEqual(extended['reference_zero_ms'],50)
+        self.meta['walking_energy']['truncated'] = True
+        self.read()
+        self.assertFalse(observed_prediction(self.folder)['archive_complete'])
 
     def test_unknown_totals_on_truncation_and_missing_history(self):
         self.meta['walking_energy']['truncated'] = True

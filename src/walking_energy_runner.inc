@@ -163,6 +163,16 @@ bool ExperimentRunner::tryWalkingEnergy(
   a.envelope_before_ms=walking_half_cycle_budget_.remaining();a.envelope_after_ms=a.envelope_before_ms;
   a.assisted_cycle=walking_half_cycle_budget_.aidUsed() || return_aid;
   a.return_evidence=return_aid?static_cast<uint8_t>(walking_return_observation_.evidence):0;
+#if WALKING_RETURN_HISTORY
+  if (return_aid && returnPredictionTrialSelected()) {
+    // A guard below can veto the command before energy inversion. Preserve the observation.
+    a.return_event=true;
+    a.return_work_j=walking_return_observation_.request_j;
+    a.return_foot_age_ms=walking_return_observation_.foot_age_ms;
+    a.predicted_transfer_ms=walking_return_observation_.predicted_transfer_ms;
+    a.predicted_terminal_deg=walking_return_observation_.terminal_deg;
+  }
+#endif
 #endif
   auto save=[&](){++walking_energy_total_;int16_t stored_index=-1;
 #if SUPPORT_TRANSFER_CARRY2
@@ -228,7 +238,10 @@ bool ExperimentRunner::tryWalkingEnergy(
     if(!optional_early_event_)in.body_angle_deg=0.f;  // v14 evaluated ordinary input at mechanical ZERO.
   }
 #if SUPPORT_TRANSFER_STALL_V3
-  if (return_aid && walking_return_observation_.evidence==return_observation_policy::Evidence::MeasuredArcShortfall) {
+  const auto evidence=walking_return_observation_.evidence;
+  const bool reserve_for_arc_aid=return_aid && (evidence==return_observation_policy::Evidence::MeasuredArcShortfall ||
+                                                evidence==return_observation_policy::Evidence::PredictedArcShortfall);
+  if (reserve_for_arc_aid) {
     a.main_reserve_ms=walking_main_reserve_.forSide(side);
     in.cap_ms=in.cap_ms>a.main_reserve_ms ? in.cap_ms-a.main_reserve_ms : 0;
   }
@@ -250,7 +263,7 @@ bool ExperimentRunner::tryWalkingEnergy(
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
   if(return_aid){in.arrival_bias_j=0;a.arrival_bias_j=0;}
 #if SUPPORT_TRANSFER_STALL_V3
-  if (return_aid && walking_return_observation_.evidence==return_observation_policy::Evidence::MeasuredArcShortfall && !in.cap_ms) {
+  if (reserve_for_arc_aid && !in.cap_ms) {
     a.arc_aid.reason=receiving_arc_aid::Reason::NoMainRoom;
     save();return true;
   }
@@ -392,6 +405,16 @@ bool ExperimentRunner::tryWalkingEnergy(
             }
           }
         }
+      }
+      if (returnPredictionTrialSelected() && a.arc_aid.reason==receiving_arc_aid::Reason::Applied) {
+        const uint16_t history_cap=a.history_final_ms>a.history_base_ms ? a.history.limit_ms : UINT16_MAX;
+        a.crossing_work=return_crossing_work::apply(walking_crossing_reference_,a.peak_ms,t,
+            arc.decel_dps2,a.envelope_before_ms,a.main_reserve_ms,e.pre_input_wheel_speed_rpm,
+            wheel_cycle_guard_,guard,lateral_energy_geometry_,walking_energy_current_,calculation,
+            selected,width,history_cap);
+        a.requested_ms=selected.width_ms;
+        e.wheel_guard_legacy_ms=guard.legacyWidth();e.wheel_guard_extra_ms=guard.extraReduction();
+        e.wheel_guard_trial_eligible=guard.trialEligible();
       }
 #endif
     }
@@ -592,6 +615,11 @@ bool ExperimentRunner::tryWalkingEnergy(
   a.envelope_after_ms=walking_half_cycle_budget_.remaining();
   if(return_aid)walking_return_observer_.consume(status_.run_id,a.peak_ms);
   else wheel_cycle_guard_=guard;
+#if WALKING_RETURN_HISTORY
+  // Each new left aid consumes the previous reference. Its own centre
+  // passage can qualify only after the subsequent left peak has arrived.
+  if (returnPredictionTrialSelected() && return_aid && side==-1) walking_crossing_reference_={};
+#endif
 #else
   wheel_cycle_guard_=guard;
 #endif
@@ -763,7 +791,7 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
   json+="\"aid_prediction_semantics\":\"available_J_zero;predicted_arrival_J_means_local_return_demand_fulfillment_not_next_peak\",\"aid_cutoff_at_fresh_mechanical_zero\":true,";
   json+="\"return_evidence_names\":[\"unavailable\",\"observed_shape\",\"recognition_dropout\",\"range_rejected\",\"observed_unseparated\"";
 #if SUPPORT_TRANSFER_STALL_V3
-  json+=",\"measured_arc_shortfall\"";
+  json+=",\"measured_arc_shortfall\",\"predicted_arc_shortfall\"";
 #endif
   json+="],";
 #elif defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
@@ -920,6 +948,7 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
 #endif
 #if WALKING_RETURN_HISTORY
     if(a.return_event && carryHistoryTrialSelected()) extra_table_bytes+=180;
+    if(a.return_event && returnPredictionTrialSelected()) extra_table_bytes+=140;
 #endif
 #endif
   }
@@ -942,6 +971,9 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     row+=",\"arc_feedback_available_j\":"+n(a.arc_feedback_available_j)+",\"arc_feedback_command_j\":"+n(a.executed?a.arc_feedback_added_j:0.f);
 #endif
 #if WALKING_RETURN_HISTORY
+    if (returnPredictionTrialSelected()) {
+      row+=",\"arc_predicted_transfer_ms\":"+n(a.predicted_transfer_ms)+",\"arc_predicted_terminal_deg\":"+n(a.predicted_terminal_deg);
+    }
     if (carryHistoryTrialSelected()) {
       row+=",\"arc_history_body_deg\":"+n(a.history_state.body_deg)+",\"arc_history_left_deg\":"+n(a.history_state.left_deg);
       row+=",\"arc_history_right_deg\":"+n(a.history_state.right_deg);
@@ -949,6 +981,11 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
       row+=",\"arc_history_decel_dps2\":"+n(a.history.deceleration)+",\"arc_history_request_j\":"+n(a.history.request_j);
       row+=",\"arc_history_limit_ms\":"+String(a.history.limit_ms)+",\"arc_history_base_ms\":"+String(a.history_base_ms);
       row+=",\"arc_history_selected_ms\":"+String(a.history_final_ms);
+    }
+    if (returnPredictionTrialSelected()) {
+      row+=",\"arc_crossing_ref_zero_ms\":"+String(a.crossing_work.zero_ms)+",\"arc_crossing_ref_peak_ms\":"+String(a.crossing_work.peak_ms);
+      row+=",\"arc_crossing_ref_dps\":"+n(a.crossing_work.speed_dps)+",\"arc_crossing_request_j\":"+n(a.crossing_work.request_j);
+      row+=",\"arc_crossing_base_ms\":"+String(a.crossing_work.base_ms)+",\"arc_crossing_selected_ms\":"+String(a.crossing_work.final_ms);
     }
 #endif
     row+="}";

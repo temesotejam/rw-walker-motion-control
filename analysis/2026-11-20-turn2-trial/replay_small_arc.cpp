@@ -12,7 +12,9 @@
 
 static float number() { std::string s; std::cin>>s; return std::stof(s); }
 
-int main() {
+int main(int argc, char** argv) {
+  const bool predictive=argc==2 && std::string(argv[1])=="--predict";
+  if (argc!=1 && !predictive) return 1;
   return_observation_policy::Observer observer;
   receiving_arc_aid::MainReserve reserve;
   wheel_cycle_guard::Controller wheel;
@@ -47,12 +49,15 @@ int main() {
       f.left_deg=number();f.right_deg=number(); in.peak_deg=number();in.angle_deg=number();
       in.rate_dps=number();in.periodic_acceleration_dps2=number();in.fore_aft_deg=number();
       const float target=number(), i0=number(), goal=number(), rpm=number(), tau=number();
+      in.predict_left_return=predictive;
+      in.current_rise_tau_s=tau;
       unsigned recorded_cap; std::cin>>recorded_cap;
       in.side=side;in.active=active;in.periodic=&p;in.run_id=f.run_id=1;
       f.timestamp_valid=f.frame_valid=f.zero_ready=f.left_detected=f.right_detected=f.left_range_ok=f.right_range_ok=valid;
       in.target_j=lateral_energy::potential(geometry,target);
       auto choice=observer.observe(in);
-      if (!choice.selected || choice.evidence!=return_observation_policy::Evidence::MeasuredArcShortfall) continue;
+      if (!choice.selected || (choice.evidence!=return_observation_policy::Evidence::MeasuredArcShortfall &&
+          choice.evidence!=return_observation_policy::Evidence::PredictedArcShortfall)) continue;
       const auto keep=reserve.forSide(-1);
       if(keep>=80) continue;
       auto full_guard=wheel;

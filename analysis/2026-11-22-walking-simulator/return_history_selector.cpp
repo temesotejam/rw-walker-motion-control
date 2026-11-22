@@ -1,6 +1,7 @@
 // Host adapter for the production left-return history, work inverse and wheel guard.
 #include "half_cycle_energy_budget.h"
 #include "receiving_arc_aid.h"
+#include "return_crossing_work.h"
 #include "wheel_cycle_guard.h"
 #include <algorithm>
 #include <iomanip>
@@ -10,6 +11,7 @@ int main() {
   receiving_arc_aid::ReturnHistory history;
   receiving_arc_aid::ReturnState state;
   wheel_cycle_guard::Controller wheel;
+  return_crossing_work::Reference crossing;
   lateral_energy::Geometry geometry;
   std::cout << std::setprecision(9);
   char cmd;
@@ -19,8 +21,12 @@ int main() {
       int side, matched, powered;
       float angle;
       std::cin >> t >> side >> angle >> powered >> departure >> zero >> matched;
+      int completed;
+      float reference_speed, reference_target;
+      std::cin >> reference_speed >> reference_target >> completed;
       wheel.peak(side, angle, t, powered);
       history.peak(side, t, angle, departure, zero, matched);
+      if (side==-1 && matched) crossing.observe(zero,t,angle,reference_speed,reference_target,completed);
     } else if (cmd == 'W') {
       unsigned t, width;
       int side;
@@ -32,6 +38,7 @@ int main() {
       int qualified;
       std::cin >> end >> elapsed >> qualified;
       history.completedAid(state, end, elapsed, qualified);
+      crossing={};
     } else if (cmd == 'D') {
       unsigned t, cap, baseline, requested, reserve, envelope;
       float original_j, tau, rpm;
@@ -42,6 +49,8 @@ int main() {
       std::cin >> in.target_deg >> in.previous_peak_deg >> in.initial_current_ma
                >> in.goal_current_ma >> tau >> rpm >> cap >> baseline >> requested >> reserve
                >> envelope >> original_j;
+      int arc_applied;
+      std::cin >> in.same_side_peak_deg >> arc_applied;
       in.side = -1;
       in.body_angle_deg = state.body_deg;
       in.rate_dps = state.speed_dps;
@@ -71,10 +80,22 @@ int main() {
       }
       if (final_width == baseline) in.return_work_j = original_j;
       const auto final = half_cycle_energy_budget::evaluateReturnAidWidth(geometry, current, in, final_width);
+      // Compare the crossing-speed extension after the existing history
+      // correction, retaining that independent correction on both branches.
+      auto inverse=half_cycle_energy_budget::decideReturnAid(geometry,current,in);
+      auto modified_width=static_cast<uint16_t>(final_width);
+      return_crossing_work::Audit crossing_result;
+      if (arc_applied) crossing_result=return_crossing_work::apply(crossing,state.departure_ms,t,
+          state.deceleration,envelope,reserve,rpm,wheel,preview,geometry,current,in,inverse,modified_width,
+          final_width>baseline ? comparison.limit_ms : UINT16_MAX);
+      const auto changed=half_cycle_energy_budget::evaluateReturnAidWidth(geometry,current,in,modified_width);
       std::cout << t << ' ' << comparison.first_peak_ms << ' ' << comparison.second_peak_ms << ' '
                 << comparison.deceleration << ' ' << comparison.request_j << ' ' << comparison.limit_ms
                 << ' ' << old.width_ms << ' ' << old_guard << ' ' << inverse_width << ' '
-                << guarded << ' ' << final_width << ' ' << final.predicted_work_j << '\n';
+                << guarded << ' ' << final_width << ' ' << final.predicted_work_j << ' '
+                << crossing_result.zero_ms << ' ' << crossing_result.peak_ms << ' ' << crossing_result.speed_dps
+                << ' ' << crossing_result.request_j << ' ' << inverse.width_ms << ' ' << modified_width << ' '
+                << changed.predicted_work_j << '\n';
     } else return 2;
     if (!std::cin) return 3;
   }

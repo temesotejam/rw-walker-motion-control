@@ -71,12 +71,16 @@ def replay(folder, binary):
         if st is not None and not row['fore_aft_allowed']:
             st = None
         if st:
+            left_peaks = [p for p in meta['energy_control_autonomous_peak_events'] if p['physical_peak_side']==-1
+                          and p['peak_telemetry_capture_time_ms']<t and t-p['peak_time_ms']<=3000]
+            last_left = left_peaks[-1]['peak_amplitude_deg'] if left_peaks else 0.
             counts['certified_with_matched_camera_frame'] += 1
             stream.append((t, 1, 'D', t, *st, event['startup_target_deg'], event['previous_peak_amplitude_deg'],
                            event['aligned_initial_current_mA'], event['predicted_current_goal_mA'],
                            event['predicted_current_rise_tau_s'], event['pre_input_wheel_speed_rpm'],
                            event['work_brake_cap_ms'], row['guarded_ms'], row['requested_ms'],
-                           arc['arc_main_reserve_ms'], row['envelope_before_ms'], row['request_j']))
+                           arc['arc_main_reserve_ms'], row['envelope_before_ms'], row['request_j'],last_left,
+                           int(archive['arc_aid_reason_names'][arc['arc_aid_reason']]=='applied')))
             decisions.append({'decision_ms': t, 'recorded_width_ms': row['guarded_ms'],
                               'executed': row['executed'], 'recorded_request_j': row['request_j'],
                               'recorded_work_j': row['predicted_work_j'], 'arc_reason': arc['arc_aid_reason'],
@@ -100,15 +104,18 @@ def replay(folder, binary):
         matched = bool(powered and row.get('assisted_cycle') and event.get('event_kind') == 'energy_control_zero_cross'
                        and row['completion_reason'] == 1 and row['completion_valid'] and row['completion_work_valid']
                        and row['side'] == peak['physical_peak_side'])
+        full_pulse = all(row.get(k) for k in ('planned_duration_completed','completion_width_supported','charge_supported'))
         stream.append((when, 0, 'P', t, peak['physical_peak_side'], peak['peak_amplitude_deg'], int(powered),
-                       row.get('peak_ms', 0), event.get('zero_cross_time_ms', 0), int(matched)))
+                       row.get('peak_ms', 0), event.get('zero_cross_time_ms', 0), int(matched),
+                       row.get('start_rate_dps') or 0, row.get('target_j') or 0, int(full_pulse)))
     payload = ''.join(' '.join(map(str, item[2:])) + '\n' for item in sorted(stream))
     outputs = subprocess.check_output([binary], input=payload, text=True).splitlines()
     if len(outputs) != len(decisions):
         raise ValueError(f'{folder}: selector response missing')
     for r, line in zip(decisions, outputs):
         (t, first, second, decel, request, max_ms, inv, old_guarded,
-         new_inv, new_guarded, selected, final_work) = line.split()
+         new_inv, new_guarded, selected, final_work,
+         source_zero, source_peak, source_speed, centre_j, centre_inverse, centre_width, centre_work) = line.split()
         if int(t) != r['decision_ms'] or int(inv) != r['recorded_inverse_ms']:
             raise ValueError(f'{folder}: baseline inverse did not reproduce at {t}, {inv} vs {r["recorded_inverse_ms"]}')
         # A certified extension (reason Applied) was limited by the remaining room
@@ -122,10 +129,15 @@ def replay(folder, binary):
                  history_deceleration_dps2=float(decel), history_requested_j=float(request),
                  donor_duration_cap_ms=int(max_ms), baseline_wheel_ms=int(old_guarded),
                  candidate_inverse_ms=int(new_inv), candidate_wheel_ms=int(new_guarded), selected_ms=int(selected),
-                 selected_predicted_work_j=float(final_work))
+                 selected_predicted_work_j=float(final_work), crossing_zero_ms=int(source_zero),
+                 crossing_peak_ms=int(source_peak), crossing_source_speed_dps=float(source_speed),
+                 crossing_request_j=float(centre_j), crossing_candidate_ms=int(centre_inverse),
+                 crossing_selected_ms=int(centre_width), crossing_predicted_work_j=float(centre_work))
     differences = [r for r in decisions if r['recorded_width_ms'] != r['selected_ms']]
+    crossing_changes = [r for r in decisions if r['crossing_selected_ms'] != r['selected_ms']]
     return {'run': folder.name, 'has_arc_audit': 'arc_aids' in archive, 'counts': dict(counts),
-            'decisions': decisions, 'first_width_difference_ms': differences[0]['decision_ms'] if differences else None}
+            'decisions': decisions, 'first_width_difference_ms': differences[0]['decision_ms'] if differences else None,
+            'crossing_width_change_count': len(crossing_changes)}
 
 
 def _observed_feet(frames, start, until):
@@ -149,10 +161,9 @@ def _observed_feet(frames, start, until):
     return result
 
 
-def _first_intervention(folder, meta, row, arc, archive_complete):
+def _observed_motion(folder, meta, row, terminal, archive_complete):
     start, peak = row['output_start_ms'], row['peak_ms']
     end = row.get('output_end_ms') or None
-    terminal = arc.get('arc_terminal_deg')
     if not isinstance(terminal, (int, float)) or not math.isfinite(terminal) or terminal >= 0:
         terminal = None
     next_peak = min((p for p in meta.get('energy_control_autonomous_peak_events', [])
@@ -165,13 +176,9 @@ def _first_intervention(folder, meta, row, arc, archive_complete):
     later = [{'start_ms': r['output_start_ms'], 'side': r['side'], 'width_ms': r['guarded_ms']}
              for r in meta['walking_energy']['records'] if r.get('executed') is True
              and start < r['output_start_ms'] <= until]
-    out = {'decision_ms': row['time_ms'], 'departure_peak_ms': peak, 'first_in_stored_archive': True,
-           'reference_peaks_ms': [arc['arc_history_first_peak_ms'], arc['arc_history_second_peak_ms']],
-           'base_ms': arc['arc_history_base_ms'], 'selected_ms': arc['arc_history_selected_ms'],
+    out = {'decision_ms': row['time_ms'], 'departure_peak_ms': peak,
            'guarded_ms': row['guarded_ms'], 'start_ms': start, 'end_ms': end,
            'elapsed_ms': row.get('actual_elapsed_ms') if end else None,
-           'elapsed_exceeded_base': row['actual_elapsed_ms'] > arc['arc_history_base_ms']
-           if end and row.get('actual_elapsed_ms') is not None else None,
            'completed_as_planned': row.get('planned_duration_completed') if end else None,
            'completion_reason': row.get('completion_reason') if end else None, 'terminal_deg': terminal,
            'ordinary_left_zero_ms': min((e['zero_cross_time_ms'] for e in zeros), default=None),
@@ -200,6 +207,50 @@ def _first_intervention(folder, meta, row, arc, archive_complete):
     return out
 
 
+def _first_intervention(folder, meta, row, arc, archive_complete):
+    base = arc['arc_history_base_ms']
+    out = _observed_motion(folder, meta, row, arc.get('arc_terminal_deg'), archive_complete)
+    return dict(out, first_in_stored_archive=True, base_ms=base, selected_ms=arc['arc_history_selected_ms'],
+                reference_peaks_ms=[arc['arc_history_first_peak_ms'], arc['arc_history_second_peak_ms']],
+                elapsed_exceeded_base=out['elapsed_ms'] > base if out['elapsed_ms'] is not None else None)
+
+
+def observed_prediction(folder):
+    """Report predictions, changes of guarded width and actual commands from a new run."""
+    folder = Path(folder)
+    meta = json.loads((folder / 'metadata.json').read_bytes())
+    if meta.get('walking_profile') != 'left_return_prediction_v1':
+        return None
+    archive = meta.get('walking_energy') or {}
+    rows = archive.get('records') or []
+    details = {a['row_index']: a for a in archive.get('arc_aids', [])}
+    left_aids = [(row, details.get(i, {})) for i, row in enumerate(rows)
+                 if row.get('side') == -1 and row.get('return_event')]
+    expected = ('arc_predicted_terminal_deg', 'arc_predicted_transfer_ms', 'arc_crossing_base_ms',
+                'arc_crossing_selected_ms', 'arc_crossing_ref_zero_ms')
+    complete = (archive.get('archive_available') is True and archive.get('truncated') is False and
+                archive.get('stored') == archive.get('total') == len(rows) and
+                isinstance(archive.get('arc_aids'), list) and all(k in arc for _, arc in left_aids for k in expected))
+    events = []
+    for row, arc in left_aids:
+        base, selected = (arc.get(k) for k in ('arc_crossing_base_ms', 'arc_crossing_selected_ms'))
+        predicted = row.get('return_evidence') == 6
+        extended = type(base) is int and type(selected) is int and selected > base > 0
+        if not predicted and not extended:
+            continue
+        terminal = arc.get('arc_predicted_terminal_deg') if predicted else arc.get('arc_terminal_deg')
+        executed = row.get('executed') is True and bool(row.get('output_start_ms'))
+        events.append(dict(decision_ms=row['time_ms'], predicted_support=predicted, width_extended=extended,
+                           transfer_in_ms=arc.get('arc_predicted_transfer_ms'), observed_deficit_j=row.get('return_work_j'),
+                           requested_j=row.get('request_j'),
+                           guarded_ms=row.get('guarded_ms'), main_reserve_ms=arc.get('arc_main_reserve_ms'),
+                           reference_zero_ms=arc.get('arc_crossing_ref_zero_ms') or None, base_ms=base, selected_ms=selected,
+                           executed=executed, motion=None))
+        if executed:
+            events[-1]['motion'] = _observed_motion(folder, meta, row, terminal, complete)
+    return dict(archive_complete=complete, events=events)
+
+
 def observed_intervention(folder):
     """Read actual firmware decisions. A partial archive supplies lower bounds, never totals."""
     folder = Path(folder)
@@ -210,7 +261,7 @@ def observed_intervention(folder):
     stats = dict(evaluated=0, matching_donors=0, width_increased=0, executed_increased=0)
     empty = dict.fromkeys(stats)
     out = {'profile': profile, **empty, 'observed_minimum': None, 'first_executed_change': None}
-    if profile != 'left_return_history_v1':
+    if profile not in ('left_return_history_v1', 'left_return_prediction_v1'):
         return dict(out, status='not_selected' if profile else 'history_not_logged')
     complete = (archive.get('archive_available') is True and archive.get('truncated') is False
                 and archive.get('stored') == archive.get('total') == len(rows))
@@ -254,12 +305,13 @@ def observed_intervention(folder):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('converted_root', type=Path)
+    parser.add_argument('--runs', type=int, nargs='+', default=[*return_model.PRIOR,*return_model.RECENT])
     args = parser.parse_args()
     with tempfile.TemporaryDirectory() as tmp:
         binary = Path(tmp) / 'return_history_selector.exe'
         subprocess.run(['g++', '-std=c++17', '-Wall', '-Wextra', '-Werror', '-DWALKING_RETURN_HISTORY=1',
                         '-I', HERE.parents[1] / 'src', HERE / 'return_history_selector.cpp', '-o', binary], check=True)
-        for run in (*return_model.PRIOR, *return_model.RECENT):
+        for run in args.runs:
             print(json.dumps(replay(args.converted_root / str(run), binary), allow_nan=False))
 
 

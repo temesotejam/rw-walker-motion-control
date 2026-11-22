@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>歩行器 左への戻り補正を比較する版の書き込み</title>
+  <title>歩行器 左への支持移行を予測する版の書き込み</title>
   <script src="flasher-completion.js"></script>
   <script type="module" src="https://unpkg.com/esp-web-tools@10.1.1/dist/web/install-button.js?module"></script>
   <style>body{font:1rem/1.7 system-ui,sans-serif;max-width:42rem;margin:3rem auto;padding:0 1rem;color:#203044}button{font:inherit;background:#175ab1;color:white;border:0;border-radius:.5rem;padding:.6rem 1rem;cursor:pointer}.serial-button{margin-top:1rem;background:#435369}</style>
 </head>
 <body><main>
-  <h1>歩行器 左への戻り補正を比較する版の書き込み</h1>
-  <p><code>walking-support-transfer-v39-return-history1</code> を書き込みます。機体の測定画面で「左への戻りを補正して30秒測定（±8°）」を選ぶと、同じ走行で左へ戻れた2回を次の補助に使います。「右への振れを調整して30秒測定（±8°）」は補正を加える前の比較条件です。</p>
+  <h1>歩行器 左への支持移行を予測する版の書き込み</h1>
+  <p><code>walking-support-transfer-v39-return-prediction1</code> を書き込みます。機体の測定画面で「左への支持移行を予測して30秒測定（±8°）」を選ぶと、胴体が左に戻る途中で足姿勢と減速を使って補助します。前回の履歴補正は「左への戻りを補正して30秒測定（±8°）」から選べます。</p>
   <p>測定後は機体の画面で「RWLOGを取得・再開」を押すとログを保存できます。</p>
   <p>機体を停止し、バッテリーを外してUSBだけでPCにつないでください。PC版のChromeまたはEdgeで操作できます。</p>
   <esp-web-install-button manifest="manifest.json">
-    <button slot="activate">左への戻り補正の比較版を書き込む</button>
+    <button slot="activate">支持移行を予測する版を書き込む</button>
     <span slot="unsupported">PC版ChromeまたはEdgeで開いてください。</span>
   </esp-web-install-button>
   <p><a href="../foot-periodic40/">実機確認済みのv38を書き込む</a></p>

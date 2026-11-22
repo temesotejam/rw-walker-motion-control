@@ -3,7 +3,7 @@
 #include <cstring>
 
 namespace walking_trial {
-enum class Profile : uint8_t { None, Turn3, SmallStep, RightArrival, CarryHistory };
+enum class Profile : uint8_t { None, Turn3, SmallStep, RightArrival, CarryHistory, ReturnPrediction };
 #if WALKING_SMALL_STEP_AB
 constexpr bool comparison_enabled=true;
 #else
@@ -14,6 +14,7 @@ inline Profile requestedProfile(const char* model) {
   if (comparison_enabled && model && std::strcmp(model,"work_control_small_step")==0) return Profile::SmallStep;
 #if WALKING_RETURN_HISTORY
   if (model && std::strcmp(model,"work_control_return_history")==0) return Profile::CarryHistory;
+  if (model && std::strcmp(model,"work_control_return_prediction")==0) return Profile::ReturnPrediction;
 #endif
   return Profile::None;
 }
@@ -28,7 +29,7 @@ inline bool comparisonAllowed(Profile profile, float target, float percent, int 
                              bool adaptation, bool bridge, bool probe) {
   const bool available = profile==Profile::SmallStep
 #if WALKING_RETURN_HISTORY
-      || profile==Profile::CarryHistory
+      || profile==Profile::CarryHistory || profile==Profile::ReturnPrediction
 #endif
       ;
   return comparison_enabled && available && target==8.f && percent==0.f && current==300 &&
@@ -40,6 +41,7 @@ inline const char* name(Profile profile) {
     case Profile::SmallStep: return "v14_small_step";
     case Profile::RightArrival: return "right_arrival_v1";
     case Profile::CarryHistory: return "left_return_history_v1";
+    case Profile::ReturnPrediction: return "left_return_prediction_v1";
     default: return "none";
   }
 }

@@ -2683,6 +2683,7 @@ void ExperimentRunner::resetEnergyControlAutonomous() {
 #if SUPPORT_TRANSFER_CARRY2
   walking_main_reserve_={};
 #if WALKING_RETURN_HISTORY
+  walking_crossing_reference_={};
   walking_return_history_={};
 #endif
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
@@ -3415,6 +3416,10 @@ bool ExperimentRunner::recordEnergyControlAutonomousPeak(uint32_t peak_ms, int8_
   walking_arc_feedback_.peak(lateral_energy_geometry_,physical_side,peak_ms,amplitude_deg,
       completed.peak_ms,completed.trigger_ms,matched_assisted_main);
 #if WALKING_RETURN_HISTORY
+  if (returnPredictionTrialSelected() && physical_side==-1 && matched_assisted_main)
+    walking_crossing_reference_.observe(completed.trigger_ms,peak_ms,amplitude_deg,
+        completed.start_rate_dps,completed.decision.target_j,completed.completion.duration_completed &&
+        completed.completion.charge_supported && completed.completion.width_supported);
   if (carryHistoryTrialSelected())
     walking_return_history_.peak(physical_side,peak_ms,amplitude_deg,completed.peak_ms,
         completed.trigger_ms,matched_assisted_main);
@@ -3537,6 +3542,10 @@ __attribute__((noinline)) bool ExperimentRunner::observeInwardStallRescue(
   ri.foot=walking_return_frame_;
 #if SUPPORT_TRANSFER_STALL_V3
   ri.periodic=&periodic_foot_packet_;
+#if WALKING_RETURN_HISTORY
+  ri.predict_left_return=returnPredictionTrialSelected();
+  ri.current_rise_tau_s=walking_energy_current_.tau;
+#endif
   ri.fore_aft_deg=walking_fore_aft_last_.angle_deg;
   if (transfer_previous_sample_us_==ri.sample_us && transfer_packet_==periodic_foot_packet_.count)
     ri.periodic_acceleration_dps2=transfer_acceleration_dps2_;

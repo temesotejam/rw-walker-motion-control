@@ -12,7 +12,7 @@
 namespace return_observation_policy {
 enum class Evidence : uint8_t {
   Unavailable=0, ObservedShape=1, RecognitionDropout=2, RangeRejected=3,
-  ObservedUnseparated=4, MeasuredArcShortfall=5
+  ObservedUnseparated=4, MeasuredArcShortfall=5, PredictedArcShortfall=6
 };
 struct FootFrame {
   uint16_t run_id=0;
@@ -38,6 +38,8 @@ struct Input {
 #if SUPPORT_TRANSFER_STALL_V3
   const periodic_foot::Packet* periodic=nullptr;
   float fore_aft_deg=NAN, periodic_acceleration_dps2=NAN;
+  bool predict_left_return=false;
+  float current_rise_tau_s=NAN;
 #endif
 };
 struct Choice {
@@ -46,6 +48,9 @@ struct Choice {
   Evidence evidence=Evidence::Unavailable;
   uint32_t foot_age_ms=0,deceleration_span_ms=0;
   bool range_veto=false;
+#if SUPPORT_TRANSFER_STALL_V3
+  float predicted_transfer_ms=NAN,terminal_deg=NAN;
+#endif
 };
 
 inline Evidence assessFoot(const Input& in) {
@@ -81,6 +86,7 @@ class Observer {
     if(!in.run_id || !in.peak_ms){
 #if SUPPORT_TRANSFER_STALL_V3
       arc_confirming_=false;
+      approaching_gap_=NAN;
 #endif
       clearMotion();return out;
     }
@@ -155,7 +161,14 @@ class Observer {
         in.peak_deg-in.angle_deg>=.5f && in.now>=in.peak_ms && in.now-in.peak_ms>=60 &&
         in.now-in.peak_ms<=800 && speed>=3.f && speed<=35.f &&
         evidence==Evidence::ObservedUnseparated && in.foot.left_deg>in.foot.right_deg;
-    if (!approaching) arc_confirming_=false;
+    if (!approaching) {
+      arc_confirming_=false;
+      // A measured change back towards the departing side after a forecast
+      // sample ends this approach. A later gyro fluctuation is not a new step.
+      if (in.predict_left_return && approaching_image_ &&
+          in.sample_us && in.sample_age_us<=10000 && speed<=0) approach_reversed_=true;
+      approaching_gap_=NAN;
+    }
     if (!p || !p->count || !p->epoch_us || p->count==arc_packet_) return out;
     const uint32_t dt=in.sample_us-arc_sample_us_;
     const bool adjacent=arc_packet_ && p->count-arc_packet_==1 && dt>=15000 && dt<=50000 &&
@@ -166,7 +179,10 @@ class Observer {
     arc_packet_=p->count; arc_sample_us_=in.sample_us; arc_slot_us_=p->scheduled_us;
     const bool previous=arc_confirming_;
     const uint64_t previous_image=arc_image_us_;
+    const float previous_gap=approaching_gap_;
+    const uint64_t previous_gap_image=approaching_image_;
     arc_confirming_=false;
+    approaching_gap_=NAN;
     const auto& l=p->left;
     const auto& r=p->right;
     const uint32_t now_us=in.sample_us+in.sample_age_us;
@@ -179,17 +195,40 @@ class Observer {
         !(std::fabs(in.fore_aft_deg)<=10 && std::fabs(l.measured)<=20 && std::fabs(r.measured)<=20 &&
           l.measured>r.measured && l.measured-r.measured<3 && in.target_j>0 && std::isfinite(in.target_j))) return out;
     const float stop=speed*speed/(2.f*deceleration);
-    if (stop>=in.angle_deg || support_transfer_plan::supportGap(
-            l.measured,r.measured,in.fore_aft_deg,in.angle_deg)>=0) return out;
-    if (l.image_us<=previous_image) return out;
-    arc_confirming_=true; arc_image_us_=l.image_us;
-    if (!adjacent || !previous) return out;
+    if (stop>=in.angle_deg) return out;
+    const float gap=support_transfer_plan::supportGap(l.measured,r.measured,in.fore_aft_deg,in.angle_deg);
+    Evidence reason=Evidence::Unavailable;
+    if (gap<0 && l.image_us>previous_image) {
+      arc_confirming_=true; arc_image_us_=l.image_us;
+      if (adjacent && previous) reason=Evidence::MeasuredArcShortfall;
+    }
+    // During current rise a still-higher receiving sole can reach the ground.
+    // Forecast its gap from consecutive measured poses, only while the body
+    // is still moving left and both snapshots predict a stop before ZERO.
+    if (in.predict_left_return && !approach_reversed_ && speed>=support_transfer_plan::kCarryDps &&
+        std::isfinite(in.current_rise_tau_s) && in.current_rise_tau_s>0 && std::isfinite(gap) &&
+        l.image_us>previous_gap_image) {
+      approaching_gap_=gap;
+      approaching_image_=l.image_us;
+      if (adjacent && previous_gap>0 && previous_gap>gap && speed<approaching_speed_) {
+        const float until_stop=speed/deceleration;
+        const float lead=std::fmin(in.current_rise_tau_s,2.e-6f*periodic_foot::period_us);
+        const float until_transfer=std::fmax(0.f,gap)*float(dt)*1.e-6f/(previous_gap-gap);
+        if (until_transfer<=lead && until_transfer<until_stop) {
+          reason=Evidence::PredictedArcShortfall;
+          out.predicted_transfer_ms=1000.f*until_transfer;
+        }
+      }
+      approaching_speed_=speed;
+    }
+    if (reason==Evidence::Unavailable) return out;
     const float entry=support_transfer_plan::arcEntryDeg(-1,l.measured+in.fore_aft_deg);
+    if (reason==Evidence::PredictedArcShortfall) out.terminal_deg=entry;
     const float c=walking_energy_policy::passiveCoefficients(-1).omega2_j;
     const float rad=lateral_energy::kRadPerDeg, carry=support_transfer_plan::kCarryDps;
     const float needed=c*rad*rad*(2*deceleration*(in.angle_deg-entry)-speed*speed+carry*carry);
     out.request_j=std::fmin(.25f*in.target_j,needed);
-    out.selected=out.request_j>0; out.evidence=Evidence::MeasuredArcShortfall;
+    out.selected=out.request_j>0; out.evidence=reason;
     out.deceleration_dps2=deceleration; out.stopping_distance_deg=stop;
     out.foot_age_ms=in.now-in.foot.frame_ms;
     return out;
@@ -197,6 +236,9 @@ class Observer {
   uint32_t arc_packet_=0,arc_sample_us_=0;
   uint64_t arc_image_us_=0,arc_slot_us_=0;
   bool arc_confirming_=false;
+  float approaching_gap_=NAN,approaching_speed_=0;
+  uint64_t approaching_image_=0;
+  bool approach_reversed_=false;
 #endif
   void clearPending(){pending_ms_=0;pending_evidence_=Evidence::Unavailable;}
   void clearMotion() {

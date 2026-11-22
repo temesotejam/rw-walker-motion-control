@@ -63,6 +63,7 @@ def evaluate_new(root, trial):
             'early_watch': add_early_watch.evaluate_new(root, trial),
             'action_forecast': phase_dynamics.evaluate_trial(root, trial),
             'observed_return_history': return_history_replay.observed_intervention(trial),
+            'observed_return_prediction': return_history_replay.observed_prediction(trial),
             'receiving_carry': receiving_carry.evaluate_trial(trial),
             'post_zero': post_zero_carry.evaluate_trial(root, trial)}
 
@@ -180,7 +181,13 @@ def print_summary(result):
         trial = result['new_trial']
         print(f"試行 {trial['run']}  右ピーク {trial['positive_peaks']} 件")
         history = trial['observed_return_history']
-        if history['profile'] == 'left_return_history_v1':
+        measured = trial.get('observed_return_prediction')
+        if measured is not None:
+            print('  支持移行予測と仕事補正の記録（' + ('全件' if measured['archive_complete'] else '部分記録') + '）')
+            for e in measured['events']:
+                print(f"    {e['decision_ms']} ms  支持移行予測 {e['predicted_support']}  "
+                      f"通過速度による幅延長 {e['width_extended']}  指令幅 {e['guarded_ms']} ms  実通電 {e['executed']}")
+        if history['profile'] in ('left_return_history_v1', 'left_return_prediction_v1'):
             if history['status'] == 'complete':
                 print(f"  左補助を評価 {history['evaluated']} 件、過去2回と一致 {history['matching_donors']} 件、"
                       f"延長を選択 {history['width_increased']} 件、延長指令を実行 {history['executed_increased']} 件")

@@ -15,7 +15,7 @@ def csv_rows(folder, name):
         return list(csv.DictReader(f))
 
 
-def replay(folder, exe):
+def replay(folder, exe, predictive=False):
     meta = json.loads((folder / "metadata.json").read_text(encoding="utf8"))
     raw = sorted((f for f in meta["foot_frames"] if f["state_id"] == 3 and f["control_observed_us"]),
                  key=lambda f: f["control_observed_us"])
@@ -111,16 +111,18 @@ def replay(folder, exe):
                f["left_deg"],f["right_deg"],peak_map[peak]["peak_amplitude_deg"],s["lateral_deg"],s["rate_dps"],
                s["accel_dps2"],s["fore_aft_deg"],target,s["i0_ma"],s["goal_ma"],rpm,tau,int(s["cap_ms"]))
     history = "\n".join(e[2] for e in sorted(events))+"\n"
-    result = subprocess.run([exe], input=history, capture_output=True, text=True, check=True)
+    command = [exe, '--predict'] if predictive else [exe]
+    result = subprocess.run(command, input=history, capture_output=True, text=True, check=True)
     print(folder.name, len(audit), len(periodic), result.stdout.strip() or "no new command")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("folders", type=Path, nargs="+")
+    parser.add_argument("--predict", action="store_true", help="Also size predicted left-arc events")
     args = parser.parse_args()
     with tempfile.TemporaryDirectory() as temp:
         binary = Path(temp)/"small_arc.exe"
         subprocess.run(["g++","-std=c++17","-O2","-I",HERE.parents[1]/"src",HERE/"replay_small_arc.cpp","-o",binary],check=True)
         for directory in args.folders:
-            replay(directory,binary)
+            replay(directory,binary,args.predict)

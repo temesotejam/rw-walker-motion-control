@@ -13,6 +13,9 @@
 #include "support_transfer_audit.h"
 #if SUPPORT_TRANSFER_CARRY2
 #include "receiving_arc_aid.h"
+#if WALKING_RETURN_HISTORY
+#include "return_crossing_work.h"
+#endif
 #endif
 #endif
 
@@ -164,7 +167,11 @@ public:
   bool startEnergyControlV0Capture();
   bool startEnergyControlAutonomousCapture(walking_trial::Profile requested=walking_trial::Profile::None);
   bool carryHistoryTrialSelected() const {
-    return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::CarryHistory;
+    return logger_ && (logger_->walkingTrialProfile()==walking_trial::Profile::CarryHistory ||
+                       returnPredictionTrialSelected());
+  }
+  bool returnPredictionTrialSelected() const {
+    return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::ReturnPrediction;
   }
   bool smallStepBaselineSelected() const {
     return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::SmallStep;
@@ -779,6 +786,7 @@ private:
 #if SUPPORT_TRANSFER_CARRY2
   receiving_arc_aid::MainReserve walking_main_reserve_;
 #if WALKING_RETURN_HISTORY
+  return_crossing_work::Reference walking_crossing_reference_;
   receiving_arc_aid::ReturnHistory walking_return_history_;
 #endif
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
@@ -802,6 +810,7 @@ private:
     uint8_t arc_foot_source=0;
     uint16_t base_aid_ms=0, arc_candidate_ms=0, main_reserve_ms=0;
 #if WALKING_RETURN_HISTORY
+    return_crossing_work::Audit crossing_work;
     receiving_arc_aid::ReturnState history_state;
     receiving_arc_aid::HistoryChoice history;
     uint16_t history_base_ms=0,history_final_ms=0;
@@ -828,6 +837,9 @@ private:
     bool return_event=false;
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
     uint8_t return_evidence=0;
+#if WALKING_RETURN_HISTORY
+    float predicted_transfer_ms=NAN,predicted_terminal_deg=NAN;
+#endif
     uint16_t envelope_before_ms=0,envelope_after_ms=0;
     bool assisted_cycle=false;
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
