@@ -239,7 +239,7 @@ int main(){
  // Run 68907120, 3.022 s. Exercise the two-event width through the real
  // left-aid transport, timer and half-cycle ledger. The CAD path to the
  // intermediate centre is the same for both the raw and compensated poses.
- for (unsigned mode=0;mode<3;++mode) {
+ for (unsigned mode=0;mode<4;++mode) {
   ExperimentRunner r;ready19(r);r.transfer_carry=true;
   r.tilt_priority_.reset();r.tilt_priority_.peak(-1,1,4.5f);
   for (unsigned k=0;k<4;++k) {
@@ -288,6 +288,55 @@ int main(){
   assert(e.pulse_width_ms==width && r.walking_half_cycle_budget_.reservedMs()==width);
   clock19(r,a.output_start_ms+width);r.updateEnergyControlAutonomousPulse(mock_ms);
   assert(!r.status_.pulse_active && r.walking_half_cycle_budget_.remaining()==80-width);
+  if (mode==0 || mode==3) {
+    // Starting only with that completed real aid, feed a fresh post-release
+    // speed rise and fall like 41749536. Repeated samples do not create a
+    // third pre-ZERO opportunity. All widths charge this same peak.
+    const uint32_t end=a.output_start_ms+width;
+    auto observe=[&](unsigned index,float angle,float speed,float accel,float measured) {
+      const uint32_t time=end+13+25*index;
+      clock19(r,time);r.walking_fore_aft_last_.angle_deg=-.4f;
+      p.count=229+index;p.epoch_us=800000;p.scheduled_us=p.epoch_us+time*1000;
+      p.published_us=mock_us;p.left.image_us=p.right.image_us=mock_us-27000;
+      p.left.sequence=p.right.sequence=400+index;p.left.measured=p.left.estimated=5;
+      p.right.measured=p.right.estimated=0;
+      r.transfer_packet_=p.count;r.transfer_previous_sample_us_=mock_us;r.transfer_acceleration_dps2_=accel;
+      r.transfer_post_i0_ma_=measured;
+      return r.observeInwardStallRescue(time,false,false,angle,-speed);
+    };
+    assert(!observe(0,5.85f,29,-400,NAN));assert(!observe(1,5.20f,24,195,120));
+    assert(observe(2,4.64f,15.65f,309,89));
+    const auto& post=r.walking_return_observation_;
+    assert(post.evidence==return_observation_policy::Evidence::PostAidShortfall && post.loss_cap_ms==45);
+    const unsigned post_time=end+63;
+    r.acceptMotionCrossing(true,post_time,-15.65f,4.7f,4.64f,1,post_time);
+    const auto extra=r.walking_energy_active_pulse_;
+    assert(r.status_.pulse_active && extra.return_evidence==7 && extra.executed);
+    assert(extra.guarded_ms>0 && extra.guarded_ms<=45 && extra.start_i0_ma==89);
+    assert(extra.post_increment_j>0 && extra.post_increment_j<extra.decision.predicted_work_j);
+    assert(r.walking_half_cycle_budget_.reservedMs()==extra.guarded_ms);
+    unsigned additional=extra.guarded_ms;
+    if (mode==3) {
+      additional=6;
+      clock19(r,extra.output_start_ms+additional);
+      r.energy_control_autonomous_previous_detector_test_ms_=extra.output_start_ms+4;
+      r.energy_control_autonomous_previous_detector_rate_dps_=1.2f;
+      r.processCrossingSample(mock_ms,mock_us,4.20f,4.21f,2.1f);
+      assert(r.walking_energy_active_pulse_.completion_reason==6);
+    } else {
+      clock19(r,extra.output_start_ms+additional);r.updateEnergyControlAutonomousPulse(mock_ms);
+    }
+    assert(!r.walking_half_cycle_budget_.allowPostAid(2855) && !r.status_.pulse_active);
+    assert(!r.energy_control_autonomous_zero_cross_consumed_for_peak_ && r.walking_half_cycle_budget_.allowMain(2855));
+    const unsigned remaining=80-width-additional;
+    assert(r.walking_half_cycle_budget_.remaining()==remaining && remaining>0);
+    assert(r.walking_energy_active_pulse_.post_elapsed_increment_j>0);
+    clock19(r,post_time+150);
+    r.energy_control_autonomous_previous_detector_test_ms_=post_time+148;
+    r.energy_control_autonomous_previous_detector_rate_dps_=-19;
+    r.processCrossingSample(mock_ms,mock_us,.03f,-.01f,-19);
+    assert(r.walking_half_cycle_budget_.mainUsed() && r.walking_half_cycle_budget_.reservedMs()<=remaining);
+  }
  }
  // Run 135284989. The left sole is still higher at the last actual aid.
  // Compare the previous profile, the new one, and a failed write of the new command.
@@ -456,6 +505,42 @@ int main(){
   assert(e.pulse_width_ms==23 && a.guarded_ms==23 && r.walking_half_cycle_budget_.reservedMs()==23);
   assert(a.right_arrival.original_j>a.right_final_j && a.right_base_q>a.decision.q_mas);
  }
+#if WALKING_RETURN_HISTORY
+ // Recorded final right-going ZERO in 41749536, after startup advanced to five degrees.
+ for(bool active : {false,true}) {
+   ExperimentRunner r;ready19(r,4.92876f,3.06026f);r.transfer_carry=active;
+   r.tilt_priority_.reset();r.tilt_priority_.peak(-1,1,4.5f);
+   for (unsigned k=0;k<4;++k) {
+     const int side=k%2?-1:1;const uint32_t t=100+400*k;
+     tilt_priority::Choice choice;choice.selected=true;choice.direction=side;choice.width_ms=30;
+     choice.current_ma=1200;choice.target_deg=4.5f;
+     r.tilt_priority_.crossing(side,t);r.tilt_priority_.confirm(side,t,choice,true,true,false);
+     r.tilt_priority_.peak(side,t+150,4.5f);
+   }
+   assert(r.tilt_priority_.target()==5.f);
+   r.energy_control_autonomous_last_peak_ms_=5153;r.walking_energy_peak_ms_[1]=4684;
+   // Restore the recorded causal arrival correction, which limited the
+   // inherited proposal to 40 ms before the right-arrival fit was evaluated.
+   const float target=lateral_energy::potential(r.lateral_energy_geometry_,5.f);
+   for (uint32_t peak : {3800u,4684u})
+     r.walking_arrival_feedback_.observe(1,peak,.0005f+.000096548f,.0005f,0,target,true);
+   assert(r.walking_half_cycle_budget_.sourcePeak(5153));
+   assert(r.walking_energy_current_.prepare(.031652f));
+   r.simulated_goal_ma=337.219f;clock19(r,5314);
+   Event e;e.zero_cross_rate_dps=e.zero_cross_abs_rate_dps=28.0865f;
+   e.previous_peak_time_ms=5153;e.previous_peak_amplitude_deg=3.06026f;
+   e.physical_next_peak_side=1;e.zero_cross_time_ms=5314;e.target_peak_deg=8;
+   e.pre_input_wheel_speed_valid=true;e.pre_input_wheel_speed_age_us=2000;
+   e.detector_angle_after_deg=.0373f;e.i0_estimated_mA=-7.7607f;
+   e.vbat_mV=7680;e.pre_input_wheel_speed_rpm=-730.97f;
+   bool healthy=false;
+   assert(r.tryWalkingEnergy(e,5314,&healthy) && healthy && e.output_executed);
+   const auto& a=r.walking_energy_active_pulse_;
+   assert(a.right_arrival_checked==active);
+   if(active) assert(a.right_arrival.eligible && a.guarded_ms==26 && a.right_base_ms==40);
+   else assert(a.guarded_ms==40);
+ }
+#endif
  // Same fresh real-ZERO request, routed through normal transport and timer.
  for(unsigned mode=0;mode<7;++mode){
    ExperimentRunner r;ready19(r,4.56f,3.86f);

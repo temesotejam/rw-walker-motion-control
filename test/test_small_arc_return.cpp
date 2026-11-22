@@ -1,6 +1,7 @@
 #define SUPPORT_TRANSFER_V39 1
 #define SUPPORT_TRANSFER_CARRY2 1
 #define SUPPORT_TRANSFER_STALL_V3 1
+#define WALKING_RETURN_HISTORY 1
 #include "return_observation_policy.h"
 #include "return_crossing_work.h"
 #include <cassert>
@@ -83,6 +84,43 @@ static void testPredictedReturn() {
   closingGap(consumed,true); assert(!consumed.check().selected);
 }
 
+static void testPostAidReplan() {
+  // First aid at 5.690 s in 41749536, completed at 5.714. Fresh foot
+  // packets and the body speeds downstream of its actual release.
+  for (unsigned mode=0;mode<9;++mode) {
+    Fixture f;PostAidObserver observer;
+    f.in.peak_ms=5554;f.in.current_rise_tau_s=.0316522f;
+    f.in.peak_deg=8.68f;f.in.fore_aft_deg=-.42f;f.in.target_j=.000386192f;
+    observer.arm(5554,5714,17.75961f,mode==3?.0001f:.000030233f);
+    const auto frame=[&](unsigned i,unsigned time,float angle,float speed,float decel) {
+      f.frame(229+i,time);
+      f.p.scheduled_us=f.p.epoch_us+(5725+25*i)*1000;
+      f.in.angle_deg=angle;f.in.rate_dps=-speed;f.in.periodic_acceleration_dps2=decel;
+      f.p.left.measured=f.p.left.estimated=f.in.foot.left_deg=4.6f;
+      f.p.right.measured=f.p.right.estimated=f.in.foot.right_deg=0;
+    };
+    frame(0,5727,5.85f,28.85678f,-416.95f);
+    assert(!observer.observe(f.in,f.in.sample_us).selected);
+    frame(1,5751,5.195f,23.99939f,195.2796f);
+    if (mode==6) f.p.left.measured=0;
+    assert(!observer.observe(f.in,f.in.sample_us,120).selected);
+    if (mode==1) {f.in.rate_dps=1;assert(!observer.observe(f.in,f.in.sample_us,89).selected);}
+    const uint64_t old=f.p.left.image_us;
+    frame(2,5779,4.639537f,15.64708f,309.0815f);
+    if (mode==2) f.p.left.image_us=f.p.right.image_us=old;
+    if (mode==4) f.in.current_rise_tau_s=.09f;
+    if (mode==5) f.in.active=false;
+    if (mode==7) f.in.sample_age_us=10001;
+    const auto choice=observer.observe(f.in,f.in.sample_us,mode==8?NAN:89.f);
+    if (mode) {assert(!choice.selected);continue;}
+    assert(choice.selected && choice.evidence==Evidence::PostAidShortfall && choice.loss_cap_ms==45);
+    assert(choice.request_j>100.e-6f && choice.request_j<110.e-6f && choice.gross_work_limit_j>choice.request_j);
+    assert(!observer.observe(f.in,f.in.sample_us,89).selected);
+    frame(3,5804,4.32f,9.05f,260.f);
+    assert(!observer.observe(f.in,f.in.sample_us,67).selected);
+  }
+}
+
 // Production inverse and wheel state at the last aid in run 135284989.
 // None of these observations comes from after the decision.
 struct ApproachFixture {
@@ -146,6 +184,26 @@ static void testApproachingAidWork() {
   ApproachFixture strong;strong.in.same_side_peak_deg=5.1f;assert(!strong.choose().final_ms);
 }
 
+static void testPostAidWork() {
+  ApproachFixture f;
+  auto in=f.in;
+  in.initial_current_ma=89;in.goal_current_ma=336.3025f;
+  in.rate_dps=15.64708f;in.body_angle_deg=4.639537f;in.return_work_j=105.e-6f;in.cap_ms=45;
+  const float limit=.5f*.000386192f-.000030233f;
+  const auto raw=half_cycle_energy_budget::selectPostAid(f.geometry,f.current,in,limit);
+  assert(raw.valid && raw.width_ms==45 && raw.unmet_j>0);
+  const auto guarded=half_cycle_energy_budget::selectPostAid(f.geometry,f.current,in,limit,34);
+  const float coast=half_cycle_energy_budget::postAidCoastWork(in.rate_dps,in.initial_current_ma,34);
+  assert(guarded.valid && guarded.charge_supported && guarded.predicted_work_j<limit);
+  assert(std::fabs(guarded.predicted_work_j-coast-49.9e-6f)<.15e-6f);
+  assert(std::fabs(guarded.unmet_j-55.1e-6f)<.15e-6f);
+  const auto restricted=half_cycle_energy_budget::selectPostAid(f.geometry,f.current,in,70e-6f);
+  assert(restricted.valid && restricted.width_ms<34 && restricted.predicted_work_j<=70e-6f);
+  assert(!half_cycle_energy_budget::selectPostAid(f.geometry,f.current,in,70e-6f,34).valid);
+  in.initial_current_ma=-10;
+  assert(!half_cycle_energy_budget::selectPostAid(f.geometry,f.current,in,limit).valid);
+}
+
 static void testPassageWork() {
   ApproachFixture f;
   using namespace return_crossing_work;
@@ -195,6 +253,8 @@ static void testPassageWork() {
 
 int main() {
   testPredictedReturn();
+  testPostAidReplan();
+  testPostAidWork();
   testApproachingAidWork();
   testPassageWork();
   Fixture ok; ok.seed(); ok.frame(13,326);

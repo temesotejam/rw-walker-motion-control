@@ -141,6 +141,26 @@ class InterventionReport(unittest.TestCase):
         self.read()
         self.assertFalse(observed_prediction(self.folder)['archive_complete'])
 
+    def test_post_aid_reports_the_completed_first_pulse_and_the_actual_crossing(self):
+        self.meta['walking_profile'] = 'left_transfer_carry_v3'
+        first, replan, _ = self.meta['walking_energy']['records']
+        first.update(executed=True, output_start_ms=141, output_end_ms=146, actual_elapsed_ms=5,
+                     return_evidence=1)
+        replan.update(return_evidence=7, envelope_before_ms=75, envelope_after_ms=62, request_j=50e-6)
+        self.meta['walking_energy']['arc_aids'][1].update(arc_post_cap_ms=25, arc_post_increment_j=45e-6,
+                                                          arc_post_elapsed_increment_j=35e-6)
+        self.read()
+        event, = observed_prediction(self.folder)['events']
+        self.assertEqual(event['post_aid']['first_end_ms'], 146)
+        self.assertEqual(event['post_aid']['actual_elapsed_ms'], 13)
+        self.assertEqual(event['post_aid']['elapsed_increment_j'], 35e-6)
+        self.assertEqual(event['motion']['mechanical_zero']['event_ms'], 190)
+        replan.update(executed=False, output_start_ms=0, output_end_ms=0)
+        self.read()
+        event, = observed_prediction(self.folder)['events']
+        self.assertIsNone(event['motion'])
+        self.assertIsNone(event['post_aid']['actual_elapsed_ms'])
+
     def test_true_zero_and_veto(self):
         self.meta['walking_energy']['records'][1]['executed'] = False
         result = self.read()

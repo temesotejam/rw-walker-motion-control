@@ -95,7 +95,7 @@ function supportTransferTrial(s) {
   return /^walking-support-transfer-v39(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function singleWalkingBuild(s = latest) {
-  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2'].includes(s?.diagnostic_build_id);
+  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3'].includes(s?.diagnostic_build_id);
 }
 function foreAftStopText(reason) {
   return ({
@@ -519,7 +519,7 @@ async function refreshStatus(force) {
       setOffline(0);
       $('connection').textContent = '接続中 · 測定状態を自動更新';
       $('state').textContent = s.state;
-      $('work-start-status').textContent = ['left_transfer_carry_v1', 'left_transfer_carry_v2'].includes(s.walking_profile) ? '歩行測定中です。' : '測定中です。';
+      $('work-start-status').textContent = ['left_transfer_carry_v1', 'left_transfer_carry_v2', 'left_transfer_carry_v3'].includes(s.walking_profile) ? '歩行測定中です。' : '測定中です。';
       renderWalkingProfile(s.walking_profile);
       $('remaining').textContent = format(s.remaining_ms / 1000, 1) + ' s';
       $('pitch').textContent = format(s.pitch_deg) + '°';
@@ -598,6 +598,9 @@ function renderWalkingProfile(profile) {
     $('run-model').textContent = '次のピークに必要な仕事から通電幅を選びます。';
     $('run-brake').textContent = '前倒し入力は最長15 msです。';
     $('run-adaptation').textContent = '左右のピークをエネルギー計算に使います。';
+  } else if (profile === 'left_transfer_carry_v3') {
+    $('run-model').textContent = '右への振り過ぎを抑え、左補助の後も中心に届くか再計算します。';
+    $('run-percent').textContent = '左へ進む速度が再び落ちたときは、残った通電時間で不足する仕事を補います。';
   } else if (profile === 'left_transfer_carry_v2') {
     $('run-model').textContent = '左支持に移った後も揺れが続くよう、中心を越える前後の仕事を配分します。';
     $('run-percent').textContent = '左に戻れたときの胴体速度と通電時間を使って、失速時の補助幅を選びます。';

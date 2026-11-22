@@ -8,7 +8,7 @@
 namespace half_cycle_energy_budget {
 constexpr char kRevision[]="return_aid_then_main_energy_v18";
 constexpr uint16_t kEnvelopeMs=walking_energy_policy::kMaxPulseMs;
-enum class Kind : uint8_t { ReturnAid,Main };
+enum class Kind : uint8_t { ReturnAid,Main,PostAid };
 
 class Ledger {
  public:
@@ -30,6 +30,9 @@ class Ledger {
   bool allowAid(uint32_t peak)const{
     return matches(peak) && !active_ && !aid_used_ && !main_used_ && remaining()>0;
   }
+  bool allowPostAid(uint32_t peak)const{
+    return matches(peak) && !active_ && aid_used_ && !post_aid_used_ && !main_used_ && remaining()>0;
+  }
   // A main coast may consume the real ZERO even if the aid used the entire
   // envelope. Positive main widths must still pass cap()/accepted().
   bool allowMain(uint32_t peak)const{
@@ -42,6 +45,9 @@ class Ledger {
     if(kind==Kind::ReturnAid){
       if(!allowAid(peak_ms_) || !width || width>remaining())return false;
       aid_used_=true;
+    }else if(kind==Kind::PostAid){
+      if(!allowPostAid(peak_ms_) || !width || width>remaining())return false;
+      post_aid_used_=true;
     }else if(kind==Kind::Main){
       if(!allowMain(peak_ms_) || width>remaining())return false;
       main_used_=true;
@@ -71,7 +77,7 @@ class Ledger {
   bool matches(uint32_t peak)const{return peak && peak==peak_ms_;}
   uint32_t peak_ms_=0,spent_ms_=0;
   uint16_t reserved_ms_=0;
-  bool active_=false,aid_used_=false,main_used_=false;
+  bool active_=false,aid_used_=false,post_aid_used_=false,main_used_=false;
 };
 
 namespace detail {
@@ -117,6 +123,56 @@ inline walking_return_energy::Decision evaluateReturnAidWidth(
   if(actual_width>in.cap_ms || actual_width>kEnvelopeMs)return walking_return_energy::Decision{};
   return detail::selectReturnAid(geometry,current,in,actual_width);
 }
+#if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
+// During a replan the measured starting current may still be driving left.
+// Count just the modeled gain over continuing that current's zero-command
+// tail for the same interval. Both predictions use the same observed rate.
+inline float postAidCoastWork(float speed,float initial_current,uint32_t width_ms) {
+  const float tau=walking_energy_policy::kCoastFallTauS;
+  const float charge=-initial_current*tau*std::expm1(-.001f*width_ms/tau);
+  return lateral_energy::work(lateral_energy::coefficients(-1),speed*lateral_energy::kRadPerDeg,charge);
+}
+inline walking_return_energy::Decision selectPostAid(const lateral_energy::Geometry& geometry,
+    const lateral_energy::CurrentTable& current,const walking_return_energy::Input& in,
+    float gross_limit,uint16_t forced=UINT16_MAX) {
+  using Decision=walking_return_energy::Decision;
+  if (!(in.side==-1 && in.initial_current_ma>=0 && in.initial_current_ma<in.goal_current_ma &&
+        gross_limit>0 && std::isfinite(gross_limit))) return Decision{};
+  auto out=decideReturnAid(geometry,current,in);
+  if (!out.valid) return Decision{};
+  const auto c=lateral_energy::coefficients(-1);
+  const float omega=in.rate_dps*lateral_energy::kRadPerDeg;
+  const auto charge=[&](uint16_t w){return lateral_energy::charge(current,w,in.initial_current_ma,in.goal_current_ma);};
+  const auto supported=[&](uint16_t w){
+    const float q=charge(w);
+    return q>=0 && q<=c.charge_max_mAs && lateral_energy::work(c,omega,q)<=gross_limit;
+  };
+  uint16_t lo=0,hi=in.cap_ms;
+  if (!supported(hi)) {
+    while (hi-lo>1) {
+      const uint16_t mid=(lo+hi)/2;
+      if (supported(mid)) lo=mid; else hi=mid;
+    }
+    hi=lo;
+  }
+  if (!hi || (forced!=UINT16_MAX && (!forced || forced>hi))) return Decision{};
+  if (forced==UINT16_MAX) {
+    lo=0;
+    while (hi-lo>1) {
+      const uint16_t mid=(lo+hi)/2;
+      const float gain=lateral_energy::work(c,omega,charge(mid))-postAidCoastWork(in.rate_dps,in.initial_current_ma,mid);
+      if (gain<out.request_j) lo=mid; else hi=mid;
+    }
+  } else hi=forced;
+  out=walking_energy_policy_v15::detail::atWidth(out,current,in,hi);
+  const float extra=out.predicted_work_j-postAidCoastWork(in.rate_dps,in.initial_current_ma,hi);
+  if (!(extra>0)) return Decision{};
+  out.unmet_j=std::fmax(0.f,out.request_j-extra);
+  out.saturated=out.unmet_j>walking_energy_policy_v15::kEnergyRoundoffJ;
+  out.reason=out.saturated?walking_energy_policy::Reason::CapLimited:walking_energy_policy::Reason::Drive;
+  return out;
+}
+#endif
 // At real ZERO, recompute ordinary arrival-energy demand from its fresh state
 // and signed residual current using the remaining cap. Do not subtract aid
 // work again: its motion is already present in that observed state. Do not add

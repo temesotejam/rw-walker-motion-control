@@ -86,7 +86,7 @@ int main(){
     const auto measured=r.logger.walkingTrialProfile();
     if(target==8 && WALKING_SMALL_STEP_AB) {
 #if WALKING_RETURN_HISTORY
-      assert(!std::strcmp(walking_trial::name(measured),"left_transfer_carry_v2"));
+      assert(!std::strcmp(walking_trial::name(measured),"left_transfer_carry_v3"));
       assert(r.isLeftTransferCarryProfile() && r.carryHistoryTrialSelected() && r.returnPredictionTrialSelected());
 #elif WALKING_RIGHT_ARRIVAL
       assert(measured==Profile::RightArrival);

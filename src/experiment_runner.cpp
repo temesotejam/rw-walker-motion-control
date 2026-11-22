@@ -2679,6 +2679,7 @@ void ExperimentRunner::resetEnergyControlAutonomous() {
   walking_crossing_reference_={};
 #if SUPPORT_TRANSFER_STALL_V3
   walking_main_passages_={};
+  walking_post_aid_={};transfer_post_i0_ma_=NAN;
 #endif
   walking_return_history_={};
 #endif
@@ -2885,7 +2886,12 @@ bool ExperimentRunner::beginEnergyControlAutonomousPulse(uint32_t now_ms, uint32
   const uint32_t state_update_us = static_cast<uint32_t>(pulse_start_us - state_t0_us);
 
   const uint32_t model_t0_us = micros();
-  const float i0 = predicted_current_end_ms_ == 0 ? 0.0f :
+  const float i0 =
+#if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
+      walking_return_event_ && walking_return_observation_.evidence==return_observation_policy::Evidence::PostAidShortfall
+      ? direction*walking_return_observation_.aligned_current_ma :
+#endif
+      predicted_current_end_ms_ == 0 ? 0.0f :
       predicted_signed_current_end_mA_ * expf(-static_cast<float>(now_ms - predicted_current_end_ms_) / 70.0f);
   const float v = status_.beta_model_vbat_mV > 0 ? status_.beta_model_vbat_mV / 1000.0f :
       Config::MODEL_VBAT_REFERENCE_V;
@@ -3523,7 +3529,7 @@ __attribute__((noinline)) bool ExperimentRunner::observeInwardStallRescue(
   if(smallStepBaselineSelected())return false;
 #endif
   const int8_t peak_side=energy_control_autonomous_last_peak_side_;
-  const bool scope=wheelWorkMode() && energy_control_autonomous_target_peak_deg_==8.f &&
+  const bool waiting=wheelWorkMode() && energy_control_autonomous_target_peak_deg_==8.f &&
       energy_control_autonomous_input_peak_percent_==0 &&
 #if defined(SYMMETRIC_RESCUE_TRIAL) && SYMMETRIC_RESCUE_TRIAL
       (peak_side==1 || peak_side==-1) &&
@@ -3532,8 +3538,8 @@ __attribute__((noinline)) bool ExperimentRunner::observeInwardStallRescue(
 #endif
       energy_control_autonomous_last_peak_valid_ && !physical_event_suppressed &&
       energy_control_autonomous_half_cycle_state_==EnergyControlAutonomousHalfCycleState::WAIT_ZERO_CROSS &&
-      !energy_control_autonomous_zero_cross_consumed_for_peak_ && !peak_just_confirmed &&
-      stall_rescue_attempted_peak_ms_!=energy_control_autonomous_last_peak_ms_;
+      !energy_control_autonomous_zero_cross_consumed_for_peak_ && !peak_just_confirmed;
+  const bool scope=waiting && stall_rescue_attempted_peak_ms_!=energy_control_autonomous_last_peak_ms_;
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
   walking_return_event_=false;
   return_observation_policy::Input ri;
@@ -3555,6 +3561,13 @@ __attribute__((noinline)) bool ExperimentRunner::observeInwardStallRescue(
     ri.periodic_acceleration_dps2=transfer_acceleration_dps2_;
 #endif
   walking_return_observation_=walking_return_observer_.observe(ri);
+#if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
+  if (isLeftTransferCarryProfile() && walking_half_cycle_budget_.allowPostAid(ri.peak_ms)) {
+    ri.active=waiting && walkingForeAftAllowsOutput();
+    const auto post=walking_post_aid_.observe(ri,esp_timer_get_time(),transfer_post_i0_ma_);
+    if (post.selected) walking_return_observation_=post;
+  }
+#endif
   walking_return_choice_={};
   if(walking_return_observation_.selected){
     walking_return_choice_.request_j=walking_return_observation_.request_j;
@@ -3923,6 +3936,9 @@ void ExperimentRunner::observeSupportTransfer(uint32_t t, uint32_t sample_us, fl
   transfer_previous_rate_dps_ = rate;
 #if SUPPORT_TRANSFER_STALL_V3
   transfer_acceleration_dps2_=acceleration;
+#if WALKING_RETURN_HISTORY
+  transfer_post_i0_ma_=NAN;
+#endif
 #endif
   const int side = -energy_control_autonomous_last_peak_side_;
   if (!wheelWorkMode() || energy_control_autonomous_target_peak_deg_ != 8.f ||
@@ -3991,6 +4007,14 @@ void ExperimentRunner::observeSupportTransfer(uint32_t t, uint32_t sample_us, fl
   // Shadow replans across a mechanical ZERO. A v19 zero-width coast reserves
   // no energy. Actual elapsed/reserved output still consumes the shared cap.
   if (!in.cap_ms) s.gate_mask |= SupportTransferAudit::NoBudget;
+#if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
+  const auto& first=walking_energy_active_pulse_;
+  if (first.return_event && first.peak_ms==s.peak_ms && first.completion_reason==1 &&
+      !s.gate_mask && s.current_after_zero_ms!=UINT16_MAX) {
+    const uint32_t on=static_cast<uint32_t>(packet.epoch_us+uint64_t(first.output_start_ms)*1000);
+    if (tel.applied_command_time_us-on<0x80000000u) transfer_post_i0_ma_=in.initial_current_ma;
+  }
+#endif
   transfer_audit_.submit(s);
 }
 #endif

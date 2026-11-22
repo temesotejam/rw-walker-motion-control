@@ -12,7 +12,7 @@
 namespace return_observation_policy {
 enum class Evidence : uint8_t {
   Unavailable=0, ObservedShape=1, RecognitionDropout=2, RangeRejected=3,
-  ObservedUnseparated=4, MeasuredArcShortfall=5, PredictedArcShortfall=6
+  ObservedUnseparated=4, MeasuredArcShortfall=5, PredictedArcShortfall=6, PostAidShortfall=7
 };
 struct FootFrame {
   uint16_t run_id=0;
@@ -50,6 +50,8 @@ struct Choice {
   bool range_veto=false;
 #if SUPPORT_TRANSFER_STALL_V3
   float predicted_transfer_ms=NAN,terminal_deg=NAN;
+  uint16_t loss_cap_ms=0;
+  float aligned_current_ma=NAN, gross_work_limit_j=NAN;
 #endif
 };
 
@@ -68,6 +70,80 @@ inline Evidence assessFoot(const Input& in) {
   if(!f.left_range_ok || !f.right_range_ok)return Evidence::Unavailable;
   return std::fabs(f.left_deg-f.right_deg)>=3.f?Evidence::ObservedShape:Evidence::ObservedUnseparated;
 }
+
+#if SUPPORT_TRANSFER_STALL_V3
+// A completed left aid is a new observation horizon. While the body is still
+// moving towards ZERO, check whether the measured speed gain has dissipated.
+// Each accepted aid gets at most one such decision, including a vetoed one.
+class PostAidObserver {
+ public:
+  void arm(uint32_t peak,uint32_t end,float onset_speed,float delivered_work) {
+    *this=PostAidObserver{};
+    if (peak && end>peak && std::isfinite(onset_speed) && onset_speed>0 &&
+        std::isfinite(delivered_work) && delivered_work>0) {
+      peak_=peak;end_=end;onset_speed_=onset_speed;first_work_=delivered_work;
+    }
+  }
+  Choice observe(const Input& in,uint64_t now_us,float aligned_current_ma=NAN) {
+    Choice out;
+    if (!peak_) return out;
+    if (in.peak_ms!=peak_ || in.side!=1 || in.now<end_ ||
+        in.now-end_>support_transfer_plan::kForecastLimitMs ||
+        (in.sample_us && in.sample_age_us<=10000 && (in.angle_deg<=0 || in.rate_dps>=0))) {
+      peak_=0; return out;
+    }
+    const auto* p=in.periodic;
+    if (!p || !p->count || p->count==packet_) return out;
+    if (p->published_us<p->epoch_us+uint64_t(end_)*1000 || !std::isfinite(in.periodic_acceleration_dps2)) return out;
+    const bool adjacent=packet_ && p->count-packet_==1 && p->scheduled_us==slot_+periodic_foot::period_us;
+    const float last_decel=adjacent ? decel_ : 0.f, last_speed=speed_;
+    const uint64_t last_image=image_;
+    packet_=p->count;slot_=p->scheduled_us;decel_=0;speed_=0;image_=0;
+    if (!adjacent) max_speed_=0;
+    const auto& l=p->left;
+    const auto& r=p->right;
+    const float speed=-in.rate_dps;
+    if (!in.active || !in.sample_us || in.sample_age_us>10000 || assessFoot(in)==Evidence::RangeRejected ||
+        !(in.angle_deg>0 && in.angle_deg<=12 &&
+        speed>=support_transfer_plan::kCarryDps && speed<=35 && in.target_j>0 && std::isfinite(in.target_j)) ||
+        !periodic_foot::matchesPair(*p,now_us,l.sequence,l.image_us) || !l.sequence ||
+        !(std::fabs(in.fore_aft_deg)<=10 && std::fabs(l.measured)<=20 && std::fabs(r.measured)<=20 &&
+          std::fabs(l.estimated)<=20 && std::fabs(r.estimated)<=20 && l.measured>r.measured && l.estimated>r.estimated) ||
+        !(support_transfer_plan::supportGap(l.measured,r.measured,in.fore_aft_deg,in.angle_deg)<0 &&
+          support_transfer_plan::supportGap(l.estimated,r.estimated,in.fore_aft_deg,in.angle_deg)<0)) {
+      max_speed_=0; return out;
+    }
+    image_=l.image_us;speed_=speed;max_speed_=std::fmax(max_speed_,speed);
+    const float a=in.periodic_acceleration_dps2;
+    if (!(std::isfinite(a) && a>0 && speed*speed<2.f*a*in.angle_deg)) return out;
+    decel_=a;
+    const float kinetic=walking_energy_policy::passiveCoefficients(-1).omega2_j*
+                        lateral_energy::kRadPerDeg*lateral_energy::kRadPerDeg;
+    if (!(last_decel>0 && speed<last_speed && speed<onset_speed_ && last_image && image_>last_image &&
+          image_>=p->epoch_us+uint64_t(end_)*1000 && max_speed_>onset_speed_ &&
+          kinetic*(max_speed_*max_speed_-speed*speed)>=first_work_ && std::isfinite(aligned_current_ma))) return out;
+    const float time_to_stop=speed/std::fmax(last_decel,a);
+    if (!(in.current_rise_tau_s>0 && time_to_stop>=in.current_rise_tau_s+.005f)) return out;
+    const float conservative=std::fmin(last_decel,a);
+    const float carry=support_transfer_plan::kCarryDps;
+    out.gross_work_limit_j=.5f*in.target_j-first_work_;
+    out.request_j=std::fmin(out.gross_work_limit_j,kinetic*(2.f*conservative*in.angle_deg+carry*carry-speed*speed));
+    if (!(out.request_j>0)) return out;
+    // Keep the command inside the observed inward interval even allowing
+    // the same five ms of dispatch latency as the normal freshness gate.
+    out.loss_cap_ms=static_cast<uint16_t>(std::fmin(1000.f*time_to_stop-5.f,walking_energy_policy::kMaxPulseMs));
+    out.selected=true;out.evidence=Evidence::PostAidShortfall;out.terminal_deg=0;
+    out.foot_age_ms=static_cast<uint32_t>((now_us-image_)/1000);
+    out.deceleration_dps2=conservative;out.stopping_distance_deg=speed*speed/(2.f*conservative);
+    out.aligned_current_ma=aligned_current_ma;peak_=0;
+    return out;
+  }
+ private:
+  uint32_t peak_=0,end_=0,packet_=0;
+  uint64_t slot_=0,image_=0;
+  float onset_speed_=0, first_work_=0, max_speed_=0, speed_=0, decel_=0;
+};
+#endif
 
 class Observer {
  public:
