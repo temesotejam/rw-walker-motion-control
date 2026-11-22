@@ -1188,11 +1188,11 @@ const char* ExperimentRunner::energyControlAutonomousPhaseName() const {
   }
 }
 
-bool ExperimentRunner::startEnergyControlAutonomousCapture(bool small_step_baseline) {
-  if (small_step_baseline && !walking_trial::smallStepAllowed(energy_control_autonomous_target_peak_deg_,
+bool ExperimentRunner::startEnergyControlAutonomousCapture(walking_trial::Profile requested) {
+  if (requested!=walking_trial::Profile::None && !walking_trial::comparisonAllowed(requested,energy_control_autonomous_target_peak_deg_,
           energy_control_autonomous_input_peak_percent_,energy_control_autonomous_input_current_mA_,
           energy_control_autonomous_brake_max_ms_,peak_adaptation_enabled_,energy_bridge_enabled_,negative_probe_mode_)) {
-    status_.last_error="small_step_requires_walking_8deg_package"; return false;
+    status_.last_error="walking_profile_requires_8deg_package"; return false;
   }
   if (!logger_ || !imu_ || !roller_) return false;
   if (logger_->downloading()) { status_.last_error="log_download_in_progress"; return false; }
@@ -1313,7 +1313,7 @@ bool ExperimentRunner::startEnergyControlAutonomousCapture(bool small_step_basel
   status_.sync_event_id = 0;
   const bool comparison=walking_trial::comparison_enabled && wheelWorkMode() &&
       energy_control_autonomous_target_peak_deg_==8.f && energy_control_autonomous_input_peak_percent_==0.f;
-  const auto profile=small_step_baseline ? walking_trial::Profile::SmallStep :
+  const auto profile=requested!=walking_trial::Profile::None ? requested :
       comparison ? walking_trial::standardProfile() : walking_trial::Profile::None;
   beginStartSync(millis(),profile);
   return true;
@@ -2682,6 +2682,9 @@ void ExperimentRunner::resetEnergyControlAutonomous() {
   walking_energy_completion_pending_=false;walking_energy_active_pulse_=WalkingEnergyAudit{};
 #if SUPPORT_TRANSFER_CARRY2
   walking_main_reserve_={};
+#if WALKING_RETURN_HISTORY
+  walking_return_history_={};
+#endif
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
   walking_arc_feedback_={};
 #endif
@@ -3406,10 +3409,16 @@ bool ExperimentRunner::recordEnergyControlAutonomousPeak(uint32_t peak_ms, int8_
       completed.completion.valid && completed.completion.work_valid &&
       completed.trigger_ms==energy_control_autonomous_pending_zero_ms_;
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
-  walking_arc_feedback_.peak(lateral_energy_geometry_,physical_side,peak_ms,amplitude_deg,
-      completed.peak_ms,completed.trigger_ms,event.pending_command_matched && complete_match &&
+  const bool matched_assisted_main=event.pending_command_matched && complete_match &&
       completed.assisted_cycle && !completed.optional && !completed.rescue && !completed.return_event &&
-      completed.side==physical_side && imu_ && imu_->acquisitionHealthy() && !imu_->stale(millis()));
+      completed.side==physical_side && imu_ && imu_->acquisitionHealthy() && !imu_->stale(millis());
+  walking_arc_feedback_.peak(lateral_energy_geometry_,physical_side,peak_ms,amplitude_deg,
+      completed.peak_ms,completed.trigger_ms,matched_assisted_main);
+#if WALKING_RETURN_HISTORY
+  if (carryHistoryTrialSelected())
+    walking_return_history_.peak(physical_side,peak_ms,amplitude_deg,completed.peak_ms,
+        completed.trigger_ms,matched_assisted_main);
+#endif
 #endif
   const bool learn=event.pending_command_matched && !walking_return_pending_ && complete_match &&
       peak_ms>energy_control_autonomous_pending_zero_ms_ &&

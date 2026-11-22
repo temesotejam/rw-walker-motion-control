@@ -162,7 +162,10 @@ public:
   // can enter this path.
   bool startQIdentCapture(uint8_t q_ident_run_schedule_id);  // Frozen: fail closed in this revision.
   bool startEnergyControlV0Capture();
-  bool startEnergyControlAutonomousCapture(bool small_step_baseline=false);
+  bool startEnergyControlAutonomousCapture(walking_trial::Profile requested=walking_trial::Profile::None);
+  bool carryHistoryTrialSelected() const {
+    return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::CarryHistory;
+  }
   bool smallStepBaselineSelected() const {
     return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::SmallStep;
   }
@@ -775,6 +778,9 @@ private:
   uint32_t walking_energy_peak_ms_[2]={0,0};
 #if SUPPORT_TRANSFER_CARRY2
   receiving_arc_aid::MainReserve walking_main_reserve_;
+#if WALKING_RETURN_HISTORY
+  receiving_arc_aid::ReturnHistory walking_return_history_;
+#endif
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
   receiving_arc_aid::ArrivalFeedback walking_arc_feedback_;
 #endif
@@ -795,6 +801,11 @@ private:
     receiving_arc_aid::Result arc_aid;
     uint8_t arc_foot_source=0;
     uint16_t base_aid_ms=0, arc_candidate_ms=0, main_reserve_ms=0;
+#if WALKING_RETURN_HISTORY
+    receiving_arc_aid::ReturnState history_state;
+    receiving_arc_aid::HistoryChoice history;
+    uint16_t history_base_ms=0,history_final_ms=0;
+#endif
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
     uint32_t arc_feedback_peak_ms=0;
     uint16_t arc_feedback_base_ms=0;

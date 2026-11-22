@@ -7,6 +7,7 @@ import math
 import numpy as np
 
 import action_model as action
+from loss_observer import coast_forecast
 from foot_kinematics import FootHistory
 from return_model import load_sections
 
@@ -112,11 +113,12 @@ def training_windows(rec):
 class PhaseFit:
     def __init__(self, groups, mode):
         self.mode = mode
+        self.coast_observer = coast_forecast if mode == 'body_coast' else None
         def fit(fn, complete_rates=False):
             rows = [[(fn(state, old, new), dv) for state, old, new, dv, _ in group
                      if not complete_rates or state.has_rates()] for group in groups]
             return action.Fit(rows, feature_fn=fn)
-        self.body = fit({'terminal':action.features, 'body':body_features,
+        self.body = fit({'terminal':action.features, 'body':body_features, 'body_coast':body_features,
                          'energy':energy_features, 'feet':energy_features}[mode])
         self.foot = fit(foot_features, True) if mode == 'feet' else None
         self.last_state = None
@@ -222,8 +224,8 @@ def metrics(rows, method):
         'worse_vs_previous':int(sum(x < 0 for x in advantages)), 'outcomes':dict(status)}
 
 
-METHODS = ('previous', 'terminal', 'body', 'energy', 'feet')
-SELECTED = 'body'
+METHODS = ('previous', 'terminal', 'body', 'energy', 'feet', 'body_coast')
+SELECTED = 'body_coast'
 
 
 def evaluate_split(ids, recs, prior, windows):
@@ -245,7 +247,9 @@ def evaluate_split(ids, recs, prior, windows):
                 if report['status'] != 'ok':
                     excluded[group+'_'+report['status']] += 1
                     break
-                row[name] = report['scenarios'][0]
+                row[name] = report.get('coast_forecast', report['scenarios'][0])
+                if name == SELECTED and 'coast_observation' in report:
+                    row['coast_observation'] = report['coast_observation']
             else:
                 row['actual'] = coast_endpoint(rec,coast,report['observed_followup']) if coast else report['observed_followup']
                 if coast:
@@ -254,7 +258,18 @@ def evaluate_split(ids, recs, prior, windows):
                 rows.append(row)
     sources = Counter(r['actual'].get('speed_source',r['actual'].get('reason','censored'))
                       for r in rows if r['group']=='coast')
-    return {'rows':rows, 'excluded_origins':dict(excluded), 'coast_speed_sources':dict(sources), 'metrics':{
+    coast_cases = [r for r in rows if r['group']=='coast' and r['actual']['outcome']!='censored']
+    audit = {'scored':len(coast_cases),
+             'with_correction':sum(r['coast_observation']['correction_dps2']<0 for r in coast_cases),
+             'recorded_reversals':sum(r['actual']['outcome']=='reversed' for r in coast_cases),
+             'censored_after_valid_origin':sum(r['group']=='coast' and r['actual']['outcome']=='censored' for r in rows)}
+    for method in ('body', SELECTED):
+        audit[method] = {
+            'correct_endpoints':sum(r[method]['outcome']==r['actual']['outcome'] for r in coast_cases),
+            'detected_reversals':sum(r[method]['outcome']==r['actual']['outcome']=='reversed' for r in coast_cases),
+            'false_reversals_within_local_horizon':sum(r[method]['outcome']=='reversed' and r['actual']['outcome']!='reversed'
+                                                       for r in coast_cases)}
+    return {'rows':rows, 'excluded_origins':dict(excluded), 'coast_speed_sources':dict(sources), 'coast_observer':audit, 'metrics':{
         group:{method:metrics([r for r in rows if r['group']==group],method) for method in METHODS}
         for group in ('aid','coast')}}
 

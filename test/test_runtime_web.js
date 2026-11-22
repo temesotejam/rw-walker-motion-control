@@ -275,6 +275,20 @@ vm.runInContext(code,context);
   assert.strictEqual(startRequests.pop().searchParams.get('energy_model'),'work_control');
   vm.runInContext("renderWalkingProfile('right_arrival_v1')",context);
   assert.match(element('run-model').textContent,/到達エネルギー/);
+  assert.strictEqual(element('return-history-start').hidden,true);
+  await element('return-history-start').onclick();
+  assert.strictEqual(startRequests.length,0);
+  for(const ready of [false,true]){
+    gate.foot_control_ready=ready;
+    vm.runInContext("clearOffline();adoptStatus({...gate,diagnostic_build_id:'walking-support-transfer-v39-return-history1'});render(latest)",context);
+    assert.strictEqual(element('return-history-start').hidden,false);
+    assert.strictEqual(element('return-history-start').disabled,!ready);
+    await element('return-history-start').onclick();
+    if(ready) assert.strictEqual(startRequests.pop().searchParams.get('energy_model'),'work_control_return_history');
+    else assert.strictEqual(startRequests.length,0);
+  }
+  vm.runInContext("renderWalkingProfile('left_return_history_v1')",context);
+  assert.match(element('run-model').textContent,/左への戻り/);
   console.log('walking A/B: same start gate, explicit profile requests and legacy firmware guard PASS');
   console.log('v17 Start: detected but uncalibrated/zero pending/stale explanations, actual gate, null/offline and release text PASS');
   console.log('neutral-zero gate, frozen preview metadata/pixels, five bounded chunks, whole CRC and token failure recovery PASS');

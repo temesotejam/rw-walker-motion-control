@@ -69,6 +69,12 @@ void ExperimentRunner::finishWalkingEnergyPulse(uint32_t now_ms,uint8_t reason){
 #if SUPPORT_TRANSFER_CARRY2
   if (!a.return_event && reason==1 && a.completion.valid)
     walking_main_reserve_.observe(a.side,a.assisted_cycle,in.actual_elapsed_ms);
+#if WALKING_RETURN_HISTORY
+  if (carryHistoryTrialSelected() && a.return_event && a.side==-1)
+    walking_return_history_.completedAid(a.history_state,a.output_end_ms,in.actual_elapsed_ms,
+        reason==1 && a.completion.duration_completed && a.completion.valid &&
+        a.completion.work_valid && a.completion.charge_supported);
+#endif
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
   if (a.return_event) {
     // Every executed aid consumes the previous credit, including an interrupted aid.
@@ -352,6 +358,37 @@ bool ExperimentRunner::tryWalkingEnergy(
               a.arc_feedback_added_j=adjusted.return_work_j-calculation.return_work_j;
               calculation=adjusted;selected=inverse;guard=limited_guard;width=limited;
               a.requested_ms=selected.width_ms;
+            }
+          }
+        }
+      }
+#endif
+#if WALKING_RETURN_HISTORY
+      // Enter here only after the same measured-foot CAD pivot certificate
+      // used by the existing aid. A reserved main may have limited its width.
+      if (carryHistoryTrialSelected()) {
+        a.history_state={a.peak_ms,a.return_foot_age_ms,arc.body_deg,arc.speed_dps,arc.left_deg,
+            arc.right_deg,arc.fore_aft_deg,arc.decel_dps2,a.arc_aid.terminal_deg,arc.target_j};
+        a.history=walking_return_history_.compare(a.history_state,t);
+        a.history_base_ms=a.history_final_ms=width;
+        if (a.history.request_j>selected.request_j && a.history.limit_ms>width) {
+          auto adjusted=calculation;
+          adjusted.return_work_j=a.history.request_j;
+          const auto inverse=half_cycle_energy_budget::decideReturnAid(
+              lateral_energy_geometry_,walking_energy_current_,adjusted);
+          if (inverse.valid && inverse.width_ms>width) {
+            auto candidate_guard=wheel_cycle_guard_;
+            const auto guarded=candidate_guard.limit(side,e.pre_input_wheel_speed_rpm,true,t,inverse.width_ms);
+            auto limited=receiving_arc_aid::boundWidth(width,guarded,a.envelope_before_ms,a.main_reserve_ms);
+            if (limited>a.history.limit_ms) limited=a.history.limit_ms;
+            if (limited>width) {
+              const auto check=half_cycle_energy_budget::evaluateReturnAidWidth(
+                  lateral_energy_geometry_,walking_energy_current_,adjusted,limited);
+              if (check.valid && check.charge_supported && check.predicted_work_j>0 &&
+                  check.predicted_work_j<=.5f*check.target_j) {
+                calculation=adjusted;selected=inverse;guard=candidate_guard;width=limited;
+                a.requested_ms=selected.width_ms;a.history_final_ms=width;
+              }
             }
           }
         }
@@ -881,6 +918,9 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
 #if SUPPORT_TRANSFER_STALL_V3
     if(a.return_event) extra_table_bytes+=8;
 #endif
+#if WALKING_RETURN_HISTORY
+    if(a.return_event && carryHistoryTrialSelected()) extra_table_bytes+=180;
+#endif
 #endif
   }
   if(!table.finish()){json.fail();return;}
@@ -900,6 +940,16 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
     row+=",\"arc_feedback_peak_ms\":"+String(a.arc_feedback_peak_ms)+",\"arc_feedback_base_ms\":"+String(a.arc_feedback_base_ms);
     row+=",\"arc_feedback_available_j\":"+n(a.arc_feedback_available_j)+",\"arc_feedback_command_j\":"+n(a.executed?a.arc_feedback_added_j:0.f);
+#endif
+#if WALKING_RETURN_HISTORY
+    if (carryHistoryTrialSelected()) {
+      row+=",\"arc_history_body_deg\":"+n(a.history_state.body_deg)+",\"arc_history_left_deg\":"+n(a.history_state.left_deg);
+      row+=",\"arc_history_right_deg\":"+n(a.history_state.right_deg);
+      row+=",\"arc_history_first_peak_ms\":"+String(a.history.first_peak_ms)+",\"arc_history_second_peak_ms\":"+String(a.history.second_peak_ms);
+      row+=",\"arc_history_decel_dps2\":"+n(a.history.deceleration)+",\"arc_history_request_j\":"+n(a.history.request_j);
+      row+=",\"arc_history_limit_ms\":"+String(a.history.limit_ms)+",\"arc_history_base_ms\":"+String(a.history_base_ms);
+      row+=",\"arc_history_selected_ms\":"+String(a.history_final_ms);
+    }
 #endif
     row+="}";
     if(!arc_table.append(row)){json.fail();return;}

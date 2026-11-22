@@ -111,6 +111,84 @@ class MainReserve {
   History left_,right_;
 };
 
+#if WALKING_RETURN_HISTORY
+// Trial for a left return already certified by evaluate(). Each reference is
+// a real aid plus its ordinary main and the measured following left peak.
+struct ReturnState {
+  uint32_t departure_ms=0, image_age_ms=0;
+  float body_deg=NAN, speed_dps=NAN, left_deg=NAN, right_deg=NAN, fore_aft_deg=NAN;
+  float deceleration=NAN, terminal_deg=NAN, target_j=NAN;
+  ReturnState()=default;
+  ReturnState(uint32_t departure,uint32_t age,float body,float speed,float left,float right,
+              float fore_aft,float decel,float terminal,float target)
+      : departure_ms(departure),image_age_ms(age),body_deg(body),speed_dps(speed),left_deg(left),
+        right_deg(right),fore_aft_deg(fore_aft),deceleration(decel),terminal_deg(terminal),target_j(target) {}
+  bool valid() const {
+    return departure_ms && image_age_ms<=75 && body_deg>0 && body_deg<=12 &&
+        speed_dps>=3 && speed_dps<=35 && std::fabs(left_deg)<=20 && std::fabs(right_deg)<=20 &&
+        std::fabs(fore_aft_deg)<=10 && deceleration>0 && std::isfinite(deceleration) &&
+        terminal_deg<0 && std::isfinite(terminal_deg) && target_j>0 && std::isfinite(target_j);
+  }
+};
+struct HistoryChoice {
+  uint32_t first_peak_ms=0, second_peak_ms=0;
+  uint16_t limit_ms=0;
+  float deceleration=0, request_j=0;
+};
+class ReturnHistory {
+ public:
+  // Called once at the end of each executed LEFT aid, including interrupted
+  // or uncertified ones. Such a transfer breaks the consecutive pair.
+  void completedAid(const ReturnState& state,uint32_t end,uint32_t elapsed,bool qualified) {
+    if (!qualified || !state.valid() || end<=state.departure_ms ||
+        end-state.departure_ms>1500 || elapsed==0 || elapsed>walking_energy_policy::kMaxPulseMs) {
+      *this={};return;
+    }
+    if (pending_.end_ms || (recent_[1].peak_ms && state.departure_ms<=recent_[1].peak_ms))
+      *this={};
+    pending_.state=state;pending_.end_ms=end;
+    pending_.peak_ms=0;pending_.elapsed_ms=static_cast<uint16_t>(elapsed);
+  }
+  void peak(int side,uint32_t t,float magnitude,uint32_t departure,uint32_t zero,bool matched_main) {
+    if (!pending_.end_ms) return;
+    const auto& state=pending_.state;
+    if (!(matched_main && side==-1 && departure==state.departure_ms &&
+          zero>=pending_.end_ms && t>zero && t-state.departure_ms<=1500 &&
+          std::isfinite(magnitude) && magnitude>=-state.terminal_deg)) {
+      *this={};return;
+    }
+    pending_.peak_ms=t;
+    recent_[0]=recent_[1];recent_[1]=pending_;pending_={};
+  }
+  HistoryChoice compare(const ReturnState& state,uint32_t now) const {
+    HistoryChoice out;
+    if (!state.valid() || now<=state.departure_ms || now-state.departure_ms>1500 ||
+        pending_.end_ms || !similar(recent_[0],state,now) || !similar(recent_[1],state,now)) return out;
+    out.first_peak_ms=recent_[0].peak_ms;out.second_peak_ms=recent_[1].peak_ms;
+    out.limit_ms=recent_[0].elapsed_ms<recent_[1].elapsed_ms?recent_[0].elapsed_ms:recent_[1].elapsed_ms;
+    out.deceleration=std::fmin(recent_[0].state.deceleration,recent_[1].state.deceleration);
+    if (out.deceleration<=state.deceleration) return out;
+    const float rad=lateral_energy::kRadPerDeg, carry=support_transfer_plan::kCarryDps;
+    const float work=walking_energy_policy::passiveCoefficients(-1).omega2_j*rad*rad*
+        (2.f*out.deceleration*(state.body_deg-state.terminal_deg)-state.speed_dps*state.speed_dps+carry*carry);
+    out.request_j=std::fmin(.5f*state.target_j,std::fmax(0.f,work));
+    return out;
+  }
+ private:
+  struct Entry { ReturnState state; uint32_t end_ms=0,peak_ms=0; uint16_t elapsed_ms=0; };
+  static bool similar(const Entry& entry,const ReturnState& state,uint32_t now) {
+    if (!entry.peak_ms || entry.peak_ms>=state.departure_ms || now-entry.peak_ms>4000) return false;
+    const auto& ref=entry.state;
+    return std::fabs(ref.body_deg-state.body_deg)<=1.f && std::fabs(ref.speed_dps-state.speed_dps)<=3.f &&
+        std::fabs(ref.left_deg-state.left_deg)<=2.f && std::fabs(ref.right_deg-state.right_deg)<=2.f &&
+        std::fabs(ref.fore_aft_deg-state.fore_aft_deg)<=1.f &&
+        std::fabs(static_cast<float>(ref.image_age_ms)-state.image_age_ms)<=25.f &&
+        std::fabs(ref.target_j-state.target_j)<1.e-9f;
+  }
+  Entry recent_[2]{},pending_{};
+};
+#endif
+
 #if SUPPORT_TRANSFER_ARC_FEEDBACK
 // Compare the endpoint of a completed leftward assisted transfer with its
 // own predicted arc entry. A new real aid replaces the previous evidence.

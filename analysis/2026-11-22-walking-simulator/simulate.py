@@ -12,6 +12,7 @@ import add_early_watch
 import phase_dynamics
 import post_zero_carry
 import receiving_carry
+import return_history_replay
 import return_model
 
 
@@ -61,6 +62,7 @@ def evaluate_new(root, trial):
             'evaluation': return_model.evaluate_episodes(reference, test, peaks),
             'early_watch': add_early_watch.evaluate_new(root, trial),
             'action_forecast': phase_dynamics.evaluate_trial(root, trial),
+            'observed_return_history': return_history_replay.observed_intervention(trial),
             'receiving_carry': receiving_carry.evaluate_trial(trial),
             'post_zero': post_zero_carry.evaluate_trial(root, trial)}
 
@@ -116,10 +118,12 @@ def examine_warnings(root, returns):
                 toward['observed_followup'] = phase_dynamics.zero_followup(
                     rec, when, ep['peak_ms'], toward['observed_followup'])
             review['toward_receiving_endpoint'] = toward
-        review['coast_to_zero'] = {
-            name:action.compare(rec, when, fit, examples, (0,), (0,), 0.)['scenarios'][0]
-            for name,fit in (('previous', original), ('selected', model))
-        } if at_warning['status'] == 'ok' else {}
+        review['coast_to_zero'] = {}
+        if at_warning['status'] == 'ok':
+            coast = action.compare(rec, when, model, examples, (0,), (0,), 0.)
+            review['coast_to_zero'] = {
+                'previous':action.compare(rec, when, original, examples, (0,), (0,), 0.)['scenarios'][0],
+                'common_body_model':coast['scenarios'][0], 'selected':coast['coast_forecast']}
         # A warning after a rescue may call for moving the original input. An additional
         # rescue would be a different intervention, frequently barred by the firmware.
         prior = [p for p in rec.aids if p.peak == ep['peak_ms'] and p.start <= when]
@@ -175,6 +179,18 @@ def print_summary(result):
     if 'new_trial' in result:
         trial = result['new_trial']
         print(f"試行 {trial['run']}  右ピーク {trial['positive_peaks']} 件")
+        history = trial['observed_return_history']
+        if history['profile'] == 'left_return_history_v1':
+            if history['status'] == 'complete':
+                print(f"  左補助を評価 {history['evaluated']} 件、過去2回と一致 {history['matching_donors']} 件、"
+                      f"延長を選択 {history['width_increased']} 件、延長指令を実行 {history['executed_increased']} 件")
+            else:
+                print("  左補助の履歴は一部未収録のため、試行全体の件数は未確定です。")
+            change = history['first_executed_change']
+            if change:
+                elapsed = f"{change['elapsed_ms']} ms" if change['elapsed_ms'] is not None else '未確定'
+                print(f"  記録内で最初の延長指令 {change['start_ms']} ms、"
+                      f"{change['base_ms']} → {change['selected_ms']} ms、実経過 {elapsed}")
         early = {e['peak_ms']: e['early_warning_ms'] for e in trial['early_watch']['episodes']}
         for ep in trial['evaluation']['episodes']:
             warning = ep['warning_ms']
@@ -205,6 +221,12 @@ def print_summary(result):
                 before, after = m[group]['previous'], m[group][phase_dynamics.SELECTED]
                 print(f"{label}の{mode} {after['cases']}件　速度の平均絶対誤差 "
                       f"{before.get('speed_mae_dps')} → {after.get('speed_mae_dps')} °/s")
+            audit = result['action_forecast'][split]['coast_observer']
+            selected = audit[phase_dynamics.SELECTED]
+            print(f"{label}の惰行予測　直前の減速を補正した区間 {audit['with_correction']}/{audit['scored']}、"
+                  f"終端一致 {selected['correct_endpoints']}、"
+                  f"150 ms以内の折返し検出 {selected['detected_reversals']}/{audit['recorded_reversals']}、"
+                  f"折返し誤警報 {selected['false_reversals_within_local_horizon']}")
     if 'receiving_carry' in result:
         for split in ('prior', 'recent'):
             counts = result['receiving_carry'][split]['summary']['3.0']

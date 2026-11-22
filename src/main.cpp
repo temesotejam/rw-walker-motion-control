@@ -144,12 +144,12 @@ static bool controlStep(void*) {
   bool start_peak_adaptation_enabled = true;
   bool start_energy_bridge_enabled = true;
   bool start_negative_probe_mode = false;
-  bool start_small_step_baseline = false;
+  auto start_profile = walking_trial::Profile::None;
   const auto command = run_control.takeCommand(&start_target_deg, &start_input_peak_percent,
                                                 &start_input_current_mA, &start_brake_max_ms,
                                                 &start_peak_adaptation_enabled,
                                                 &start_energy_bridge_enabled,
-                                                &start_negative_probe_mode, &start_small_step_baseline);
+                                                &start_negative_probe_mode, &start_profile);
   if (command == RunControlWorker::Command::Start) {
     bool ok = false;
     const char* error = "clear_previous_run_first";
@@ -168,7 +168,7 @@ static bool controlStep(void*) {
             runner.setEnergyBridgeEnabled(start_energy_bridge_enabled) &&
             runner.setNegativeProbeMode(start_negative_probe_mode) &&
             runner.setEnergyControlAutonomousTarget(start_target_deg) &&
-            runner.startEnergyControlAutonomousCapture(start_small_step_baseline);
+            runner.startEnergyControlAutonomousCapture(start_profile);
         error = ok ? "started" : runner.status().last_error;
         if (ok) {
           run_started = true;

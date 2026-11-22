@@ -58,6 +58,10 @@ fixture = fixture.replace('class ExperimentRunner {public:', '''class Experiment
 #if WALKING_SMALL_STEP_AB
  bool small_step=false;
  bool smallStepBaselineSelected()const{return small_step;}
+#if WALKING_RETURN_HISTORY
+ bool history_trial=false;
+ bool carryHistoryTrialSelected()const{return history_trial;}
+#endif
  uint32_t angle_late_blocked_peak_ms_=0,angle_last_check_ms_=0;
  void tryAngleEarlyCandidate(uint32_t,uint32_t,float,float);
  void decideAngleEarlyCandidate(uint32_t,uint32_t,float,float);
@@ -211,6 +215,56 @@ static void turn_main_response(){
 }
 #endif
 int main(){
+#if WALKING_RETURN_HISTORY
+ // 33125639 at 5.592 s. The two earlier transfers are complete observations
+ // at this point. Dispatch uses the measured wheel, current, rate and sole,
+ // driving the same transport, timer, abort and half-cycle ledger as the board.
+ for(unsigned mode=0;mode<4;++mode) {
+  ExperimentRunner r;ready19(r);r.history_trial=mode!=0;r.tilt_priority_.reset();
+  r.energy_control_autonomous_last_peak_side_=1;r.energy_control_autonomous_last_peak_ms_=5438;
+  assert(r.walking_half_cycle_budget_.sourcePeak(5438));r.walking_main_reserve_.observe(-1,true,48);
+  const float target=lateral_energy::potential(r.lateral_energy_geometry_,4.5f);
+  receiving_arc_aid::ReturnState first{1936,66,5.349f,20.643f,5.007f,-.110f,-.444f,77.21f,-1.904f,target};
+  receiving_arc_aid::ReturnState second{3690,46,5.324f,19.311f,4.258f,-.084f,-.283f,129.92f,-1.906f,target};
+  r.walking_return_history_.completedAid(first,2121,28,true);
+  r.walking_return_history_.peak(-1,2519,3.1f,1936,2336,true);
+  r.walking_return_history_.completedAid(second,3878,33,true);
+  r.walking_return_history_.peak(-1,4242,2.7f,3690,4051,true);
+  r.walking_return_event_=r.stall_rescue_event_=true;
+  r.walking_return_choice_.request_j=.000012649f;r.walking_return_choice_.deceleration_dps2=59.75367f;
+  r.walking_return_observation_.foot_age_ms=44;
+  r.walking_return_observation_.evidence=return_observation_policy::Evidence::ObservedShape;
+  clock19(r,5592);r.walking_fore_aft_last_.angle_deg=-.247725f;
+  auto& raw=r.walking_return_frame_;raw.run_id=3;raw.sequence=1553;raw.image_us=mock_us-44000;
+  raw.received_us=mock_us-23000;raw.left_deg=3.66559f;raw.right_deg=-.10185f;
+  auto& p=r.periodic_foot_packet_;p.count=223;p.epoch_us=1;p.published_us=mock_us-16000;
+  p.left.sequence=p.right.sequence=raw.sequence;p.left.image_us=p.right.image_us=raw.image_us;
+  p.left.estimated=3.623f;p.right.estimated=-.109f;p.left.rate_dps=-2.f;p.right.rate_dps=-.4f;
+  assert(r.walking_energy_current_.prepare(.031652216f));r.simulated_goal_ma=352.78424f;
+  r.wheel_cycle_guard_.limit(1,-633.51f,true,5217,28);r.roller_obj.write_ok=mode!=2;
+  Event e;e.zero_cross_rate_dps=-19.58054f;e.zero_cross_abs_rate_dps=19.58054f;
+  e.previous_peak_time_ms=5438;e.previous_peak_amplitude_deg=7.15017f;
+  e.physical_next_peak_side=-1;e.zero_cross_time_ms=5592;e.target_peak_deg=8;
+  e.pre_input_wheel_speed_valid=true;e.pre_input_wheel_speed_age_us=3115;
+  e.detector_angle_after_deg=4.8134f;e.i0_estimated_mA=1.46558f;
+  e.vbat_mV=8040;e.pre_input_wheel_speed_rpm=-21.32f;
+  bool healthy=false;assert(r.tryWalkingEnergy(e,5592,&healthy) && healthy);
+  const auto a=r.walking_energy_audit_[0];
+  if(mode==2){assert(!e.output_executed && !r.status_.pulse_active && !r.walking_half_cycle_budget_.aidUsed());
+    assert(r.walking_half_cycle_budget_.remaining()==80);continue;}
+  assert(a.executed && e.output_executed && r.status_.pulse_active && r.roller_obj.last_command==-1200);
+  assert(a.guarded_ms==(r.history_trial?24:19) && e.pulse_width_ms==a.guarded_ms);
+  assert(r.walking_half_cycle_budget_.reservedMs()==a.guarded_ms && r.walking_half_cycle_budget_.aidUsed());
+  if(r.history_trial){assert(a.history.limit_ms==28 && a.history_base_ms==19 && a.history_final_ms==24);
+    assert(a.main_reserve_ms==48 && a.history.first_peak_ms==2519 && a.history.second_peak_ms==4242);}
+  const unsigned elapsed=mode==3?6:a.guarded_ms;
+  clock19(r,a.output_start_ms+elapsed);
+  if(mode==3)r.requestEmergencyStop("test");else r.updateEnergyControlAutonomousPulse(mock_ms);
+  assert(!r.status_.pulse_active && r.walking_half_cycle_budget_.spentMs()==elapsed);
+  if(mode==3)assert(r.walking_energy_audit_[0].completion_reason==3 &&
+      !r.walking_return_history_.compare(a.history_state,5598).limit_ms);
+ }
+#endif
 #if WALKING_RIGHT_ARRIVAL
  // Measured 33125639, 1.705 s ZERO. The body reached +7.95 deg after
  // the original 54 ms request. Feed its pre-command values to live dispatch.
@@ -598,6 +652,7 @@ with tempfile.TemporaryDirectory(prefix='energy_admission_runner_v19_') as folde
         '-DSUPPORT_TRANSFER_STALL_V3='+str(stall),
         '-DWALKING_SMALL_STEP_AB='+str(stall),
         '-DWALKING_RIGHT_ARRIVAL='+str(stall),
+        '-DWALKING_RETURN_HISTORY='+str(stall),
         '-DFOOT_SUPPORT_ASSIST=1','-DFOOT_SUPPORT_LOCAL=1','-DFOOT_SUPPORT_TRANSFER=1',
         '-DFOOT_SUPPORT_ENERGY=1','-DEARLY_ENERGY_MAIN=1','-DPULSE_LIFECYCLE_FIX=1',
         '-DSWAY_BALANCE_TRIAL=1','-DWALKING_RETURN_ENERGY=1','-DWALKING_TRANSFER_V18=1',

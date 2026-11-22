@@ -33,40 +33,50 @@ public:
 int main(){
   Queue q;
   using Cmd=Queue::Command;
+  using Profile=walking_trial::Profile;
   const auto post=[&](const char* model, int target=8){
-    return q.request(Cmd::Start,target,0,300,40,false,true,false,walking_trial::requestsSmallStep(model));
+    return q.request(Cmd::Start,target,0,300,40,false,true,false,walking_trial::requestedProfile(model));
   };
-  const auto consume=[&](bool expected){
-    bool selected=!expected;
+  const auto consume=[&](Profile expected){
+    auto selected=Profile::Turn3;
     assert(q.takeCommand(nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,&selected)==Cmd::Start);
     assert(selected==expected);
     q.completeCommand(true,"ok");
   };
-  assert(!walking_trial::requestsSmallStep("work_control"));
-  assert(!walking_trial::requestsSmallStep("work_control_small_ste"));
-  assert(!walking_trial::requestsSmallStep(nullptr));
-  assert(walking_trial::requestsSmallStep("work_control_small_step")==bool(WALKING_SMALL_STEP_AB));
-  for(const int invalid_target : {10,12}){
-    assert(!q.request(Cmd::Start,invalid_target,0,300,40,false,true,false,true));
+  assert(walking_trial::requestedProfile("work_control")==Profile::None);
+  assert(walking_trial::requestedProfile("work_control_small_ste")==Profile::None);
+  assert(walking_trial::requestedProfile(nullptr)==Profile::None);
+  assert((walking_trial::requestedProfile("work_control_small_step")==Profile::SmallStep)==bool(WALKING_SMALL_STEP_AB));
+  assert((walking_trial::requestedProfile("work_control_return_history")==Profile::CarryHistory)==bool(WALKING_RETURN_HISTORY));
+  for(auto profile : {Profile::SmallStep,Profile::CarryHistory}){
+    for(const int target : {10,12}) assert(!q.request(Cmd::Start,target,0,300,40,false,true,false,profile));
+    assert(!q.request(Cmd::Start,8,0,300,40,true,true,false,profile));
+    assert(!q.request(Cmd::Start,8,0,400,40,false,true,false,profile));
+    assert(!q.request(Cmd::Clear,8,0,300,40,false,true,false,profile));
   }
-  assert(!q.request(Cmd::Start,8,0,300,40,true,true,false,true));
-  assert(!q.request(Cmd::Start,8,0,400,40,false,true,false,true));
-  assert(!q.request(Cmd::Clear,8,0,300,40,false,true,false,true));
+  assert(!q.request(Cmd::Start,8,0,300,40,false,true,false,Profile::Turn3));
   assert(post("work_control"));
   assert(!post("work_control_small_step")); // A rejected request cannot replace the waiting start.
-  consume(false);
+  consume(Profile::None);
   q.snapshot_.running=true;
   assert(!post("work_control_small_step"));
   q.snapshot_.running=false;
 #if WALKING_SMALL_STEP_AB
   assert(post("work_control_small_step"));
   assert(!post("work_control"));
-  consume(true);
+  consume(Profile::SmallStep);
 #else
-  assert(!q.request(Cmd::Start,8,0,300,40,false,true,false,true));
+  assert(!q.request(Cmd::Start,8,0,300,40,false,true,false,Profile::SmallStep));
+#endif
+#if WALKING_RETURN_HISTORY
+  assert(post("work_control_return_history"));
+  assert(!post("work_control_small_step"));
+  consume(Profile::CarryHistory);
+#else
+  assert(!q.request(Cmd::Start,8,0,300,40,false,true,false,Profile::CarryHistory));
 #endif
   assert(q.request(Cmd::Start,8,0,300,40,false,true)); // Old callers omit the new option.
-  consume(false);
+  consume(Profile::None);
 }
 '''
 
@@ -74,10 +84,10 @@ with tempfile.TemporaryDirectory(prefix='walking_trial_request_') as directory:
     temp = Path(directory)
     source = temp / 'queue.cpp'
     source.write_text(fixture, encoding='utf8')
-    for flag in (0, 1):
+    for flag, history in ((0, 0), (1, 0), (1, 1)):
         exe = temp / 'queue.exe'
         subprocess.run(['g++', '-std=c++17', '-Wall', '-Wextra', '-Werror',
-                        f'-DWALKING_SMALL_STEP_AB={flag}', '-I' + str(root / 'test/fixtures/arduino'),
+                        f'-DWALKING_SMALL_STEP_AB={flag}', f'-DWALKING_RETURN_HISTORY={history}', '-I' + str(root / 'test/fixtures/arduino'),
                         '-I' + str(root / 'src'), str(source), '-o', str(exe)], check=True)
         subprocess.run([str(exe)], check=True)
 print('Walking A/B START queue rejects invalid and concurrent requests and resets profile on the next start PASS')

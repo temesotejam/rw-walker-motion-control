@@ -317,6 +317,19 @@ def compare(rec,t,model,examples,widths,delays,section_deg=None):
     if requested < 0.:
         out.update(requested_section_deg=requested, prediction_limit='mechanical_zero',
                    receiving_side_prediction_available=False)
+    coast_model = model
+    observer = getattr(model, 'coast_observer', None)
+    if 0 in widths and observer is not None:
+        # base() replays completed commands only. Freeze this origin's correction
+        # before considering future start times and widths.
+        coast_model, out['coast_observation'] = observer(model, rec, p, t, base)
+    def energy_at_end(result):
+        rate = result['speed_dps']
+        result['effective_rate_energy_mj'] = round(1000*rec.energy['omega2_j']*math.radians(rate)**2,5)
+        result['within_rate_energy_calibration'] = bool(rec.energy['rate_min_dps']<=rate<=rec.energy['rate_max_dps'])
+
+    if observer is not None:
+        out['scenarios_model'] = 'common_body_dynamics_for_width_comparison'
     for delay in delays:
         for width in widths:
             if width<0 or delay<0 or width>80 or delay>LIMIT:
@@ -328,12 +341,18 @@ def compare(rec,t,model,examples,widths,delays,section_deg=None):
             pulse = Pulse(t,at,at+width,-1,i0,goal,tau,True,p['peak_time_ms'],width)
             def current(time):
                 return pulse.current(time) if width>0 and time>=at else base(time)
+            # Every alternative in the width comparison must use identical
+            # dynamics. Removing a loss term at 1 ms would mimic motor work.
             prediction = advance(model,s,t,current,old_ma,terminal)
             if requested < 0.:
                 prediction['requested_section_outcome'] = 'beyond_trained_domain'
-            rate = prediction['speed_dps']
-            prediction['effective_rate_energy_mj'] = round(1000*rec.energy['omega2_j']*math.radians(rate)**2,5)
-            prediction['within_rate_energy_calibration'] = bool(rec.energy['rate_min_dps']<=rate<=rec.energy['rate_max_dps'])
+            energy_at_end(prediction)
+            if width == 0 and observer is not None:
+                coast = dict(prediction)
+                if coast_model is not model:
+                    coast.update(advance(coast_model,s,t,current,old_ma,terminal))
+                    energy_at_end(coast)
+                out['coast_forecast'] = dict(coast, model='persistent_loss_if_coasting')
             issues = []
             if width:
                 if prior_aid:

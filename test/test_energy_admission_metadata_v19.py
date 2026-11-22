@@ -27,6 +27,10 @@ fixture = fixture.replace(marker, marker + r'''
 #if WALKING_SMALL_STEP_AB
   bool baseline=false;
   bool smallStepBaselineSelected() const { return baseline; }
+#if WALKING_RETURN_HISTORY
+  bool history_trial=false;
+  bool carryHistoryTrialSelected() const { return history_trial; }
+#endif
 #endif
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
   fore_aft_motion_guard::Guard walking_fore_aft_guard_;
@@ -63,6 +67,12 @@ fixture = fixture.replace(marker, marker + r'''
       a.arc_feedback_peak_ms=1250;a.arc_feedback_base_ms=30;
       a.arc_feedback_available_j=.000013f;a.arc_feedback_added_j=.000013f;
 #endif
+#if WALKING_RETURN_HISTORY
+      a.history.first_peak_ms=2519;a.history.second_peak_ms=4242;a.history.limit_ms=28;
+      a.history.deceleration=77.21f;a.history.request_j=.000044794f;
+      a.history_base_ms=19;a.history_final_ms=24;
+      a.history_state.body_deg=4.8134f;a.history_state.left_deg=3.66559f;a.history_state.right_deg=-.10185f;
+#endif
     }
 #endif
 #if WALKING_TURN_OBSERVER
@@ -92,13 +102,17 @@ fixture = '#include "walking_trial_profile.h"\n' + fixture
 fixture = fixture.replace('const bool small_step=false;', '''
 #if WALKING_SMALL_STEP_AB
   runner.baseline=argc>1 && std::string(argv[1])=="small-step";
+#if WALKING_RETURN_HISTORY
+  runner.history_trial=argc>1 && std::string(argv[1])=="history";
+#endif
 #endif
   const bool small_step=argc>1 && std::string(argv[1])=="small-step";''')
 fixture = fixture.replace('const bool return_energy_mode=true;', 'const bool return_energy_mode=!small_step;')
 fixture = fixture.replace('early_energy_mode=EARLY_ENERGY_MAIN;', 'early_energy_mode=EARLY_ENERGY_MAIN && !small_step;')
 profile_line = next(line for line in context['logger'].splitlines() if 'String(walking_trial::name(walking_profile_))' in line)
 fixture = fixture.replace('json+="{";', 'json+="{";\n#if WALKING_SMALL_STEP_AB\n'
-                          '  const auto walking_profile_=small_step ? walking_trial::Profile::SmallStep : walking_trial::standardProfile();\n'
+                          '  auto walking_profile_=small_step ? walking_trial::Profile::SmallStep : walking_trial::standardProfile();\n'
+                          '#if WALKING_RETURN_HISTORY\n  if(runner.history_trial) walking_profile_=walking_trial::Profile::CarryHistory;\n#endif\n'
                           + profile_line + '\n#endif\n')
 with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
     temp = Path(folder)
@@ -114,15 +128,18 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                         '-DSUPPORT_TRANSFER_STALL_V3=' + str(int(turn)),
                         '-DWALKING_SMALL_STEP_AB=' + str(int(turn)),
                         '-DWALKING_RIGHT_ARRIVAL=' + str(int(arrival)),
+                        '-DWALKING_RETURN_HISTORY=' + str(int(arrival)),
                         '-I' + str(ROOT / 'test/fixtures/arduino'),
                         '-I' + str(ROOT / 'src'), str(temp / 'test.cpp'), '-o', str(exe)], check=True)
-        for mode, count in [('', 7), ('empty', 0)] + ([('small-step', 7)] if turn else []):
+        modes = [('', 7), ('empty', 0)] + ([('small-step', 7)] if turn else []) + ([('history', 7)] if arrival else [])
+        for mode, count in modes:
             output = subprocess.check_output([str(exe)] + ([mode] if mode else []), text=True).splitlines()
             raw, _ = map(parse, output)
             metadata = converter.expand_tables(raw)
             rows = metadata['walking_energy']['records']
             if turn:
                 assert raw['walking_profile'] == ('v14_small_step' if mode=='small-step' else
+                                                  'left_return_history_v1' if mode=='history' else
                                                   'right_arrival_v1' if arrival else 'turn3')
             if arrival and mode!='small-step':
                 model=metadata['walking_energy']
@@ -220,7 +237,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
             fields = raw['walking_energy']['records']['fields']
             assert len(fields) == len(set(fields))
             assert all(len(row) == len(fields) for row in raw['walking_energy']['records']['rows'])
-            for prior, current in zip(previous_rows[mode], rows):
+            for prior, current in zip(previous_rows['' if mode=='history' else mode], rows):
                 for key in ['available_j', 'target_j', 'potential_j', 'request_j', 'predicted_work_j',
                             'predicted_arrival_j', 'unmet_j', 'q_mas', 'requested_ms', 'guarded_ms']:
                     assert current[key] == prior[key], (key, current[key], prior[key])
@@ -255,6 +272,13 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 if carry:
                     assert csv_rows[1]['arc_base_guarded_ms'] == '28' and csv_rows[1]['arc_main_reserve_ms'] == '50'
                     assert all(row['arc_aid_reason'] == '' for i, row in enumerate(csv_rows) if i != 1)
+                    if mode=='history':
+                        assert csv_rows[1]['arc_history_base_ms']=='19' and csv_rows[1]['arc_history_selected_ms']=='24'
+                        assert csv_rows[1]['arc_history_first_peak_ms']=='2519' and csv_rows[1]['arc_history_second_peak_ms']=='4242'
+                        assert csv_rows[1]['arc_history_limit_ms']=='28' and float(csv_rows[1]['arc_history_request_j'])>0
+                        assert all(row['arc_history_selected_ms']=='' for i,row in enumerate(csv_rows) if i!=1)
+                    else:
+                        assert 'arc_history_selected_ms' not in csv_rows[1]
                 if turn:
                     assert csv_rows[1]['arc_extension_pivot_only'] == 'True'
                     for index in (0,4):
