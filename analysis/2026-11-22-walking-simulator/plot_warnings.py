@@ -50,9 +50,12 @@ def plot(report, recordings, output):
         path(ax, signal(run), when, when + 200, lw=2.5, color='#15657b', label='今回の実測')
         ax.scatter(ep['end_ms'] - when, ep['end_angle_deg'], s=55, color='#15657b',
                    edgecolors='white', linewidths=.8, zorder=4, label='実測の折返し')
-        coast = next(s for s in review['at_warning']['scenarios'] if s['width_ms'] == 0)
-        ax.scatter(coast['time_ms'], coast['angle_deg'], marker='X', s=85, color='#b64b27',
-                   zorder=5, label='電流モデルが予測した惰行の到達点')
+        for name, marker, color, label in (
+                ('previous', 'x', '#ac592f', '従来の惰行予測'),
+                ('selected', 'D', '#246e43', '右ピークからの戻りを加えた予測')):
+            point = review['coast_to_zero'][name]
+            ax.scatter(point['time_ms'], point['angle_deg'], marker=marker, s=65, color=color,
+                       zorder=5, label=label)
         ax.axhline(0, color='#6e737e', lw=.9)
         ax.set(xlim=(0, 200), ylim=(-.15, 3.3), xlabel='警報からの時間 (ms)',
                title=f"試行 {run}　警報 {when / 1000:.3f} 秒")
@@ -61,7 +64,7 @@ def plot(report, recordings, output):
     axes[0, 0].set_ylabel('胴体の左右角 (°)　正は右側')
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc='outside lower center', ncol=2, frameon=False, fontsize=9)
-    fig.suptitle('左へ戻る途中で停止を予告した2件', fontsize=15)
+    fig.suptitle('停止直前の惰行　実測の軌道と最長150 ms先の予測終点', fontsize=15)
     fig.savefig(output, dpi=145)
     plt.close(fig)
 

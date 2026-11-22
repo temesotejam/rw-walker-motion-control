@@ -68,11 +68,11 @@ def foot_at(packets, published, t):
     return math.nan, math.nan, math.nan, math.nan
 
 
-def first_outcome(t, x, v, start, end, ordinary_zero):
+def first_outcome(t, x, v, start, end, ordinary_zero, *, max_gap_ms=25, inward_established=False):
     """Stop at the first physical crossing, confirmed reversal, or a gap/timeout."""
     lowest = start
     for i in range(start + 1, end):
-        if t[i] - t[i-1] > 25:
+        if t[i] - t[i-1] > max_gap_ms:
             return 'censored', i-1, t[i-1], math.nan, t[i-1]
         if x[i] <= 0 < x[i-1]:
             alpha = x[i-1] / (x[i-1] - x[i])
@@ -85,7 +85,7 @@ def first_outcome(t, x, v, start, end, ordinary_zero):
             return 'crossed', i, tm, max(0., speed), tm
         if x[i] <= x[lowest]:
             lowest = i
-        elif x[start] - x[lowest] >= .2 and x[i] - x[lowest] >= .2 and v[i] < 0:
+        elif (inward_established or x[start] - x[lowest] >= .2) and x[i] - x[lowest] >= .2 and v[i] < 0:
             return 'reversed', lowest, t[lowest], 0., t[i]
     if end <= start:
         return 'censored', start, t[start], math.nan, t[start]

@@ -9,6 +9,9 @@ import sys
 import tempfile
 
 import add_early_watch
+import phase_dynamics
+import post_zero_carry
+import receiving_carry
 import return_model
 
 
@@ -56,7 +59,10 @@ def evaluate_new(root, trial):
             'positive_peaks': counts[(3., 'positive_peak')],
             'peaks_missing_each_section': {str(int(s)): counts[(s, 'no_section')] for s in return_model.SECTIONS},
             'evaluation': return_model.evaluate_episodes(reference, test, peaks),
-            'early_watch': add_early_watch.evaluate_new(root, trial)}
+            'early_watch': add_early_watch.evaluate_new(root, trial),
+            'action_forecast': phase_dynamics.evaluate_trial(root, trial),
+            'receiving_carry': receiving_carry.evaluate_trial(trial),
+            'post_zero': post_zero_carry.evaluate_trial(root, trial)}
 
 
 def write_json(path, result):
@@ -82,9 +88,11 @@ def write_json(path, result):
 def examine_warnings(root, returns):
     """Compare pulse timing from the same state. Keep retrospective rewinds separate."""
     import action_model as action
-    recordings = action.load(root)
+    recordings = {i:phase_dynamics.PhaseRecording(root / str(i)) for i in return_model.PRIOR + return_model.RECENT}
     training = [recordings[i] for i in return_model.PRIOR]
-    model = action.Fit([action.samples(r) for r in training])
+    model = phase_dynamics.PhaseFit([phase_dynamics.training_windows(r) for r in training], phase_dynamics.SELECTED)
+    original = action.Fit([action.samples(r) for r in training])
+    carry = {i:receiving_carry.CarryReplay(root / str(i)) for i in return_model.RECENT}
     examples = action.action_examples(training)
     # Reference landmark of the upright sole. The actual load switch can move with the feet.
     nominal_arc_edge = math.degrees(math.asin(5 / 150))
@@ -97,20 +105,32 @@ def examine_warnings(root, returns):
         terminal = nominal_arc_edge if observation['body_angle_deg'] > nominal_arc_edge else 0.
         rec = recordings[ep['run']]
         at_warning = action.compare(rec, when, model, examples, (0, 10, 20), (0, 25), terminal)
+        plan = carry[rec.run].endpoint(ep['peak_ms'], when)
         review = {'run': rec.run, 'peak_ms': ep['peak_ms'], 'warning_ms': when,
                   'at_warning': at_warning, 'recorded_local_outcome': action.observed(rec, when, terminal),
+                  'receiving_plan': plan, 'recorded_receiving_outcome': carry[rec.run].follow(plan),
                   'recorded_return_outcome': ep['outcome'], 'recorded_return_end_ms': ep['end_ms']}
+        if plan['terminal_deg'] is not None:
+            toward = action.compare(rec, when, model, examples, (0, 10, 20), (0, 25), plan['terminal_deg'])
+            if toward['status'] == 'ok':
+                toward['observed_followup'] = phase_dynamics.zero_followup(
+                    rec, when, ep['peak_ms'], toward['observed_followup'])
+            review['toward_receiving_endpoint'] = toward
+        review['coast_to_zero'] = {
+            name:action.compare(rec, when, fit, examples, (0,), (0,), 0.)['scenarios'][0]
+            for name,fit in (('previous', original), ('selected', model))
+        } if at_warning['status'] == 'ok' else {}
         # A warning after a rescue may call for moving the original input. An additional
         # rescue would be a different intervention, frequently barred by the firmware.
         prior = [p for p in rec.aids if p.peak == ep['peak_ms'] and p.start <= when]
         if prior:
-            original = prior[-1]
-            anchor = original.decision - action.STEP
-            delay = original.start - anchor
+            pulse = prior[-1]
+            anchor = pulse.decision - action.STEP
+            delay = pulse.start - anchor
             review['retrospective_timing_comparison'] = {
-                'recorded_start_ms': original.start, 'recorded_width_ms': original.width,
+                'recorded_start_ms': pulse.start, 'recorded_width_ms': pulse.width,
                 'common_start_state_ms': anchor, 'recorded_delay_from_anchor_ms': delay,
-                'comparison': action.compare(rec, anchor, model, examples, (0, original.width),
+                'comparison': action.compare(rec, anchor, model, examples, (0, pulse.width),
                                              (0, delay))}
         reviews.append(review)
     return reviews
@@ -124,6 +144,13 @@ def compare(args, root):
     if args.part in ('all', 'actions'):
         import action_model
         results['actions'] = action_model.run(root)
+        results['action_forecast'] = phase_dynamics.run(root)
+    if args.part in ('all', 'carry'):
+        results['receiving_carry'] = receiving_carry.run(root)
+        results['post_zero'] = post_zero_carry.run(root)
+    if args.part in ('all', 'feet'):
+        import foot_phase_check
+        results['foot_motion'] = foot_phase_check.run(root)
     if args.part in ('all', 'right'):
         import right_candidates
         results['right'] = right_candidates.run(root)
@@ -155,14 +182,41 @@ def print_summary(result):
             print(f"  右ピーク {ep['peak_ms']} ms  早期監視 {str(early_ms) + ' ms' if early_ms is not None else 'なし'}"
                   f"  通常警報 {str(warning) + ' ms' if warning is not None else 'なし'}"
                   f"  実測 {ep['outcome']}  評価 {ep['score_status']}")
+        summary = receiving_carry.summary(trial['receiving_carry'])['3.0']
+        print(f"  +3°から受け足の端まで　終端の記録 {summary['with_receiving_end']} 件、"
+              f"無追加通電で採点 {summary['coast_evaluable']} 件、5°/s以上で到達 {summary['coast_carries']} 件")
+        after = trial['post_zero']
+        print(f"  左向きZERO通過後　終端を実測 {after['observable_endpoints']} 件、"
+              f"別走の類似例で速度予測を採点できたのは {after['supported_scored']} 件")
+        for group, label in (('aid', '実補助'), ('coast', '惰行')):
+            m = trial['action_forecast']['metrics'][group][phase_dynamics.SELECTED]
+            if m['cases']:
+                print(f"  {label}の速度予測　評価 {m['cases']} 件、実測と終点の種類が一致 {m['same_endpoint_cases']} 件、"
+                      f"速度の平均絶対誤差 {m['speed_mae_dps']} °/s")
     if 'early_watch' in result:
         m = result['early_watch']['prior_leave_one_run_out']['comparison']
         print(f"早期監視 +4.5°を加えた事後比較  同じ{m['reversed']}折返しで検出 "
               f"{m['two']['detected_reversals']}→{m['three']['detected_reversals']}、"
               f"{m['crossed']}通過で誤警報 {m['two']['false_warnings']}→{m['three']['false_warnings']}")
-    if 'actions' in result:
-        m = result['actions']['metrics']['holdout']
-        print(f"直近の実通電  評価 {m['scored']} 件、局所到達速度の平均絶対誤差 {m['matched_speed_mae_dps']} °/s")
+    if 'action_forecast' in result:
+        for split, label in (('prior', '先行'), ('held', '直近')):
+            m = result['action_forecast'][split]['metrics']
+            for group, mode in (('aid', '補助'), ('coast', '惰行')):
+                before, after = m[group]['previous'], m[group][phase_dynamics.SELECTED]
+                print(f"{label}の{mode} {after['cases']}件　速度の平均絶対誤差 "
+                      f"{before.get('speed_mae_dps')} → {after.get('speed_mae_dps')} °/s")
+    if 'receiving_carry' in result:
+        for split in ('prior', 'recent'):
+            counts = result['receiving_carry'][split]['summary']['3.0']
+            print(f"{split} +3°判定時に受け側の終端あり {counts['with_receiving_end']}/{counts['decisions']} 件、"
+                  f"無追加通電で採点 {counts['coast_evaluable']} 件、5°/s以上で到達 {counts['coast_carries']} 件")
+    if 'foot_motion' in result:
+        m = result['foot_motion']['held_out']['camera_angle_at_exposure']['scores']['both']
+        print(f"直近の足角 {m['n']} 観測　過去値保持の誤差 {m['hold_mae_deg']}°、機上補償 {m['firmware_mae_deg']}°")
+    if 'post_zero' in result:
+        m = result['post_zero']['prior_leave_one_run_out']
+        print(f"左向きZERO通過後の支持　近い別走あり {m['supported_scored']}/{m['observable_endpoints']} 件、"
+              f"定速とエネルギー差による速度予測の誤差 {m['constant_speed_mae_dps']:.2f} → {m['empirical_energy_mae_dps']:.2f} °/s")
     if 'right' in result:
         for row in result['right']['decisions']:
             if row['split'] == 'two_recent_runs' and row['comparison_ms'] is not None:
@@ -185,14 +239,14 @@ def main():
     source.add_argument('--raw-dir', type=Path, default=Path.home() / 'Downloads',
                         help='Directory containing original reference RWLOGs (default: Downloads)')
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument('--part', choices=('all', 'returns', 'actions', 'right', 'floor'), default='all',
+    mode.add_argument('--part', choices=('all', 'returns', 'actions', 'right', 'floor', 'carry', 'feet'), default='all',
                       help='Models to compare on the eight earlier and two later runs')
     mode.add_argument('--evaluate-run', type=Path, help='Score another raw RWLOG or converted directory on the fixed eight runs')
     mode.add_argument('--at', nargs=2, type=int, metavar=('RUN', 'TIME_MS'),
                       help='Compare leftward actions from one recorded state in the ten runs')
     parser.add_argument('--widths', nargs='+', type=int, help='What-if pulse widths in ms, including 0 for coasting')
     parser.add_argument('--delays', nargs='+', type=int, help='What-if start delays from the chosen state in ms')
-    parser.add_argument('--section-deg', type=float, help='Terminal body angle for --at, e.g. 0 for mechanical ZERO')
+    parser.add_argument('--section-deg', type=float, help='Requested angle for --at, e.g. 0 for ZERO. Predictions stop at the training boundary at ZERO.')
     parser.add_argument('--json-out', type=Path, help='Save full events and matched examples to this JSON file')
     args = parser.parse_args()
     if any(x is not None for x in (args.widths, args.delays, args.section_deg)) and args.at is None:
@@ -201,8 +255,8 @@ def main():
         parser.error('--at requires a reference or evaluation run ID and a nonnegative time in milliseconds')
     if any(not 0 <= n <= 80 for n in args.widths or []) or any(not 0 <= n <= 150 for n in args.delays or []):
         parser.error('Use widths of 0..80 ms and delays of 0..150 ms')
-    if args.section_deg is not None and (not math.isfinite(args.section_deg) or args.section_deg < 0):
-        parser.error('--section-deg must be a finite nonnegative angle')
+    if args.section_deg is not None and (not math.isfinite(args.section_deg) or args.section_deg < -15):
+        parser.error('--section-deg must be finite and at least -15 degrees')
     if args.json_out and args.json_out.suffix.lower() != '.json':
         parser.error('--json-out must be a .json file')
     try:
@@ -216,10 +270,16 @@ def main():
                     trial = decode(trial, temporary / 'new_trial')
                 result = {'new_trial': evaluate_new(root, trial)}
             elif args.at:
-                import action_model
-                result = {'scenario': action_model.simulate_at(root, *args.at,
-                          widths=tuple(args.widths or (0, 10, 20)), delays=tuple(args.delays or (0, 25)),
-                          section_deg=args.section_deg)}
+                carry = receiving_carry.CarryReplay(root / str(args.at[0]))
+                plan = carry.at(args.at[1])
+                target = args.section_deg if args.section_deg is not None else plan['terminal_deg']
+                scenario = phase_dynamics.simulate_at(root, *args.at, widths=tuple(args.widths or (0, 10, 20)),
+                          delays=tuple(args.delays or (0, 25)), section_deg=target)
+                if scenario['status'] == 'ok':
+                    source = 'explicit' if args.section_deg is not None else (
+                        'recorded_receiving_anchor' if target is not None else 'local_travel')
+                    scenario.update(endpoint_source=source, receiving_plan=plan, recorded_receiving_outcome=carry.follow(plan))
+                result = {'scenario': scenario}
             else:
                 result = compare(args, root)
             print_summary(result)

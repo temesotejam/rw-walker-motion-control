@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from action_model import LIMIT, Pulse, Recording, State, advance, compare, first_return_status, observed
+from phase_dynamics import PhaseState, coast_endpoint, crossing_speed, energy_features, training_windows, zero_followup
 
 
 class TestActionRollout(unittest.TestCase):
@@ -77,6 +78,65 @@ class TestActionRollout(unittest.TestCase):
         for t in (11,13,29):
             self.assertEqual(compare(r,t,None,[],[],[])['status'],'previous_command_pending_or_active')
         self.assertEqual(compare(r,30,None,[],[],[])['status'],'outside_positive_return')
+
+    def test_partial_training_window_ends_at_zero(self):
+        t=np.arange(0,56,5)
+        peak={'peak_telemetry_capture_time_ms':1}
+        r=SimpleNamespace(t=t,x=(46-t)*.02,v=20.+t*.1,segments=[(peak,0,10,'crossed')])
+        r.current=lambda time:0.
+        r.observation=lambda time,p:State((46-time)*.02,20.+time*.1,100.,0.,3.)
+        rows=training_windows(r)
+        self.assertEqual(len(rows),1)
+        self.assertTrue(rows[0][-1])
+        self.assertAlmostEqual(rows[0][-2],100.)
+
+    def test_rollout_freezes_observed_feet_and_tracks_peak_kinetic_energy(self):
+        s=PhaseState(2.,15.,-100.,2.,6.,150.,20.,3.,-10.,5.,6.)
+        n=s.after_slot(1.6,10.,-200.)
+        self.assertEqual((n.left_angle,n.left_rate,n.right_rate),(3.,-10.,5.))
+        self.assertEqual((n.elapsed_ms,n.fastest_inward_dps),(175.,20.))
+        self.assertAlmostEqual(energy_features(n,0.,0.)[-3],
+                               .5*(math.radians(20)**2-math.radians(10)**2))
+
+    def test_zero_pulse_and_later_intervention_are_distinguished(self):
+        cutoff={'outcome':'censored'}
+        o=SimpleNamespace(state=SimpleNamespace(time_ms=200,peak_ms=100), end_ms=260, zero_speed=16.,
+                          future_pulse=False, outcome='crossed')
+        r=SimpleNamespace(t=np.array([255,260,265]),v=np.array([16.,18.,20.]),x=np.array([.1,0.,-.1]),
+                          bias_difference=np.array([1.,2.,9.]),gyro_scale=.8,left_zeros={100:{
+                              'zero_cross_time_ms':260,'interpolated_crossing_time_ms':260.,'zero_cross_rate_dps':-16.}},
+                          pulses=[SimpleNamespace(decision=260,start=260)])
+        # At ZERO the event's -16 dps is on the scaled MEKF series. An output
+        # starting at 260 excludes the simultaneous stored 2 dps bias offset.
+        self.assertEqual(coast_endpoint(r,o,cutoff)['speed_dps'],19.)
+        self.assertEqual(coast_endpoint(r,o,cutoff)['speed_source'],'synchronized_gyro_conversion')
+        r.peaks=[dict(peak_time_ms=100)]
+        self.assertEqual(zero_followup(r,200,100,cutoff),coast_endpoint(r,o,cutoff))
+        r.bias_difference[:]=math.nan
+        self.assertIsNone(crossing_speed(r,200,260,100))
+        r.pulses=[]
+        self.assertEqual(crossing_speed(r,200,260,100),dict(speed_dps=18.,speed_source='pre_command_gyro_bracket'))
+        o.future_pulse=True
+        self.assertEqual(coast_endpoint(r,o,cutoff),cutoff)
+        o.future_pulse=False
+        o.end_ms=400
+        self.assertEqual(coast_endpoint(r,o,cutoff),cutoff)
+
+    def test_negative_requested_endpoint_never_extrapolates_through_zero(self):
+        r=self.trace(range(0,401,5))
+        r.run=1
+        r.peaks=[dict(peak_time_ms=0, peak_telemetry_capture_time_ms=0, physical_peak_side=1)]
+        r.aids=[]
+        r.observation=lambda t,p: State(2.,20.,0.,4.,6.)
+        r.reserve=lambda t,p:(30,80)
+        r.energy={'omega2_j':.1,'rate_min_dps':0.,'rate_max_dps':100.}
+        model=SimpleNamespace(acceleration=lambda s,old,new: 0.)
+        donor=Pulse(0,2,22,-1,0.,300.,.03,True,0,20)
+        result=compare(r,100,model,[(2,self.state,donor)],(0,),(0,),-1.91)
+        self.assertEqual(result['requested_section_deg'],-1.91)
+        self.assertEqual(result['target_section_deg'],0.)
+        self.assertFalse(result['receiving_side_prediction_available'])
+        self.assertEqual(result['scenarios'][0]['angle_deg'],0.)
 
 
 if __name__=='__main__':

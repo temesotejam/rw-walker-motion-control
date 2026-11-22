@@ -40,11 +40,13 @@ class Pulse:
 
 
 class Recording:
-    def __init__(self, folder):
-        self.run = int(folder.name)
+    def __init__(self, folder, expected_run_id=None):
         run_id = json.loads((folder / 'header.json').read_text(encoding='utf8'))['run_start_us']
-        if run_id != self.run:
+        if expected_run_id is None and folder.name.isdecimal():
+            expected_run_id = int(folder.name)
+        if expected_run_id is not None and run_id != expected_run_id:
             raise ValueError(f'Wrong recording in folder {folder}')
+        self.run = run_id
         meta = json.loads((folder / 'metadata.json').read_text(encoding='utf8'))
         if (meta.get('metadata_event_detail_truncated') or meta.get('energy_control_autonomous_event_overflow')
                 or meta['walking_energy']['truncated']):
@@ -55,6 +57,14 @@ class Recording:
         self.t = np.array([int(r['t_test_ms']) for r in rows])
         self.x = np.array([float(r['pitch_mekf_detector_relative_deg']) for r in rows])
         self.v = np.array([-float(r['physical_roll_rate_dps']) for r in rows])
+        # The synchronized ZERO event reports the controller's scaled, MEKF-bias-
+        # corrected rate. Keep the correction needed to score against self.v.
+        self.gyro_scale = meta.get('mekf_gyro_y_scale')
+        self.bias_difference = np.array([
+            float(r['mekf_bias_y_dps'])-float(r['gyro_bias_y_dps'])
+            if r.get('mekf_bias_y_dps') and r.get('gyro_bias_y_dps') else math.nan for r in rows])
+        self.left_zeros = {e['previous_peak_time_ms']:e for e in meta['energy_control_autonomous_zero_cross_events']
+                           if e['event_kind']=='energy_control_zero_cross' and e['physical_next_peak_side']==-1}
         if np.any(np.diff(self.t)<0):
             raise ValueError(f'Nonmonotone IMU samples: {self.run}')
         self.feet = sorted(read_rows(folder, 'foot_periodic'),key=lambda f:int(f['publish_us']))
@@ -125,6 +135,9 @@ class State:
     foot_difference: float
     peak_amplitude: float
 
+    def after_slot(self, angle, speed, acceleration):
+        return replace(self, angle=angle, speed=speed, acceleration=acceleration)
+
 
 def mean_current(fn, t, duration=STEP):
     # Midpoints give a stable integral when a short pulse straddles a 25 ms slot.
@@ -154,9 +167,10 @@ def samples(rec):
 
 
 class Fit:
-    def __init__(self, groups, with_current=True):
+    def __init__(self, groups, with_current=True, feature_fn=features):
         # Every recording has equal aggregate weight. Fixed regularization and
         # scales fitted on training runs only. Never fit on the two recent runs.
+        self.feature_fn = feature_fn
         xs,ys,ws = [],[],[]
         for g in groups:
             if g:
@@ -173,7 +187,7 @@ class Fit:
         self.beta = np.linalg.solve(z.T@(z*w[:,None])+.02*np.eye(z.shape[1]),z.T@(w*(y-self.intercept)))
 
     def acceleration(self,s,previous_ma,next_ma):
-        row = np.array(features(s,previous_ma,next_ma))[:len(self.beta)]
+        row = np.array(self.feature_fn(s,previous_ma,next_ma))[:len(self.beta)]
         return self.intercept + (row-self.mu)/self.scale @ self.beta
 
 
@@ -207,7 +221,7 @@ def advance(model,state,t,current,old_current,terminal):
                 break
         if status!='horizon':
             break
-        s = replace(s,angle=x,speed=v,acceleration=(v-v0)*1000/STEP)
+        s = s.after_slot(x,v,(v-v0)*1000/STEP)
         old_current = (charge-q0)*1000/STEP
     return dict(outcome=status,time_ms=round(when,1),angle_deg=round(x,3),
                 speed_dps=round(v,2),signed_charge_mas=round(charge,3))
@@ -261,9 +275,12 @@ def compare(rec,t,model,examples,widths,delays,section_deg=None):
     s = rec.observation(t,p)
     if not s or s.angle<=0 or s.speed<=0:
         return dict(out,status='no_fresh_inward_state')
-    terminal = max(0.,s.angle-1.91) if section_deg is None else section_deg
-    if not 0<=terminal<s.angle:
+    requested = max(0.,s.angle-1.91) if section_deg is None else section_deg
+    if not math.isfinite(requested) or not -15.<=requested<s.angle:
         return dict(out,status='section_out_of_range')
+    # The first-return model is fitted on the positive side only. The next
+    # support's CAD edge may lie on the negative side; do not extrapolate there.
+    terminal = max(0.,requested)
     if not examples:
         return dict(out,status='no_training_aid')
     logged = next((a for a in rec.aids if a.decision==t),None)
@@ -297,6 +314,9 @@ def compare(rec,t,model,examples,widths,delays,section_deg=None):
                matched_prior_runs=len({r for r,_ in near}),
                logged_width_ms=logged.width if logged else None,scenarios=[],
                observed_followup=observed(rec,t,terminal))
+    if requested < 0.:
+        out.update(requested_section_deg=requested, prediction_limit='mechanical_zero',
+                   receiving_side_prediction_available=False)
     for delay in delays:
         for width in widths:
             if width<0 or delay<0 or width>80 or delay>LIMIT:
@@ -309,6 +329,8 @@ def compare(rec,t,model,examples,widths,delays,section_deg=None):
             def current(time):
                 return pulse.current(time) if width>0 and time>=at else base(time)
             prediction = advance(model,s,t,current,old_ma,terminal)
+            if requested < 0.:
+                prediction['requested_section_outcome'] = 'beyond_trained_domain'
             rate = prediction['speed_dps']
             prediction['effective_rate_energy_mj'] = round(1000*rec.energy['omega2_j']*math.radians(rate)**2,5)
             prediction['within_rate_energy_calibration'] = bool(rec.energy['rate_min_dps']<=rate<=rec.energy['rate_max_dps'])
