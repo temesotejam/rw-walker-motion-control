@@ -16,7 +16,9 @@ static float number() {
   return std::stof(token);
 }
 
-int main() {
+int main(int argc, char** argv) {
+  const bool audit_approach=argc==2 && std::string(argv[1])=="--audit-approach";
+  if (argc!=1 && !audit_approach) return 8;
   uint64_t epoch;
   std::cin >> epoch;
   periodic_foot::Estimator feet;
@@ -94,6 +96,17 @@ int main() {
       arc.left_est=l.estimated;arc.right_est=r.estimated;arc.left_rate=l.rate_dps;arc.right_rate=r.rate_dps;
       arc.observed_shape=source!=0;arc.base_width_ms=width;arc.base_j=selected.request_j;arc.target_j=selected.target_j;
       const auto present=receiving_arc_aid::evaluate(arc);
+      uint16_t without_reserve=width;
+      const bool inspect=audit_approach && present.reason==receiving_arc_aid::Reason::NotReceiving && source && width;
+      if (inspect) {
+        // Isolate the reservation on the same observed state; do not feed
+        // this counterfactual command back into the walk or the replay guard.
+        auto trial_guard=guard;
+        auto trial_input=in;
+        auto trial_selected=selected;
+        return_crossing_work::applyApproach(arc,reference,departure,t,envelope,0,rpm,wheel,trial_guard,
+            geometry,current,trial_input,trial_selected,without_reserve,fore_rate);
+      }
       return_crossing_work::Audit audit;
       if (present.reason==receiving_arc_aid::Reason::NotReceiving && source && width)
         audit=return_crossing_work::applyApproach(arc,reference,departure,t,envelope,reserve.forSide(-1),
@@ -103,7 +116,19 @@ int main() {
                 << reserve.forSide(-1) << ' ' << start_inverse << ' ' << start_width << ' '
                 << reference.zero_ms << ' ' << reference.speed_dps << ' ' << audit.transfer_ms << ' '
                 << audit.terminal_deg << ' ' << audit.arc_request_j << ' ' << audit.request_j << ' '
-                << selected.width_ms << ' ' << width << ' ' << after.predicted_work_j << '\n';
+                << selected.width_ms << ' ' << width << ' ' << after.predicted_work_j;
+      if (inspect) {
+        const float horizon=std::fmin(.001f*support_transfer_plan::kForecastLimitMs,
+            std::fmin(arc.speed_dps/arc.decel_dps2,.001f*start_width+current.tau));
+        std::cout << ' ' << without_reserve << ' ' << horizon*1000.f << ' '
+                  << support_transfer_plan::supportGap(arc.left_deg,arc.right_deg,arc.fore_aft_deg,arc.body_deg);
+        for (const float seconds : {horizon,.060f,.150f}) {
+          std::cout << ' ' << 1000.f*return_crossing_work::closingTime(arc,arc.left_deg,arc.right_deg,seconds,0)
+                    << ' ' << 1000.f*return_crossing_work::closingTime(arc,arc.left_est,arc.right_est,seconds,0)
+                    << ' ' << 1000.f*return_crossing_work::closingTime(arc,arc.left_est,arc.right_est,seconds,fore_rate);
+        }
+      }
+      std::cout << '\n';
     } else return 6;
     if (!std::cin) return 7;
   }

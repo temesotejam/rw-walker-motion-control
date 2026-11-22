@@ -50,7 +50,7 @@ def registration(videos):
     return shift, min(scores)
 
 
-def aligned_observations(video, folder, shift, markers=seeds, floor_map=floor):
+def aligned_observations(video, folder, shift, markers=seeds, floor_map=floor, through_s=30.):
     stamps, marks = optical.tracks(video, markers, end_s=45)
     marker_axis = marks[:,1] - marks[:,0]
     angle = np.degrees(np.arctan2(marker_axis[:,1], marker_axis[:,0]))
@@ -66,28 +66,29 @@ def aligned_observations(video, folder, shift, markers=seeds, floor_map=floor):
         best = np.nanargmin(corr)
         fits.append([round(origins[best],3), round(corr[best],4)])
     t = stamps - fits[0][0]
-    selected = (t>=-.8) & (t<30.1)
-    if not np.isfinite(marks[selected]).all() or t[-1]<30:
+    selected = (t>=-.8) & (t<through_s+.1)
+    if not np.isfinite(marks[selected]).all() or t[-1]<through_s:
         raise ValueError('Incomplete marker coverage')
     feet = np.array([[floor_map(mark-shift) for mark in pair] for pair in marks[:,2:]])
     return t, feet, marks, fits
 
 
-def measure_positions(folder, t, feet, marks, fits, axis=None):
+def measure_positions(folder, t, feet, marks, fits, axis=None, through_s=30.):
     def pos(at, window):
         return feet[np.abs(t-at)<window].mean(axis=0)
 
     base = feet[(t>=-.8) & (t<0)].mean(axis=0)
-    final = np.median(feet[(t>=12) & (t<=30)], axis=0)
+    final = np.median(feet[(t>=12) & (t<=through_s)], axis=0)
     intervals = []
-    for a,b in [(0,4),(4,8),(8,12),(0,12),(12,29.5)]:
+    for a,b in [(0,4),(4,8),(8,12),(0,12),(12,through_s-.5)]:
         d = pos(b,.4) - (base if a==0 else pos(a,.4))
         intervals.append(dict(start_s=a,end_s=b,right_forward=d[0,1],left_forward=d[1,1],
                               mean_forward=d[:,1].mean(),mean_lateral=d[:,0].mean()))
     settle = {}
     for tol in [.05,.10,.20]:
-        outside = np.flatnonzero((t>=0) & (t<=30) & (np.max(np.abs(feet[:,:,1]-final[:,1]),axis=1)>tol))
-        settle[tol] = float(t[outside[-1]+1]) if len(outside) and t[outside[-1]+1]<=30 else None
+        outside = np.flatnonzero((t>=0) & (t<=through_s) & (np.max(np.abs(feet[:,:,1]-final[:,1]),axis=1)>tol))
+        next_frame = outside[-1]+1 if len(outside) else None
+        settle[tol] = float(t[next_frame]) if next_frame is not None and next_frame<len(t) and t[next_frame]<=through_s else None
     meta = json.loads((folder/'metadata.json').read_bytes())
     peaks = meta['energy_control_autonomous_peak_events']
     swings = []
@@ -120,7 +121,7 @@ def measure_positions(folder, t, feet, marks, fits, axis=None):
         axis.set(xlim=(0,12),ylim=(-.2,3), ylabel='手前への変位（小区画）')
         axis.set_title(f"{folder.name}    {meta.get('walking_profile', '')}", loc='left',fontsize=11)
         axis.grid(axis='y', alpha=.2)
-    at_rest = marks[(12<=t)&(t<=30),2:]
+    at_rest = marks[(12<=t)&(t<=through_s),2:]
     return dict(video_zero_and_correlation=fits, intervals=intervals,settled_forward_s=settle,
                 stationary_frames=len(at_rest),stationary_xy_span_px=np.ptp(at_rest,axis=0).tolist(),
                 swings=swings,between_peaks=between_peaks)

@@ -28,7 +28,20 @@ def read_rows(folder, name):
         return list(csv.DictReader(f))
 
 
-def replay(folder, executable, legacy):
+def approach_sensitivity(fields):
+    if len(fields)!=12:
+        raise ValueError('Expected three crossing forecasts at each of three horizons')
+    width,horizon,gap,*times=map(float,fields)
+    forecasts=[]
+    for offset,duration in zip((0,3,6),(horizon,60.,150.)):
+        observed,estimated,tilted=(value if math.isfinite(value) else None for value in times[offset:offset+3])
+        forecasts.append(dict(horizon_ms=duration, observed_fixed_pitch=observed,
+                              estimated_fixed_pitch=estimated, estimated_changing_pitch=tilted))
+    return dict(width_without_main_reserve_ms=int(width), nominal_horizon_ms=horizon,
+                measured_left_minus_right_height_mm=gap, predicted_height_crossings_ms=forecasts)
+
+
+def replay(folder, executable, legacy, audit_approach=False):
     meta = json.loads((folder/'metadata.json').read_bytes())
     energy = meta['walking_energy']
     records = energy['records']
@@ -124,12 +137,16 @@ def replay(folder, executable, legacy):
                e['aligned_initial_current_mA'],e['predicted_current_goal_mA'],e['predicted_current_rise_tau_s'],
                e['pre_input_wheel_speed_rpm'],w['return_work_j'])
     payload=str(epoch)+'\n'+'\n'.join(s for _,_,s in sorted(stream))+'\n'
-    result=subprocess.run([executable],input=payload,text=True,capture_output=True)
+    command=[executable,'--audit-approach'] if audit_approach else [executable]
+    result=subprocess.run(command,input=payload,text=True,capture_output=True)
     if result.returncode:
         raise ValueError(f'{folder}: adapter {result.returncode}: {result.stderr}')
     for line in result.stdout.splitlines():
-        (t,src,reason,res,inv,base,zero,speed,transfer,terminal,arc_j,ref_j,new_inv,width,work)=line.split()
+        fields=line.split()
+        (t,src,reason,res,inv,base,zero,speed,transfer,terminal,arc_j,ref_j,new_inv,width,work)=fields[:15]
         d=decisions[int(t)]
+        if fields[15:]:
+            d['approach_sensitivity']=approach_sensitivity(fields[15:])
         if (d['archive_source'] is not None and int(src)!=d['archive_source']
                 or d['archive_reserve'] is not None and int(res)!=d['archive_reserve']
                 or d['archive_base'] is not None and int(base)!=d['archive_base']):
@@ -138,8 +155,12 @@ def replay(folder, executable, legacy):
         # pivot. It can report UncertainPivot where prediction1 says Eligible.
         if d['archive_reason'] is not None and (d['archive_reason']==3)!=(int(reason)==3):
             raise ValueError(f'{folder.name}/{t}: original geometry did not reproduce')
-        if int(reason)==3 and d['observed_ms']!=int(base):
-            raise ValueError(f'{folder.name}/{t}: baseline width mismatch')
+        if int(reason)==3:
+            # This branch first became active in left_transfer_carry_v1.
+            d['prediction1_ms']=int(base)
+            expected=width if meta.get('walking_profile')=='left_transfer_carry_v1' else base
+            if d['observed_ms']!=int(expected):
+                raise ValueError(f'{folder.name}/{t}: recorded profile width mismatch')
         # For old versions without recorded arc decisions, the retained v1 arc
         # extension may be unknown. A different geometry path cannot trigger the
         # tested extension; a same-width result there does not reconstruct v1.
@@ -162,6 +183,8 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('roots',type=Path,nargs='+',help='Roots containing converted per-trial folders')
     parser.add_argument('--json-out',type=Path)
+    parser.add_argument('--audit-approach',action='store_true',
+                        help='Evaluate removing only the main reservation and list CAD crossing forecasts')
     args=parser.parse_args()
     folders=sorted({f.parent for root in args.roots for f in root.glob('*/header.json')})
     if not folders:
@@ -172,7 +195,7 @@ def main():
         adapter,prior=Path(tmp)/'transfer_carry.exe',Path(tmp)/'history.exe'
         subprocess.run([*flags,HERE/'transfer_carry_selector.cpp','-o',adapter],check=True)
         subprocess.run([*flags,SIM/'return_history_selector.cpp','-o',prior],check=True)
-        runs=[replay(folder,adapter,prior) for folder in folders]
+        runs=[replay(folder,adapter,prior,args.audit_approach) for folder in folders]
     episodes=[e for r in runs for e in r['episodes']]
     aids=[dict(run=r['run'],**a) for r in runs for a in r['aids']]
     print('Runs:',len(runs),'right peaks:',len(episodes),'outcomes:',
