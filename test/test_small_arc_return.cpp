@@ -2,6 +2,7 @@
 #define SUPPORT_TRANSFER_CARRY2 1
 #define SUPPORT_TRANSFER_STALL_V3 1
 #include "return_observation_policy.h"
+#include "return_crossing_work.h"
 #include <cassert>
 #include <cmath>
 
@@ -82,8 +83,72 @@ static void testPredictedReturn() {
   closingGap(consumed,true); assert(!consumed.check().selected);
 }
 
+// Production inverse and wheel state at the last aid in run 135284989.
+// None of these observations comes from after the decision.
+struct ApproachFixture {
+  receiving_arc_aid::Input arc;
+  return_crossing_work::Reference source;
+  lateral_energy::Geometry geometry;
+  lateral_energy::CurrentTable current;
+  walking_return_energy::Input in;
+  walking_return_energy::Decision selected;
+  wheel_cycle_guard::Controller wheel,chosen;
+  uint16_t width=0,reserve=20;
+  float fore_rate_dps=5.238708f;
+  ApproachFixture() {
+    assert(current.prepare(.031652216f));
+    in.side=-1;in.target_deg=5;in.body_angle_deg=3.97138f;in.rate_dps=18.35050f;
+    in.previous_peak_deg=7.26871f;in.same_side_peak_deg=3.62515f;
+    in.initial_current_ma=-.724452f;in.goal_current_ma=341.34189f;in.return_work_j=.000015804f;
+    selected=half_cycle_energy_budget::decideReturnAid(geometry,current,in);
+    assert(selected.valid && selected.width_ms==17);
+    wheel.limit(1,-602.23f,true,4447,30);
+    chosen=wheel;width=chosen.limit(-1,-1.79f,true,4869,selected.width_ms);
+    assert(width==15);
+    arc.side=-1;arc.observed_shape=true;arc.body_deg=in.body_angle_deg;arc.speed_dps=in.rate_dps;
+    arc.decel_dps2=72.57216f;arc.fore_aft_deg=-.5252169f;
+    arc.left_deg=2.85686f;arc.right_deg=-.18851f;arc.left_est=2.838892f;arc.right_est=-.1696107f;
+    arc.left_rate=-.7188846f;arc.right_rate=.7560334f;arc.base_width_ms=width;
+    arc.base_j=in.return_work_j;arc.target_j=selected.target_j;
+    source.observe(3168,3321,2.86886f,31.3949f,selected.target_j,true);
+    assert(receiving_arc_aid::evaluate(arc).reason==receiving_arc_aid::Reason::NotReceiving);
+  }
+  return_crossing_work::Audit choose() {
+    return return_crossing_work::applyApproach(arc,source,4670,4869,80,reserve,-1.79f,
+        wheel,chosen,geometry,current,in,selected,width,fore_rate_dps);
+  }
+};
+
+static void testApproachingAidWork() {
+  ApproachFixture f;
+  const auto audit=f.choose();
+  assert(audit.transfer_ms>37 && audit.transfer_ms<41 && audit.terminal_deg<-1.89f);
+  assert(audit.base_ms==15 && audit.final_ms==f.width && f.width>audit.base_ms);
+  assert(audit.zero_ms==3168 && audit.arc_request_j>f.arc.base_j && audit.request_j>audit.arc_request_j);
+  assert(f.width==34 && std::fabs(audit.request_j-.000080794f)<1.e-8f);
+  const auto delivered=half_cycle_energy_budget::evaluateReturnAidWidth(f.geometry,f.current,f.in,f.width);
+  assert(delivered.valid && delivered.charge_supported && delivered.predicted_work_j>f.arc.base_j);
+
+  ApproachFixture no_source;no_source.source={};
+  const auto geometric=no_source.choose();
+  assert(!geometric.zero_ms && geometric.request_j==geometric.arc_request_j);
+  assert(no_source.width>15 && no_source.width<f.width);
+  ApproachFixture room;room.reserve=62;assert(room.choose().final_ms==18);
+  ApproachFixture no_room;no_room.reserve=65;assert(!no_room.choose().final_ms && no_room.width==15);
+  ApproachFixture delayed;delayed.arc.left_est=1.9f;assert(!delayed.choose().final_ms && delayed.width==15);
+  ApproachFixture opening;opening.arc.left_rate=-60;assert(!opening.choose().final_ms && opening.width==15);
+  ApproachFixture pitching;pitching.fore_rate_dps=-15;assert(!pitching.choose().final_ms && pitching.width==15);
+  ApproachFixture unknown_pitch;unknown_pitch.fore_rate_dps=NAN;assert(!unknown_pitch.choose().final_ms);
+  ApproachFixture disabled;disabled.arc.observed_shape=false;assert(!disabled.choose().final_ms);
+  ApproachFixture stopped;stopped.arc.decel_dps2=900;assert(!stopped.choose().final_ms);
+  ApproachFixture already_lower;already_lower.arc.body_deg=2.5f;assert(!already_lower.choose().final_ms);
+  ApproachFixture invalid;invalid.arc.left_est=NAN;assert(!invalid.choose().final_ms);
+  ApproachFixture strong;strong.in.same_side_peak_deg=5.1f;assert(!strong.choose().final_ms);
+}
+
 int main() {
   testPredictedReturn();
+  testApproachingAidWork();
   Fixture ok; ok.seed(); ok.frame(13,326);
   const auto hit=ok.check();
   assert(hit.selected && hit.evidence==Evidence::MeasuredArcShortfall);

@@ -1,5 +1,6 @@
 """Offline checks for the current download paths and wrong-build rejection."""
 import json
+import hashlib
 from pathlib import Path
 import shutil
 import struct
@@ -79,6 +80,25 @@ class InstallerTests(unittest.TestCase):
                 flasher.prepare(self.root, self.boot_app)
         helper.write_bytes(original)
         self.assertEqual(flasher.check(self.root), known)
+
+    def test_comparison_requires_the_original_app_and_keeps_the_main_manifest(self):
+        hashes = flasher.prepare(self.root, self.boot_app)
+        archived = self.root / "archived.bin"
+        original = self.application.replace(flasher.BUILD_ID.encode(), flasher.CARRY1_ID.encode())
+        archived.write_bytes(original)
+        with patch.object(flasher, "CARRY1_SHA256", hashlib.sha256(original).hexdigest()):
+            flasher.check_carry1(self.page, archived)
+            self.assertEqual(flasher.check(self.root), hashes)
+            archived.write_bytes(original + b"unverified")
+            with self.assertRaisesRegex(ValueError, "recorded walking trial"):
+                flasher.check_carry1(self.page, archived)
+            flasher.check_carry1(self.page)
+            manifest = self.page / flasher.CARRY1_MANIFEST
+            altered = json.loads(manifest.read_bytes())
+            altered["builds"][0]["parts"][-1]["path"] = "firmware.bin"
+            manifest.write_text(json.dumps(altered), encoding="utf8")
+            with self.assertRaisesRegex(ValueError, "comparison manifest"):
+                flasher.check_carry1(self.page)
 
 
 if __name__ == "__main__":

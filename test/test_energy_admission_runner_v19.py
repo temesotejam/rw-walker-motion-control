@@ -64,8 +64,10 @@ fixture = fixture.replace('class ExperimentRunner {public:', '''class Experiment
 #if WALKING_RETURN_HISTORY
  bool history_trial=false;
  bool prediction_trial=false;
- bool returnPredictionTrialSelected()const{return prediction_trial;}
- bool carryHistoryTrialSelected()const{return prediction_trial || history_trial;}
+ bool transfer_carry=false;
+ bool isLeftTransferCarryProfile()const{return transfer_carry;}
+ bool returnPredictionTrialSelected()const{return prediction_trial || transfer_carry;}
+ bool carryHistoryTrialSelected()const{return returnPredictionTrialSelected() || history_trial;}
 #endif
  uint32_t angle_late_blocked_peak_ms_=0,angle_last_check_ms_=0;
  void tryAngleEarlyCandidate(uint32_t,uint32_t,float,float);
@@ -234,6 +236,58 @@ static void turn_main_response(){
 #endif
 int main(){
 #if WALKING_RETURN_HISTORY
+ // Run 135284989. The left sole is still higher at the last actual aid.
+ // Compare the previous profile, the new one, and a failed write of the new command.
+ for (unsigned mode=0;mode<3;++mode) {
+  ExperimentRunner r;ready19(r);r.transfer_carry=mode!=0;r.prediction_trial=mode==0;
+  r.tilt_priority_.reset();r.tilt_priority_.peak(-1,1,4.5f);
+  for (unsigned k=0;k<4;++k) {
+    const int side=k%2?-1:1;const uint32_t t=100+400*k;
+    tilt_priority::Choice c;c.selected=true;c.direction=side;c.width_ms=30;c.current_ma=1200;c.target_deg=4.5f;
+    r.tilt_priority_.crossing(side,t);r.tilt_priority_.confirm(side,t,c,true,true,false);
+    r.tilt_priority_.peak(side,t+150,4.5f);
+  }
+  const float target=lateral_energy::potential(r.lateral_energy_geometry_,r.tilt_priority_.target());
+  r.walking_crossing_reference_.observe(3168,3321,2.86886f,31.3949f,target,true);
+  r.walking_energy_peaks_[0]=3.62515f;r.walking_energy_peak_ms_[0]=4261;
+  r.energy_control_autonomous_last_peak_side_=1;r.energy_control_autonomous_last_peak_ms_=4670;
+  assert(r.walking_half_cycle_budget_.sourcePeak(4670));r.walking_main_reserve_.observe(-1,true,20);
+  r.walking_return_event_=r.stall_rescue_event_=true;
+  r.walking_return_choice_.request_j=.000015804f;r.walking_return_choice_.deceleration_dps2=72.57216f;
+  r.walking_return_observation_.evidence=return_observation_policy::Evidence::ObservedShape;
+  r.walking_return_observation_.foot_age_ms=43;clock19(r,4869);r.walking_fore_aft_last_.angle_deg=-.525217f;
+  r.walking_fore_aft_last_.rate_dps=5.239f;
+  auto& raw=r.walking_return_frame_;raw.run_id=r.status_.run_id;raw.sequence=5689;raw.image_us=mock_us-42665;
+  raw.received_us=mock_us-16629;raw.left_deg=2.85686f;raw.right_deg=-.18851f;
+  auto& p=r.periodic_foot_packet_;p.count=194;p.epoch_us=1;p.published_us=mock_us-15000;
+  p.left.sequence=p.right.sequence=raw.sequence;p.left.image_us=p.right.image_us=raw.image_us;
+  p.left.estimated=2.838892f;p.right.estimated=-.1696107f;
+  p.left.rate_dps=-.7188846f;p.right.rate_dps=.7560334f;
+  r.wheel_cycle_guard_.limit(1,-602.23f,true,4449,28);r.roller_obj.write_ok=mode!=2;
+  assert(r.walking_energy_current_.prepare(.031652216f));r.simulated_goal_ma=341.34189f;
+  Event e;e.zero_cross_time_ms=4869;e.zero_cross_rate_dps=-18.3505f;e.zero_cross_abs_rate_dps=18.3505f;
+  e.detector_angle_after_deg=3.97138f;e.physical_next_peak_side=-1;
+  e.previous_peak_time_ms=4670;e.previous_peak_amplitude_deg=7.26871f;e.target_peak_deg=8;
+  e.pre_input_wheel_speed_valid=true;e.pre_input_wheel_speed_age_us=8107;e.pre_input_wheel_speed_rpm=-1.79f;
+  e.i0_estimated_mA=.7349f;e.vbat_mV=7770;
+  bool healthy=false;assert(r.tryWalkingEnergy(e,4869,&healthy));
+  const auto a=r.walking_energy_audit_[0];
+  assert(a.arc_foot_source==1 && a.base_aid_ms==15 && a.main_reserve_ms==20);
+  assert(a.guarded_ms==(mode==0?15:34));
+  if(mode==2){
+    assert(!e.output_executed && !a.executed && !r.walking_half_cycle_budget_.aidUsed());
+    assert(r.walking_half_cycle_budget_.remaining()==80);
+    continue;
+  }
+  assert(healthy && a.executed && e.output_executed && r.roller_obj.last_command==-1200);
+  assert(e.pulse_width_ms==a.guarded_ms && r.walking_half_cycle_budget_.reservedMs()==a.guarded_ms);
+  if (mode==1) {
+    assert(a.crossing_work.zero_ms==3168 && near(a.crossing_work.transfer_ms,38.78f,.05f));
+    assert(near(a.decision.request_j,.000080794f,1.e-8f) && near(a.decision.predicted_work_j,.000060935f,1.e-8f));
+  }
+  clock19(r,a.output_start_ms+a.guarded_ms);r.updateEnergyControlAutonomousPulse(mock_ms);
+  assert(!r.status_.pulse_active && r.walking_half_cycle_budget_.spentMs()==a.guarded_ms);
+ }
  // Run 70067320, 4.760 s, and its earlier assisted 3.132 s ZERO.
  for (unsigned mode=0;mode<6;++mode) {
   ExperimentRunner r;ready19(r);r.prediction_trial=mode!=0;

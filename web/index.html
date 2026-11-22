@@ -29,7 +29,9 @@
 <div id="work-energy-control">
   <h2 id="work-title">固定脚・ホイールの仕事を使う制御（30秒）</h2>
   <p id="gait-turn" hidden></p>
+  <p id="walking-start-pose" hidden>床に置いた機体の左右角（MEKF絶対角） <strong id="walking-start-pitch">—</strong><br><span class="muted">比較用の記録では、11月20日に9秒以上揺動が続いた6走の始動直前は＋0.46〜＋0.61°でした。開始前に自然に立った状態で読み取ってください。</span></p>
   <p id="work-description" class="muted">脚の前後移動を固定し、各ボタンで30秒測定します。正側は300・350・400 mA、最大100 msです。10°・12°の負側は、不足が実測でも続いた場合にエネルギーを加える補助入力を使います。補助入力は300 mA・上限25 msから段階的に最大100 ms、ブレーキは最大70 msです。補助入力の効き方は正側の仕事モデルから仮定した試験用で、負側での精度は未確認です。8°は従来の入力選択を使います。</p>
+  <button id="left-transfer-carry-start" type="button" hidden disabled>左支持に移った後の速度を確保して30秒測定（±8°）</button>
   <button id="work-start" type="button" disabled>目標±8°で30秒測定</button>
   <button id="return-prediction-start" type="button" hidden disabled>左への支持移行を予測して30秒測定（±8°）</button>
   <button id="return-history-start" type="button" hidden disabled>左への戻りを補正して30秒測定（±8°）</button>

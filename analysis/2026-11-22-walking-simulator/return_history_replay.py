@@ -219,7 +219,9 @@ def observed_prediction(folder):
     """Report predictions, changes of guarded width and actual commands from a new run."""
     folder = Path(folder)
     meta = json.loads((folder / 'metadata.json').read_bytes())
-    if meta.get('walking_profile') != 'left_return_prediction_v1':
+    profile = meta.get('walking_profile')
+    carry = profile == 'left_transfer_carry_v1'
+    if profile != 'left_return_prediction_v1' and not carry:
         return None
     archive = meta.get('walking_energy') or {}
     rows = archive.get('records') or []
@@ -228,6 +230,9 @@ def observed_prediction(folder):
                  if row.get('side') == -1 and row.get('return_event')]
     expected = ('arc_predicted_terminal_deg', 'arc_predicted_transfer_ms', 'arc_crossing_base_ms',
                 'arc_crossing_selected_ms', 'arc_crossing_ref_zero_ms')
+    if carry:
+        expected += ('arc_approach_transfer_ms', 'arc_approach_terminal_deg', 'arc_approach_request_j',
+                     'arc_crossing_request_j')
     complete = (archive.get('archive_available') is True and archive.get('truncated') is False and
                 archive.get('stored') == archive.get('total') == len(rows) and
                 isinstance(archive.get('arc_aids'), list) and all(k in arc for _, arc in left_aids for k in expected))
@@ -235,16 +240,28 @@ def observed_prediction(folder):
     for row, arc in left_aids:
         base, selected = (arc.get(k) for k in ('arc_crossing_base_ms', 'arc_crossing_selected_ms'))
         predicted = row.get('return_evidence') == 6
+        before_transfer = carry and arc.get('arc_approach_transfer_ms') is not None
         extended = type(base) is int and type(selected) is int and selected > base > 0
-        if not predicted and not extended:
+        if not predicted and not extended and not before_transfer:
             continue
-        terminal = arc.get('arc_predicted_terminal_deg') if predicted else arc.get('arc_terminal_deg')
+        if before_transfer:
+            terminal, transfer = arc.get('arc_approach_terminal_deg'), arc['arc_approach_transfer_ms']
+        else:
+            terminal = arc.get('arc_predicted_terminal_deg') if predicted else arc.get('arc_terminal_deg')
+            transfer = arc.get('arc_predicted_transfer_ms')
         executed = row.get('executed') is True and bool(row.get('output_start_ms'))
+        guarded = row.get('guarded_ms')
+        executed_extension = bool(executed and extended and type(guarded) is int and base < guarded <= selected)
+        elapsed = row.get('actual_elapsed_ms') if row.get('output_end_ms') else None
         events.append(dict(decision_ms=row['time_ms'], predicted_support=predicted, width_extended=extended,
-                           transfer_in_ms=arc.get('arc_predicted_transfer_ms'), observed_deficit_j=row.get('return_work_j'),
+                           forecast_before_transfer=before_transfer, terminal_deg=terminal, transfer_in_ms=transfer,
+                           arc_work_j=arc.get('arc_approach_request_j'), combined_work_j=arc.get('arc_crossing_request_j'),
+                           observed_deficit_j=row.get('return_work_j'),
                            requested_j=row.get('request_j'),
-                           guarded_ms=row.get('guarded_ms'), main_reserve_ms=arc.get('arc_main_reserve_ms'),
+                           guarded_ms=guarded, main_reserve_ms=arc.get('arc_main_reserve_ms'),
                            reference_zero_ms=arc.get('arc_crossing_ref_zero_ms') or None, base_ms=base, selected_ms=selected,
+                           executed_extension=executed_extension,
+                           elapsed_exceeded_base=elapsed>base if executed_extension and elapsed is not None else None,
                            executed=executed, motion=None))
         if executed:
             events[-1]['motion'] = _observed_motion(folder, meta, row, terminal, complete)
@@ -261,7 +278,7 @@ def observed_intervention(folder):
     stats = dict(evaluated=0, matching_donors=0, width_increased=0, executed_increased=0)
     empty = dict.fromkeys(stats)
     out = {'profile': profile, **empty, 'observed_minimum': None, 'first_executed_change': None}
-    if profile not in ('left_return_history_v1', 'left_return_prediction_v1'):
+    if profile not in ('left_return_history_v1', 'left_return_prediction_v1', 'left_transfer_carry_v1'):
         return dict(out, status='not_selected' if profile else 'history_not_logged')
     complete = (archive.get('archive_available') is True and archive.get('truncated') is False
                 and archive.get('stored') == archive.get('total') == len(rows))

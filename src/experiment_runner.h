@@ -171,7 +171,11 @@ public:
                        returnPredictionTrialSelected());
   }
   bool returnPredictionTrialSelected() const {
-    return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::ReturnPrediction;
+    return logger_ && (logger_->walkingTrialProfile()==walking_trial::Profile::ReturnPrediction ||
+                       isLeftTransferCarryProfile());
+  }
+  bool isLeftTransferCarryProfile() const {
+    return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::LeftTransferCarryV1;
   }
   bool smallStepBaselineSelected() const {
     return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::SmallStep;

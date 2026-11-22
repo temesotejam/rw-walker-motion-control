@@ -98,7 +98,10 @@ function returnHistoryTrial(s = latest) {
   return returnPredictionTrial(s) || s?.diagnostic_build_id === 'walking-support-transfer-v39-return-history1';
 }
 function returnPredictionTrial(s = latest) {
-  return s?.diagnostic_build_id === 'walking-support-transfer-v39-return-prediction1';
+  return leftTransferCarryTrial(s) || s?.diagnostic_build_id === 'walking-support-transfer-v39-return-prediction1';
+}
+function leftTransferCarryTrial(s = latest) {
+  return s?.diagnostic_build_id === 'walking-support-transfer-v39-left-transfer-carry1';
 }
 function rightArrivalTrial(s = latest) {
   return returnHistoryTrial(s) || s?.diagnostic_build_id === 'walking-support-transfer-v39-arrival1';
@@ -143,6 +146,13 @@ function footStartBlockReason(s) {
 }
 function controls() {
   const fresh = !offlineMode && !lastStatusFailure && latest && Date.now() - lastSeen < 3500;
+  const showStartPose = leftTransferCarryTrial() && !offlineMode && !latest.running &&
+    latest.state === 'READY_TO_MEASURE' && latest.export_phase === 'empty';
+  $('walking-start-pose').hidden = !showStartPose;
+  const startAttitude = showStartPose && fresh && latest.controller_fresh && latest.imu_ok && latest.mekf;
+  const pitch = startAttitude?.pitch_deg;
+  $('walking-start-pitch').textContent = startAttitude?.valid && startAttitude.fresh && Number.isFinite(pitch)
+    ? (pitch > 0 ? '+' : '') + format(pitch) + '°' : '更新待ち';
   const busy = commandInFlight || previewRunning || poseRunning || diagnosticInFlight || !!latest?.command?.pending;
   const building = latest?.export_phase === 'building';
   $('start').disabled = !fresh || busy || transferRunning || !latest.ready || !latest.upright_reference?.valid || latest.running || latest.export_phase !== 'empty';
@@ -159,6 +169,8 @@ function controls() {
   $('return-history-start').disabled = !returnHistoryTrial() || $('work-start').disabled;
   $('return-prediction-start').hidden = !returnPredictionTrial();
   $('return-prediction-start').disabled = !returnPredictionTrial() || $('work-start').disabled;
+  $('left-transfer-carry-start').hidden = !leftTransferCarryTrial();
+  $('left-transfer-carry-start').disabled = !leftTransferCarryTrial() || $('work-start').disabled;
   $('work-start').textContent = rightArrival ? '右への振れを調整して30秒測定（±8°）' :
     compare ? 'turn3 支持移行で30秒測定（±8°）' : '目標±8°で30秒測定';
   $('work-start-status').textContent = !fresh ? '±8°を開始できません：本体との通信を確認してください。' :
@@ -245,6 +257,7 @@ function renderOffline() {
     : requestedProfile === 'work_control_small_step' ? '開始要求：v14式 小歩幅。足角度は比較用に記録します。'
     : requestedProfile === 'work_control_return_history' ? '開始要求を送信しました。左への戻りを過去2回の支持移行で補正します。'
     : requestedProfile === 'work_control_return_prediction' ? '開始要求を送信しました。左への支持移行を予測して補助します。'
+    : requestedProfile === 'work_control_left_transfer_carry' ? '開始要求を送信しました。左足で支えた後に必要な速度から補助の仕事を求めます。'
     : requestedEnergyModel === 'work_control' && requestedTargetDeg === 8 && walkingTransferTrial()
       ? walkingAdmissionTrial() ? '開始要求：前倒し候補のモデル支持を確認し、範囲外はZEROで再評価。前後の持続逸脱では入力停止'
         : '開始要求：救済は戻りの不足分、主入力は次ピークの不足分から選択'
@@ -361,6 +374,7 @@ function render(s) {
       $('work-description').textContent = '右への振れを調整する条件では、歩き始めに中心を右向きに通る速さと候補の入力から次のピークを予測し、振れが大きくなるときに通電を短くします。v14式の小歩幅条件と同じ足角測定を使います。';
       if (returnHistoryTrial(s)) $('work-description').textContent = '「左への戻りを補正」では、同じ走行で左へ戻れた2回と足・胴体の姿勢が近いとき、その減速から補助の仕事を再計算します。「右への振れを調整」と比較できます。両条件の右向き入力は同じ方式です。';
       if (returnPredictionTrial(s)) $('work-description').textContent = '「左への支持移行を予測」では、足裏の高さの差と胴体の減速から、電流が立ち上がる間に左足へ支持が移りそうかを判定します。前回と同じ条件は「左への戻りを補正」から選べます。';
+      if (leftTransferCarryTrial(s)) $('work-description').textContent = '今回の試験は「左支持に移った後の速度を確保」を選んでください。左へ戻る途中、足裏の高さの差が縮むときに、次の支持までに必要な仕事を左補助に加えます。';
     } else if (s.diagnostic_build_id === 'walking-support-transfer-v39-smallstep-ab') {
       $('work-title').textContent = '歩行制御の比較（±8°・30秒）';
       $('work-description').textContent = 'v14式 小歩幅は、胴体が中心を通過する前に不足エネルギーに応じて最長15 ms通電します。turn3 支持移行は、左足へ支持を移すときの失速を予測して補助します。どちらも同じ足角測定と姿勢監視を使います。選んだ方式をRWLOGに保存します。';
@@ -607,6 +621,9 @@ function renderWalkingProfile(profile) {
     $('run-model').textContent = '次のピークに必要な仕事から通電幅を選びます。';
     $('run-brake').textContent = '前倒し入力は最長15 msです。';
     $('run-adaptation').textContent = '左右のピークをエネルギー計算に使います。';
+  } else if (profile === 'left_transfer_carry_v1') {
+    $('run-model').textContent = '左支持に移った後の速度から補助の仕事を求める条件で測定しています。';
+    $('run-percent').textContent = '足姿勢と胴体の減速から、受け足の円弧まで進むための通電幅を選びます。';
   } else if (profile === 'left_return_prediction_v1') {
     $('run-model').textContent = '左への支持移行を予測する条件で測定しています。';
     $('run-percent').textContent = '足姿勢と胴体の減速から、次の支持に向けた補助の開始と仕事量を決めます。';
@@ -623,7 +640,7 @@ function renderWalkingProfile(profile) {
 async function startOfflineRun(isBatchPackage = false, forcedModel = null, workTarget = 8, profile = null) {
   if (commandInFlight || offlineMode) return;
   const profileButtons = {work_control_small_step:'small-step-start', work_control_return_history:'return-history-start',
-    work_control_return_prediction:'return-prediction-start'};
+    work_control_return_prediction:'return-prediction-start', work_control_left_transfer_carry:'left-transfer-carry-start'};
   if (profile && (!Object.hasOwn(profileButtons, profile) || forcedModel !== 'work_control' ||
       workTarget !== 8 || $(profileButtons[profile]).disabled)) return;
   const extendedPackage = forcedModel === 'bridge_probe_extended';
@@ -665,6 +682,7 @@ async function startOfflineRun(isBatchPackage = false, forcedModel = null, workT
   requestedEnergyModel = energyModel;
   requestedProfile = profile;
   const runLabel = positiveCurrentPackage ? '正側300・350・400 mAの一括実験' : extendedPackage ? '負側30・35・40 msの一括実験' : isBatchPackage ? '負側5条件の一括実験' :
+    profile === 'work_control_left_transfer_carry' ? '左支持に移った後の速度を確保する歩行制御' :
     profile === 'work_control_return_prediction' ? '左への支持移行を予測する歩行制御' :
     profile === 'work_control_return_history' ? '左への戻りを補正する歩行制御' : profile === 'work_control_small_step' ? 'v14式 小歩幅' : workPackage && target === 8 && rightArrivalTrial() ? '右への振れを調整する歩行制御' :
     workPackage ? 'ホイール仕事に基づく制御' : inversePackage ? '固定脚・負側のエネルギー制御' : '左右揺動エネルギー制御';
@@ -1121,6 +1139,7 @@ $('work-start').onclick = () => startOfflineRun(false, 'work_control', 8);
 $('small-step-start').onclick = () => startOfflineRun(false, 'work_control', 8, 'work_control_small_step');
 $('return-history-start').onclick = () => startOfflineRun(false, 'work_control', 8, 'work_control_return_history');
 $('return-prediction-start').onclick = () => startOfflineRun(false, 'work_control', 8, 'work_control_return_prediction');
+$('left-transfer-carry-start').onclick = () => startOfflineRun(false, 'work_control', 8, 'work_control_left_transfer_carry');
 $('work-start-10').onclick = () => startOfflineRun(false, 'work_control', 10);
 $('work-start-12').onclick = () => startOfflineRun(false, 'work_control', 12);
 $('probe-batch').onclick = () => startOfflineRun(true);

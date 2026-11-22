@@ -47,6 +47,27 @@ vm.runInContext(code,context);
   assert.match(element('firmware-revision').textContent,/foot-control-observation-v1/);
   assert.strictEqual(element('probe-batch').disabled,false);
   assert.strictEqual(element('inverse-start').disabled,false);
+  // The main pitch display can use the saved upright zero. The pre-start
+  // comparison must use the unchanged absolute posterior actually in RWLOG.
+  const startPose={...valid,diagnostic_build_id:'walking-support-transfer-v39-left-transfer-carry1',
+    pitch_deg:-0.13,mekf:{valid:true,fresh:true,pitch_deg:2.07}};
+  context.fetch=async()=>({ok:true,json:async()=>startPose});
+  await vm.runInContext('refresh()',context);
+  assert.strictEqual(element('walking-start-pose').hidden,false);
+  assert.strictEqual(element('walking-start-pitch').textContent,'+2.07°');
+  assert.strictEqual(element('work-start').disabled,false);
+  startPose.mekf.pitch_deg=-0.23;
+  await vm.runInContext('refresh()',context);
+  assert.strictEqual(element('walking-start-pitch').textContent,'-0.23°');
+  startPose.mekf.fresh=false;
+  await vm.runInContext('refresh()',context);
+  assert.strictEqual(element('walking-start-pitch').textContent,'更新待ち');
+  startPose.state='START_SYNC';startPose.running=true;
+  await vm.runInContext('refresh()',context);
+  assert.strictEqual(element('walking-start-pose').hidden,true);
+  context.fetch=async()=>({ok:true,json:async()=>valid});
+  await vm.runInContext('refresh()',context);
+  assert.strictEqual(element('walking-start-pose').hidden,true);
   const footPacket = {count:401,missed:1,both_valid:397,published_hz:39.9,packet_age_ms:10,
     left:{estimated_deg:4,age_us:31000},right:{estimated_deg:null,age_us:80000}};
   context.fetch=async()=>({ok:true,json:async()=>({periodic_run:true,foot_periodic:footPacket,walking_profile:'v14_small_step',
@@ -304,6 +325,21 @@ vm.runInContext(code,context);
   }
   vm.runInContext("renderWalkingProfile('left_return_prediction_v1')",context);
   assert.match(element('run-model').textContent,/支持移行を予測/);
+  assert.strictEqual(element('left-transfer-carry-start').hidden,true);
+  await element('left-transfer-carry-start').onclick();
+  assert.strictEqual(startRequests.length,0);
+  for(const ready of [false,true]){
+    gate.foot_control_ready=ready;
+    vm.runInContext("clearOffline();adoptStatus({...gate,diagnostic_build_id:'walking-support-transfer-v39-left-transfer-carry1'});render(latest)",context);
+    assert.strictEqual(element('left-transfer-carry-start').hidden,false);
+    assert.strictEqual(element('left-transfer-carry-start').disabled,!ready);
+    assert.strictEqual(element('return-prediction-start').hidden,false);
+    await element('left-transfer-carry-start').onclick();
+    if(ready) assert.strictEqual(startRequests.pop().searchParams.get('energy_model'),'work_control_left_transfer_carry');
+    else assert.strictEqual(startRequests.length,0);
+  }
+  vm.runInContext("renderWalkingProfile('left_transfer_carry_v1')",context);
+  assert.match(element('run-model').textContent,/左支持に移った後/);
   console.log('walking A/B: same start gate, explicit profile requests and legacy firmware guard PASS');
   console.log('v17 Start: detected but uncalibrated/zero pending/stale explanations, actual gate, null/offline and release text PASS');
   console.log('neutral-zero gate, frozen preview metadata/pixels, five bounded chunks, whole CRC and token failure recovery PASS');

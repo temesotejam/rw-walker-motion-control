@@ -418,6 +418,22 @@ bool ExperimentRunner::tryWalkingEnergy(
       }
 #endif
     }
+#if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
+    // The measured sole is still higher, but the extra current can arrive
+    // during its transition. Forecast sizing has its own audit; never mark
+    // the measured-pivot certificate as fulfilled based on a prediction.
+    if (isLeftTransferCarryProfile() && a.arc_aid.reason==receiving_arc_aid::Reason::NotReceiving) {
+      a.crossing_work=return_crossing_work::applyApproach(arc,walking_crossing_reference_,
+          a.peak_ms,t,a.envelope_before_ms,a.main_reserve_ms,e.pre_input_wheel_speed_rpm,
+          wheel_cycle_guard_,guard,lateral_energy_geometry_,walking_energy_current_,calculation,selected,width,
+          a.fore_aft_rate_dps);
+      a.requested_ms=selected.width_ms;
+      if (a.crossing_work.final_ms>a.crossing_work.base_ms) {
+        e.wheel_guard_legacy_ms=guard.legacyWidth();e.wheel_guard_extra_ms=guard.extraReduction();
+        e.wheel_guard_trial_eligible=guard.trialEligible();
+      }
+    }
+#endif
   }
 #endif
   auto actual=
@@ -949,6 +965,7 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
 #if WALKING_RETURN_HISTORY
     if(a.return_event && carryHistoryTrialSelected()) extra_table_bytes+=180;
     if(a.return_event && returnPredictionTrialSelected()) extra_table_bytes+=140;
+    if(a.return_event && isLeftTransferCarryProfile()) extra_table_bytes+=96;
 #endif
 #endif
   }
@@ -986,6 +1003,10 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
       row+=",\"arc_crossing_ref_zero_ms\":"+String(a.crossing_work.zero_ms)+",\"arc_crossing_ref_peak_ms\":"+String(a.crossing_work.peak_ms);
       row+=",\"arc_crossing_ref_dps\":"+n(a.crossing_work.speed_dps)+",\"arc_crossing_request_j\":"+n(a.crossing_work.request_j);
       row+=",\"arc_crossing_base_ms\":"+String(a.crossing_work.base_ms)+",\"arc_crossing_selected_ms\":"+String(a.crossing_work.final_ms);
+    }
+    if (isLeftTransferCarryProfile()) {
+      row+=",\"arc_approach_transfer_ms\":"+n(a.crossing_work.transfer_ms)+",\"arc_approach_terminal_deg\":"+n(a.crossing_work.terminal_deg);
+      row+=",\"arc_approach_request_j\":"+n(a.crossing_work.arc_request_j);
     }
 #endif
     row+="}";

@@ -50,7 +50,9 @@ int main(){
   assert((walking_trial::requestedProfile("work_control_return_history")==Profile::CarryHistory)==bool(WALKING_RETURN_HISTORY));
   assert((walking_trial::requestedProfile("work_control_return_prediction")==Profile::ReturnPrediction)==bool(WALKING_RETURN_HISTORY));
   assert(!std::strcmp(walking_trial::name(Profile::ReturnPrediction),"left_return_prediction_v1"));
-  for(auto profile : {Profile::SmallStep,Profile::CarryHistory,Profile::ReturnPrediction}){
+  assert((walking_trial::requestedProfile("work_control_left_transfer_carry")==Profile::LeftTransferCarryV1)==bool(WALKING_RETURN_HISTORY));
+  assert(!std::strcmp(walking_trial::name(Profile::LeftTransferCarryV1),"left_transfer_carry_v1"));
+  for(auto profile : {Profile::SmallStep,Profile::CarryHistory,Profile::ReturnPrediction,Profile::LeftTransferCarryV1}){
     for(const int target : {10,12}) assert(!q.request(Cmd::Start,target,0,300,40,false,true,false,profile));
     assert(!q.request(Cmd::Start,8,0,300,40,true,true,false,profile));
     assert(!q.request(Cmd::Start,8,0,400,40,false,true,false,profile));
@@ -76,9 +78,12 @@ int main(){
   consume(Profile::CarryHistory);
   assert(post("work_control_return_prediction"));
   consume(Profile::ReturnPrediction);
+  assert(post("work_control_left_transfer_carry"));
+  consume(Profile::LeftTransferCarryV1);
 #else
   assert(!q.request(Cmd::Start,8,0,300,40,false,true,false,Profile::CarryHistory));
   assert(!q.request(Cmd::Start,8,0,300,40,false,true,false,Profile::ReturnPrediction));
+  assert(!q.request(Cmd::Start,8,0,300,40,false,true,false,Profile::LeftTransferCarryV1));
 #endif
   assert(q.request(Cmd::Start,8,0,300,40,false,true)); // Old callers omit the new option.
   consume(Profile::None);

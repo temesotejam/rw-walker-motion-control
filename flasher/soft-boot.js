@@ -7,7 +7,7 @@
   button.className = 'serial-button';
   button.textContent = 'ボタンを押さずに書き込み準備';
   const message = document.createElement('p');
-  message.textContent = '対応版を書き込み済みの場合、USB接続し停止中にこのボタンを押してから、上の書き込みボタンを押します。';
+  message.textContent = '対応版を書き込み済みの場合、USB接続し停止中にこのボタンを押してから、書き込みたい版のボタンを押します。';
   flasher.insertAdjacentElement('afterend', button);
   button.insertAdjacentElement('afterend', message);
   button.addEventListener('click', async () => {

@@ -185,9 +185,10 @@ def print_summary(result):
         if measured is not None:
             print('  支持移行予測と仕事補正の記録（' + ('全件' if measured['archive_complete'] else '部分記録') + '）')
             for e in measured['events']:
-                print(f"    {e['decision_ms']} ms  支持移行予測 {e['predicted_support']}  "
-                      f"通過速度による幅延長 {e['width_extended']}  指令幅 {e['guarded_ms']} ms  実通電 {e['executed']}")
-        if history['profile'] in ('left_return_history_v1', 'left_return_prediction_v1'):
+                print(f"    {e['decision_ms']} ms  先読み開始 {e['predicted_support']}  移行前の仕事補正 {e['forecast_before_transfer']}  "
+                      f"幅延長 {e['width_extended']}  指令幅 {e['guarded_ms']} ms  実通電 {e['executed']}  "
+                      f"延長指令の実通電 {e['executed_extension']}")
+        if history['profile'] in ('left_return_history_v1', 'left_return_prediction_v1', 'left_transfer_carry_v1'):
             if history['status'] == 'complete':
                 print(f"  左補助を評価 {history['evaluated']} 件、過去2回と一致 {history['matching_donors']} 件、"
                       f"延長を選択 {history['width_increased']} 件、延長指令を実行 {history['executed_increased']} 件")

@@ -90,6 +90,35 @@ class InterventionReport(unittest.TestCase):
         self.meta.pop('walking_profile')
         self.assertEqual(self.read()['status'],'history_not_logged')
 
+    def test_forecasted_endpoint_and_executed_extension_on_carry_profile(self):
+        self.meta['walking_profile'] = 'left_transfer_carry_v1'
+        for a in self.meta['walking_energy']['arc_aids']:
+            a.update(arc_predicted_terminal_deg=None, arc_predicted_transfer_ms=None, arc_terminal_deg=None,
+                     arc_approach_transfer_ms=38.8, arc_approach_terminal_deg=-0.8, arc_approach_request_j=3.5e-5,
+                     arc_crossing_request_j=8.1e-5, arc_crossing_ref_zero_ms=40,
+                     arc_crossing_base_ms=19, arc_crossing_selected_ms=24)
+        self.read()
+        result = observed_prediction(self.folder)
+        self.assertTrue(result['archive_complete'])
+        veto, sent = result['events']
+        self.assertFalse(veto['executed_extension'])
+        self.assertTrue(sent['forecast_before_transfer'] and sent['executed_extension'])
+        self.assertFalse(sent['predicted_support'] or sent['elapsed_exceeded_base'])
+        self.assertEqual((sent['transfer_in_ms'], sent['arc_work_j'], sent['combined_work_j']), (38.8,3.5e-5,8.1e-5))
+        self.assertEqual(sent['motion']['receiving_end']['event_ms'],230)
+        # A completed forecast can leave the original duration in place.
+        self.meta['walking_energy']['arc_aids'][1]['arc_crossing_selected_ms']=19
+        self.meta['walking_energy']['records'][1]['guarded_ms']=19
+        self.read()
+        same=observed_prediction(self.folder)['events'][1]
+        self.assertTrue(same['forecast_before_transfer'] and not same['width_extended'] and not same['executed_extension'])
+        self.meta['walking_energy']['arc_aids'][1].pop('arc_approach_request_j')
+        self.read()
+        self.assertFalse(observed_prediction(self.folder)['archive_complete'])
+        self.meta['walking_profile']='left_return_history_v1'
+        self.read()
+        self.assertIsNone(observed_prediction(self.folder))
+
     def test_true_zero_and_veto(self):
         self.meta['walking_energy']['records'][1]['executed'] = False
         result = self.read()
