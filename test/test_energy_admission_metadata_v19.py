@@ -21,6 +21,7 @@ parse = context['context']['parse']
 fixture = '#include "fore_aft_motion_guard.h"\n#include "energy_admission_v19.h"\n#include "receiving_arc_aid.h"\n#if WALKING_RETURN_HISTORY\n#include "return_crossing_work.h"\n#endif\n#if WALKING_RIGHT_ARRIVAL\n#include "right_arrival_energy.h"\n#endif\n' + context['fixture']
 fixture = fixture.replace('for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u})',
                           'for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u,24u})')
+fixture = '#if WALKING_RETURN_HISTORY\n#include "return_observation_policy.h"\n#endif\n' + fixture
 marker = 'class ExperimentRunner {public:\n'
 assert fixture.count(marker) == 1
 fixture = fixture.replace(marker, marker + r'''
@@ -35,6 +36,7 @@ fixture = fixture.replace(marker, marker + r'''
   bool transfer_carry=false;
   bool isLeftTransferCarryProfile() const { return transfer_carry; }
   bool isTransferPriorityProfile() const { return transfer_carry; }
+  bool isContinuationPriorityProfile() const { return transfer_carry; }
   bool returnPredictionTrialSelected() const { return prediction_trial || transfer_carry; }
   bool carryHistoryTrialSelected() const { return returnPredictionTrialSelected() || history_trial; }
 #endif
@@ -84,7 +86,7 @@ fixture = fixture.replace(marker, marker + r'''
         a.crossing_work={3132,3309,25.25f,.000079f,28,31};
       }
       if (runner.post_aid) {
-        a.return_evidence=7;a.post_cap_ms=38;
+        a.return_evidence=8;a.post_cap_ms=38;a.post_release_deceleration_dps2=172.43f;
         a.post_increment_j=.000051f;a.post_elapsed_increment_j=.000049f;
       } else if (runner.passage) {
         a.return_evidence=1;
@@ -149,8 +151,9 @@ fixture = fixture.replace('json+="{";', 'json+="{";\n#if WALKING_SMALL_STEP_AB\n
                           '#if WALKING_RETURN_HISTORY\n  if(runner.history_trial) walking_profile_=walking_trial::Profile::CarryHistory;\n#endif\n'
                           '#if WALKING_RETURN_HISTORY\n  if(runner.prediction_trial) walking_profile_=walking_trial::Profile::ReturnPrediction;\n#endif\n'
                           + profile_line + '\n#endif\n'
-                          '#if WALKING_SMALL_STEP_AB\n  const bool post_aid_recheck=walking_profile_==walking_trial::Profile::LeftTransferCarryV3 || walking_profile_==walking_trial::Profile::LeftTransferCarryV4;\n'
-                          '#else\n  const bool post_aid_recheck=false;\n#endif\n')
+                          '#if WALKING_SMALL_STEP_AB\n  const bool post_aid_recheck=walking_profile_==walking_trial::Profile::LeftTransferCarryV3 || walking_profile_==walking_trial::Profile::LeftTransferCarryV4 || walking_profile_==walking_trial::Profile::LeftTransferCarryV5;\n'
+                          '  const bool continuation_recheck=walking_profile_==walking_trial::Profile::LeftTransferCarryV5;\n'
+                          '#else\n  const bool post_aid_recheck=false, continuation_recheck=false;\n#endif\n')
 with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
     temp = Path(folder)
     (temp / 'test.cpp').write_text(fixture, encoding='utf8')
@@ -165,6 +168,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                         '-DSUPPORT_TRANSFER_STALL_V3=' + str(int(turn)),
                         '-DWALKING_SMALL_STEP_AB=' + str(int(turn)),
                         '-DWALKING_RIGHT_ARRIVAL=' + str(int(arrival)),
+                        '-DSUPPORT_TRANSFER_V39=' + str(int(arrival)),
                         '-DWALKING_RETURN_HISTORY=' + str(int(arrival)),
                         '-I' + str(ROOT / 'test/fixtures/arduino'),
                         '-I' + str(ROOT / 'src'), str(temp / 'test.cpp'), '-o', str(exe)], check=True)
@@ -178,11 +182,11 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 assert raw['walking_profile'] == ('v14_small_step' if mode=='small-step' else
                                                   'left_return_history_v1' if mode=='history' else
                                                   'left_return_prediction_v1' if mode=='prediction' else
-                                                  'left_transfer_carry_v4' if arrival else 'turn3')
+                                                  'left_transfer_carry_v5' if arrival else 'turn3')
             if arrival and mode!='small-step':
                 model=metadata['walking_energy']
                 assert model['right_arrival_model']==('positive_unassisted_real_zero_startup_4p5_5_v1'
-                       if raw['walking_profile']=='left_transfer_carry_v4' else 'positive_unassisted_real_zero_startup_4p5_v1')
+                       if raw['walking_profile']=='left_transfer_carry_v5' else 'positive_unassisted_real_zero_startup_4p5_v1')
                 if rows:
                     r=rows[0]
                     assert r['right_arrival_checked'] and r['right_arrival_eligible']
@@ -336,8 +340,14 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                     elif arrival and mode=='post-aid':
                         row = csv_rows[1]
                         assert 'reopen_aid_once' in raw['foot_timing']['policy']
+                        assert 'observed_carry_can_end_continuation_early' in raw['foot_timing']['policy']
+                        assert block['return_evidence_names'][8]=='continue_after_observed_loss'
+                        assert block['completion_reason_names'][7]=='observed_carry_cutoff'
+                        assert block['reversal_cutoff_scope']=='post_aid_or_priority_assist_two_fresh_outward_rates_before_zero'
                         assert abs(block['post_aid_coast_fall_tau_s']-.070)<1e-5
-                        assert block['return_evidence_names'][int(row['return_evidence'])]=='post_aid_shortfall'
+                        assert block['return_evidence_names'][7]=='post_aid_shortfall'
+                        assert block['return_evidence_names'][int(row['return_evidence'])]=='continue_after_observed_loss'
+                        assert abs(float(row['arc_post_release_decel_dps2'])-172.43)<1e-4
                         assert int(row['arc_post_cap_ms']) == 38
                         assert abs(float(row['arc_post_increment_j'])-51e-6) < 1e-9
                         assert abs(float(row['arc_post_elapsed_increment_j'])-49e-6) < 1e-9

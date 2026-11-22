@@ -15,6 +15,9 @@
 #include <WiFi.h>
 #include <esp_timer.h>
 #include <esp_system.h>
+#include "export_gzip.h"
+#include <algorithm>
+#include <memory>
 #include <errno.h>
 
 static_assert(ARDUINO_EVENT_RUNNING_CORE == 0, "Wi-Fi events must run outside the control core");
@@ -675,12 +678,13 @@ void WebUi::manifest() {
   char body[800];
   snprintf(body, sizeof(body),
       "{\"phase\":\"%s\",\"token\":\"%s\",\"bytes\":%lu,\"hashed_bytes\":%lu,\"crc32\":%lu,"
-      "\"chunk_bytes\":%u,\"chunks_per_response\":%u,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"run_id\":%u,\"metadata_bytes\":%lu,"
+      "\"chunk_bytes\":%u,\"chunks_per_response\":%u,\"stream_chunks\":%u,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"run_id\":%u,\"metadata_bytes\":%lu,"
       "\"completion_ack\":true,\"wifi_recovery_count\":%lu,"
       "\"export_memory\":{\"sampled_ms\":%lu,\"internal_free\":%lu,\"internal_min_free\":%lu,\"internal_largest\":%lu}}",
       phase(s.phase), s.token, static_cast<unsigned long>(s.bytes), static_cast<unsigned long>(s.hashed_bytes),
       static_cast<unsigned long>(s.crc), static_cast<unsigned>(export_protocol::kChunkBytes),
-      static_cast<unsigned>(export_protocol::kChunksPerResponse), s.filename, s.error,
+      static_cast<unsigned>(export_protocol::kChunksPerResponse), static_cast<unsigned>(export_protocol::kStreamChunks),
+      s.filename, s.error,
       static_cast<unsigned long>(boot_id_), static_cast<unsigned>(s.run_id), static_cast<unsigned long>(s.metadata_bytes),
       static_cast<unsigned long>(wifi_restart_.count()),
       static_cast<unsigned long>(millis()),
@@ -712,6 +716,37 @@ bool WebUi::reserveChunkBuffer() {
   if (!chunk_buffer_) chunk_buffer_ = static_cast<uint8_t*>(ps_malloc(export_protocol::kChunkBytes + 16));
   return chunk_buffer_ != nullptr;
 }
+bool WebUi::makeExportPacket(const char* token, uint32_t offset, uint32_t length) {
+  if (!export_->chunk(token, offset, length, chunk_buffer_ + 16)) return false;
+  const uint32_t header[] = {export_protocol::kChunkMagic, offset, length,
+      export_protocol::crc32(0, chunk_buffer_ + 16, length)};
+  memcpy(chunk_buffer_, header, sizeof(header));
+  return true;
+}
+
+bool WebUi::sendCompressedWindow(const char* token, uint32_t offset, uint32_t length) {
+  // Temporary PSRAM only while serving a sealed log. Identity remains available
+  // if the allocation or compression fails before any response is sent.
+  const uint32_t plain = export_protocol::packetBytes(length);
+  std::unique_ptr<tdefl_compressor, decltype(&free)> codec(
+      static_cast<tdefl_compressor*>(ps_malloc(sizeof(tdefl_compressor))), free);
+  std::unique_ptr<uint8_t, decltype(&free)> encoded(static_cast<uint8_t*>(ps_malloc(plain)), free);
+  if (!codec || !encoded || plain <= 18) return false;
+  const size_t used = export_gzip::encode(*codec, encoded.get(), plain, chunk_buffer_, offset, length,
+      [&](uint32_t at, uint32_t n) { return makeExportPacket(token, at, n); });
+  if (!used) return false;
+  codec.reset();
+  server_->sendHeader("Content-Encoding", "gzip");
+  server_->setContentLength(used);
+  server_->send(200, "application/octet-stream", "");
+  for (size_t at = 0; at < used && server_->lastResponse() == BoundedWriteWebServer::Response::Complete;) {
+    const size_t n = std::min<size_t>(export_protocol::kChunkBytes, used - at);
+    server_->sendContent(reinterpret_cast<const char*>(encoded.get() + at), n);
+    at += n;
+  }
+  return true; // the HTTP response has already started
+}
+
 void WebUi::chunk() {
 #if FOOT_PERIODIC_V38
   if (quietResponse()) return;
@@ -720,8 +755,9 @@ void WebUi::chunk() {
   if (!reserveChunkBuffer()) { server_->send(503, "text/plain", "chunk_buffer_unavailable"); return; }
   uint32_t offset = 0, length = 0;
   const bool batch = server_->arg("batch") == "1";
+  const bool stream = server_->arg("stream") == "1";
   const uint32_t chunkBytes = export_protocol::kChunkBytes;
-  const uint32_t limit = batch ? chunkBytes * export_protocol::kChunksPerResponse : chunkBytes;
+  const uint32_t limit = chunkBytes * (stream ? export_protocol::kStreamChunks : batch ? export_protocol::kChunksPerResponse : 1);
   const auto info = export_->status();
   const String token = server_->arg("token");
   if (!unsignedArg(server_->arg("offset"), offset) || !unsignedArg(server_->arg("length"), length) ||
@@ -731,19 +767,30 @@ void WebUi::chunk() {
   }
   recovery_.chunkRequested(millis(), offset);
   server_->sendHeader("Cache-Control", "no-store");
-  server_->setContentLength(length + 16 * ((length + chunkBytes - 1) / chunkBytes));
+  const uint32_t end = offset + length;
+  if (stream) {
+    server_->sendHeader("Vary", "Accept-Encoding");
+    const String accept = server_->header("Accept-Encoding");
+    const auto encoding = runtime_page::selectEncoding(accept.c_str());
+    if (encoding == runtime_page::Encoding::Gzip && sendCompressedWindow(token.c_str(), offset, length)) {
+      if (server_->lastResponse() == BoundedWriteWebServer::Response::Complete) recovery_.chunkServed(millis(), end);
+      return;
+    }
+    if (runtime_page::selectEncoding(accept.c_str(), false) == runtime_page::Encoding::Unacceptable) {
+      server_->send(406, "text/plain", "unsupported_encoding"); return;
+    }
+  }
+  server_->setContentLength(export_protocol::packetBytes(length));
   server_->send(200, "application/octet-stream", "");
   // Keep the same validated 4 KiB packets and PSRAM buffer for old and new clients.
   while (length && server_->lastResponse() == BoundedWriteWebServer::Response::Complete) {
     const uint32_t n = length < chunkBytes ? length : chunkBytes;
-    if (!export_->chunk(token.c_str(), offset, n, chunk_buffer_ + 16)) { server_->client().stop(); return; }
-    const uint32_t header[] = {export_protocol::kChunkMagic, offset, n,
-        export_protocol::crc32(0, chunk_buffer_ + 16, n)};
-    memcpy(chunk_buffer_, header, 16);
+    if (!makeExportPacket(token.c_str(), offset, n)) { server_->client().stop(); return; }
     server_->sendContent(reinterpret_cast<const char*>(chunk_buffer_), n + 16);
     offset += n;
     length -= n;
   }
+  if (server_->lastResponse() == BoundedWriteWebServer::Response::Complete) recovery_.chunkServed(millis(), end);
 }
 
 bool WebUi::previewAllowed() const {

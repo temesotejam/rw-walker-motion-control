@@ -84,6 +84,29 @@ static void testPredictedReturn() {
   closingGap(consumed,true); assert(!consumed.check().selected);
 }
 
+static void testReleaseOnObservedCarry() {
+  PostAidObserver observer;
+  constexpr float terminal=-1.9f,decel=112.f;
+  const auto sample=[&](uint32_t us,uint32_t age,uint32_t since_start,float rate) {
+    return observer.releaseOnCarry(us,age,since_start,2.5f,rate,terminal,decel);
+  };
+  assert(!canCoastToArc(2.5f,-18.9f,terminal,decel));
+  assert(!canCoastToArc(2.5f,40.f,terminal,decel));
+  assert(!canCoastToArc(2.5f,-40.f,NAN,decel));
+  assert(!sample(100,2000,2,-40)); // Could have been acquired before output.
+  assert(!sample(3100,0,5,-40));
+  assert(!sample(3100,0,5,-40)); // Re-reading a sample is not confirmation.
+  assert(!sample(6100,0,8,-18)); // Insufficient momentum breaks the pair.
+  assert(!sample(9100,0,11,-40));
+  assert(!sample(20100,0,22,-40)); // Missing the gyro deadline starts a new pair.
+  assert(!sample(22100,10001,24,-40));
+  assert(!sample(24100,0,26,-40));
+  assert(sample(26100,0,28,-40));
+  observer.arm(5633,5832,18.32f,96.9e-6f);
+  assert(!sample(UINT32_MAX-999,0,6,-40));
+  assert(sample(1000,0,8,-40));
+}
+
 static void testPostAidReplan() {
   // First aid at 5.690 s in 41749536, completed at 5.714. Fresh foot
   // packets and the body speeds downstream of its actual release.
@@ -278,6 +301,7 @@ int main() {
   testMeasuredArcPriority();
   testPredictedReturn();
   testPostAidReplan();
+  testReleaseOnObservedCarry();
   testPostAidWork();
   testApproachingAidWork();
   testPassageWork();

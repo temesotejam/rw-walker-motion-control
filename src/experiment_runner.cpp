@@ -3564,7 +3564,7 @@ __attribute__((noinline)) bool ExperimentRunner::observeInwardStallRescue(
 #if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
   if (isLeftTransferCarryProfile() && walking_half_cycle_budget_.allowPostAid(ri.peak_ms)) {
     ri.active=waiting && walkingForeAftAllowsOutput();
-    const auto post=walking_post_aid_.observe(ri,esp_timer_get_time(),transfer_post_i0_ma_);
+    const auto post=walking_post_aid_.observe(ri,esp_timer_get_time(),transfer_post_i0_ma_,isContinuationPriorityProfile());
     if (post.selected) walking_return_observation_=post;
   }
 #endif

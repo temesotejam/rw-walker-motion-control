@@ -14,7 +14,7 @@ from compare_timing import FLAGS, rows
 import receiving_carry
 
 
-def compare(folder, exe):
+def compare(folder, exe, continuation=False):
     motion = receiving_carry.CarryReplay(folder)
     meta = json.loads((folder/'metadata.json').read_bytes())
     epoch = motion.clock
@@ -64,7 +64,7 @@ def compare(folder, exe):
         stream.append(tag+' '+' '.join('nan' if v is None or v == '' else str(v) for v in values))
 
     for i, (w, e) in enumerate(zip(events, edges)):
-        if not (w['return_event'] and w['side'] == -1 and w['executed']):
+        if not (w['return_event'] and w['side'] == -1 and w['executed']) or w.get('return_evidence') in (7,8):
             continue
         peak, end = w['peak_ms'], w['output_end_ms']
         actual = motion.follow(dict(peak_ms=peak,decision_ms=w['output_start_ms'],terminal_deg=0.))
@@ -164,7 +164,8 @@ def compare(folder, exe):
         case['saved_slots']=len(set(counts))
         case['skipped_slots']=max(counts)-min(counts)+1-len(set(counts)) if counts else 0
     def run(lines):
-        return subprocess.run([exe],input='\n'.join(lines)+'\n',text=True,capture_output=True,check=True).stdout.splitlines()
+        args = [exe, '--continuation'] if continuation else [exe]
+        return subprocess.run(args,input='\n'.join(lines)+'\n',text=True,capture_output=True,check=True).stdout.splitlines()
 
     if relaxed_slots:
         for line in run([relaxed_slots.get(i,row) for i,row in enumerate(stream)]):
@@ -175,13 +176,17 @@ def compare(folder, exe):
         if line.startswith('A '):
             cases[int(line.split()[1])]['armed']=True
             continue
-        peak, now, req, cap, wlo, whi, worklo, workhi=line.split()
+        peak, now, req, cap, wlo, whi, worklo, workhi, *detail=line.split()
         p,t=int(peak),int(now)
         if cases[p]['decision'] is not None: raise ValueError('Multiple second aids on one half-cycle')
         cases[p]['decision']=dict(time_ms=t,request_uJ=1e6*float(req),loss_cap_ms=int(cap),
                                   min_width_ms=int(wlo) if int(whi)>=0 else None,
                                   max_width_ms=int(whi) if int(whi)>=0 else None,
                                   gain_over_coast_uJ=[1e6*float(worklo),1e6*float(workhi)],**snapshot[p,t])
+        if continuation:
+            evidence,terminal,decel,release_decel=detail
+            cases[p]['decision'].update(evidence=int(evidence),terminal_deg=float(terminal),
+                                        deceleration_dps2=float(decel),release_deceleration_dps2=float(release_decel))
     return list(cases.values())
 
 
@@ -189,6 +194,7 @@ if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('roots',nargs='+',type=Path)
     parser.add_argument('--json-out',type=Path)
+    parser.add_argument('--continuation',action='store_true',help='enable the walk5 return-aid policy')
     args=parser.parse_args()
     folders={p.parent for root in args.roots for p in root.glob('*/header.json')}
     if not folders: parser.error('No converted recordings')
@@ -196,7 +202,7 @@ if __name__ == '__main__':
         exe=Path(tmp)/'post_aid.exe'
         subprocess.run(['g++','-std=c++17','-O2','-Wall','-Wextra','-Werror','-I',HERE.parents[1]/'src',
                         HERE/'post_aid_selector.cpp','-o',exe],check=True)
-        data=[row for folder in sorted(folders) for row in compare(folder,exe)]
+        data=[row for folder in sorted(folders) for row in compare(folder,exe,args.continuation)]
     print('Trials',len(folders),'aids',len(data), 'outcomes/selected',
           dict(Counter((e['outcome'],bool(e['decision'])) for e in data)))
     for e in data:

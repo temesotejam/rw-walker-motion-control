@@ -179,7 +179,11 @@ public:
                        isTransferPriorityProfile());
   }
   bool isTransferPriorityProfile() const {
-    return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::LeftTransferCarryV4;
+    return logger_ && (logger_->walkingTrialProfile()==walking_trial::Profile::LeftTransferCarryV4 ||
+                       isContinuationPriorityProfile());
+  }
+  bool isContinuationPriorityProfile() const {
+    return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::LeftTransferCarryV5;
   }
   bool smallStepBaselineSelected() const {
     return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::SmallStep;
@@ -828,7 +832,7 @@ private:
     return_crossing_work::MeasuredArcPriority arc_priority;
 #endif
     uint16_t post_cap_ms=0;
-    float post_increment_j=NAN,post_elapsed_increment_j=NAN;
+    float post_increment_j=NAN,post_elapsed_increment_j=NAN,post_release_deceleration_dps2=NAN;
     receiving_arc_aid::ReturnState history_state;
     receiving_arc_aid::HistoryChoice history;
     uint16_t history_base_ms=0,history_final_ms=0;

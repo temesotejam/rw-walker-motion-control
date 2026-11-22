@@ -12,8 +12,12 @@
 namespace return_observation_policy {
 enum class Evidence : uint8_t {
   Unavailable=0, ObservedShape=1, RecognitionDropout=2, RangeRejected=3,
-  ObservedUnseparated=4, MeasuredArcShortfall=5, PredictedArcShortfall=6, PostAidShortfall=7
+  ObservedUnseparated=4, MeasuredArcShortfall=5, PredictedArcShortfall=6, PostAidShortfall=7,
+  ContinuationShortfall=8
 };
+inline bool isPostAid(Evidence reason) {
+  return reason==Evidence::PostAidShortfall || reason==Evidence::ContinuationShortfall;
+}
 struct FootFrame {
   uint16_t run_id=0;
   uint32_t frame_ms=0,ready_ms=0;
@@ -52,6 +56,7 @@ struct Choice {
   float predicted_transfer_ms=NAN,terminal_deg=NAN;
   uint16_t loss_cap_ms=0;
   float aligned_current_ma=NAN, gross_work_limit_j=NAN;
+  float release_deceleration_dps2=NAN;
   float previous_arc_deceleration_dps2=NAN;
 #endif
 };
@@ -73,11 +78,32 @@ inline Evidence assessFoot(const Input& in) {
 }
 
 #if SUPPORT_TRANSFER_STALL_V3
+// Use the deceleration observed before issuing the new command. A rise in
+// speed while powered is evidence of momentum, not a new estimate of the
+// resistance the body will encounter after release.
+inline bool canCoastToArc(float angle,float signed_rate,float terminal,float decel) {
+  const float carry=support_transfer_plan::kCarryDps;
+  return angle>0 && signed_rate<0 && terminal<0 && decel>0 &&
+      std::isfinite(angle) && std::isfinite(signed_rate) && std::isfinite(terminal) && std::isfinite(decel) &&
+      signed_rate*signed_rate >= 2.f*decel*(angle-terminal)+carry*carry;
+}
+
 // A completed left aid is a new observation horizon. While the body is still
 // moving towards ZERO, check whether the measured speed gain has dissipated.
 // Each accepted aid gets at most one such decision, including a vetoed one.
 class PostAidObserver {
  public:
+  bool releaseOnCarry(uint32_t sample_us,uint32_t age_us,uint32_t elapsed_ms,float angle,
+      float rate,float terminal,float decel) {
+    // The driver's queue uses millis() and the gyro uses micros(). Allow a
+    // full ms of rounding when proving acquisition followed command start.
+    const bool enough=sample_us && age_us<=10000 && elapsed_ms>age_us/1000+1 &&
+        canCoastToArc(angle,rate,terminal,decel);
+    const uint32_t gap=sample_us-ready_sample_us_;
+    const bool confirmed=enough && ready_sample_us_ && gap>0 && gap<=10000;
+    ready_sample_us_=enough?sample_us:0;
+    return confirmed;
+  }
   void arm(uint32_t peak,uint32_t end,float onset_speed,float delivered_work) {
     *this=PostAidObserver{};
     if (peak && end>peak && std::isfinite(onset_speed) && onset_speed>0 &&
@@ -85,7 +111,7 @@ class PostAidObserver {
       peak_=peak;end_=end;onset_speed_=onset_speed;first_work_=delivered_work;
     }
   }
-  Choice observe(const Input& in,uint64_t now_us,float aligned_current_ma=NAN) {
+  Choice observe(const Input& in,uint64_t now_us,float aligned_current_ma=NAN,bool continuation=false) {
     Choice out;
     if (!peak_) return out;
     if (in.peak_ms!=peak_ || in.side!=1 || in.now<end_ ||
@@ -120,27 +146,41 @@ class PostAidObserver {
     decel_=a;
     const float kinetic=walking_energy_policy::passiveCoefficients(-1).omega2_j*
                         lateral_energy::kRadPerDeg*lateral_energy::kRadPerDeg;
-    if (!(last_decel>0 && speed<last_speed && speed<onset_speed_ && last_image && image_>last_image &&
-          image_>=p->epoch_us+uint64_t(end_)*1000 && max_speed_>onset_speed_ &&
-          kinetic*(max_speed_*max_speed_-speed*speed)>=first_work_ && std::isfinite(aligned_current_ma))) return out;
-    const float time_to_stop=speed/std::fmax(last_decel,a);
-    if (!(in.current_rise_tau_s>0 && time_to_stop>=in.current_rise_tau_s+.005f)) return out;
+    if (!(last_decel>0 && speed<last_speed && last_image && image_>last_image &&
+          image_>=p->epoch_us+uint64_t(end_)*1000 && std::isfinite(aligned_current_ma))) return out;
+    // A passed work budget describes the command model. It need not all
+    // appear as observable lateral kinetic energy, especially across impact.
     const float conservative=std::fmin(last_decel,a);
+    const float stopping_distance=speed*speed/(2.f*conservative);
+    const bool lost_first_work=speed<onset_speed_ && max_speed_>onset_speed_ &&
+          kinetic*(max_speed_*max_speed_-speed*speed)>=first_work_;
+    // A newly inferred lack of momentum inside one foot-observation slot
+    // may resolve at the next sample. Preserve that time for the main input.
+    const float one_slot_travel=speed*(periodic_foot::period_us*1.e-6f);
+    if (!lost_first_work && (!continuation || in.angle_deg-stopping_distance<=one_slot_travel)) return out;
+    const float higher_decel=std::fmax(last_decel,a);
+    const float time_to_stop=speed/higher_decel;
+    if (!(in.current_rise_tau_s>0 && time_to_stop>=in.current_rise_tau_s+.005f)) return out;
     const float carry=support_transfer_plan::kCarryDps;
     out.gross_work_limit_j=.5f*in.target_j-first_work_;
-    out.request_j=std::fmin(out.gross_work_limit_j,kinetic*(2.f*conservative*in.angle_deg+carry*carry-speed*speed));
+    const float terminal=continuation ? support_transfer_plan::arcEntryDeg(-1,l.measured+in.fore_aft_deg) : 0.f;
+    out.request_j=std::fmin(out.gross_work_limit_j,kinetic*(2.f*conservative*(in.angle_deg-terminal)+carry*carry-speed*speed));
     if (!(out.request_j>0)) return out;
     // Keep the command inside the observed inward interval even allowing
     // the same five ms of dispatch latency as the normal freshness gate.
     out.loss_cap_ms=static_cast<uint16_t>(std::fmin(1000.f*time_to_stop-5.f,walking_energy_policy::kMaxPulseMs));
-    out.selected=true;out.evidence=Evidence::PostAidShortfall;out.terminal_deg=0;
+    out.selected=true;out.evidence=continuation?Evidence::ContinuationShortfall:Evidence::PostAidShortfall;
+    out.terminal_deg=terminal;
+    // Both frames must predict enough residual momentum before releasing
+    // the new input. The higher loss is the stricter coast projection.
+    if (continuation) out.release_deceleration_dps2=higher_decel;
     out.foot_age_ms=static_cast<uint32_t>((now_us-image_)/1000);
-    out.deceleration_dps2=conservative;out.stopping_distance_deg=speed*speed/(2.f*conservative);
+    out.deceleration_dps2=conservative;out.stopping_distance_deg=stopping_distance;
     out.aligned_current_ma=aligned_current_ma;peak_=0;
     return out;
   }
  private:
-  uint32_t peak_=0,end_=0,packet_=0;
+  uint32_t peak_=0,end_=0,packet_=0,ready_sample_us_=0;
   uint64_t slot_=0,image_=0;
   float onset_speed_=0, first_work_=0, max_speed_=0, speed_=0, decel_=0;
 };

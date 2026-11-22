@@ -37,6 +37,8 @@ class WebUi {
   void manifest();
   void confirmExport();
   bool reserveChunkBuffer();
+  bool makeExportPacket(const char* token, uint32_t offset, uint32_t length);
+  bool sendCompressedWindow(const char* token, uint32_t offset, uint32_t length);
   void chunk();
   void previewCapture();
   void previewChunk();

@@ -29,15 +29,23 @@ bool ExperimentRunner::cutReturnAidAtZero(uint32_t now_ms,uint32_t sample_us,
       !std::isfinite(before) || !std::isfinite(after) || !std::isfinite(rate) ||
       (side!=1 && side!=-1))return false;
   const bool centre=rate*side<0 && ((side>0 && before>0 && after<=0) || (side<0 && before<0 && after>=0));
+  uint8_t stop_reason=5;
 #if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
   // If a corrected pulse cannot avert reversal, further leftward reaction
   // torque on a body already moving right no longer adds leftward motion.
-  const bool reversal_cut=walking_energy_active_pulse_.return_evidence==
-      static_cast<uint8_t>(return_observation_policy::Evidence::PostAidShortfall) ||
-      walking_energy_active_pulse_.arc_priority.cap_ms>0;
+  const auto& pulse=walking_energy_active_pulse_;
+  const auto evidence=static_cast<return_observation_policy::Evidence>(pulse.return_evidence);
+  const bool reversal_cut=return_observation_policy::isPostAid(evidence) || pulse.arc_priority.cap_ms>0;
   const bool reversed=reversal_cut && side==1 &&
       before>0 && after>=before && rate>0 && energy_control_autonomous_previous_detector_rate_dps_>0;
-  if (!centre && !reversed) return false;
+  if (!centre && !reversed) {
+    const uint32_t t=now_ms-run_start_ms_;
+    if (evidence!=return_observation_policy::Evidence::ContinuationShortfall || side!=1 || t<pulse.output_start_ms ||
+        !walking_post_aid_.releaseOnCarry(sample_us,static_cast<uint32_t>(micros()-sample_us),
+            t-pulse.output_start_ms,after,rate,pulse.predicted_terminal_deg,
+            pulse.post_release_deceleration_dps2)) return false;
+    stop_reason=7;
+  } else if (reversed) stop_reason=6;
 #else
   if (!centre) return false;
 #endif
@@ -50,7 +58,7 @@ bool ExperimentRunner::cutReturnAidAtZero(uint32_t now_ms,uint32_t sample_us,
       t-energy_control_autonomous_previous_detector_test_ms_>10u)return false;
   // Stop at this fresh observed crossing, then let this very sample reach
   // normal ZERO dispatch. No deferred/backdated command or lost passage.
-  walking_energy_stop_reason_=centre?5:6;stopMotor();
+  walking_energy_stop_reason_=stop_reason;stopMotor();
   status_.current_mA_setting=0;status_.pulse_width_ms_setting=0;
   energy_control_autonomous_pulse_authorized_=false;
   energy_control_autonomous_zero_cross_consumed_for_peak_=false;
@@ -75,7 +83,7 @@ void ExperimentRunner::finishWalkingEnergyPulse(uint32_t now_ms,uint8_t reason){
   in.actual_elapsed_ms=static_cast<uint32_t>(now_ms-(run_start_ms_+a.output_start_ms));
   a.completion=energy_pulse_completion::evaluate(in);
 #if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
-  if (a.return_evidence==static_cast<uint8_t>(return_observation_policy::Evidence::PostAidShortfall) &&
+  if (return_observation_policy::isPostAid(static_cast<return_observation_policy::Evidence>(a.return_evidence)) &&
       a.completion.work_valid) {
     a.post_elapsed_increment_j=a.completion.work_j-half_cycle_energy_budget::postAidCoastWork(
         a.start_rate_dps,a.start_i0_ma,in.actual_elapsed_ms);
@@ -88,7 +96,7 @@ void ExperimentRunner::finishWalkingEnergyPulse(uint32_t now_ms,uint8_t reason){
   a.envelope_after_ms=walking_half_cycle_budget_.remaining();
 #if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
   if (isLeftTransferCarryProfile() && a.return_event && a.side==-1 && reason==1 &&
-      a.return_evidence!=static_cast<uint8_t>(return_observation_policy::Evidence::PostAidShortfall) &&
+      !return_observation_policy::isPostAid(static_cast<return_observation_policy::Evidence>(a.return_evidence)) &&
       a.completion.duration_completed && a.completion.work_valid && a.completion.charge_supported)
     walking_post_aid_.arm(a.peak_ms,a.output_end_ms,a.start_rate_dps,a.completion.work_j);
 #endif
@@ -186,7 +194,7 @@ bool ExperimentRunner::tryWalkingEnergy(
 #endif
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
   const bool return_aid=walking_return_event_ && stall_rescue_event_;
-  const bool post_aid=return_aid && walking_return_observation_.evidence==return_observation_policy::Evidence::PostAidShortfall;
+  const bool post_aid=return_aid && return_observation_policy::isPostAid(walking_return_observation_.evidence);
   a.envelope_before_ms=walking_half_cycle_budget_.remaining();a.envelope_after_ms=a.envelope_before_ms;
   a.assisted_cycle=walking_half_cycle_budget_.aidUsed() || return_aid;
   a.return_evidence=return_aid?static_cast<uint8_t>(walking_return_observation_.evidence):0;
@@ -269,6 +277,9 @@ bool ExperimentRunner::tryWalkingEnergy(
   const auto evidence=walking_return_observation_.evidence;
   if (post_aid) {
     in.initial_current_ma=walking_return_observation_.aligned_current_ma;
+#if WALKING_RETURN_HISTORY
+    a.post_release_deceleration_dps2=walking_return_observation_.release_deceleration_dps2;
+#endif
     if (in.cap_ms>walking_return_observation_.loss_cap_ms) in.cap_ms=walking_return_observation_.loss_cap_ms;
     a.post_cap_ms=in.cap_ms;
     if (!in.cap_ms || !std::isfinite(in.initial_current_ma)) {save();return true;}
@@ -346,11 +357,21 @@ bool ExperimentRunner::tryWalkingEnergy(
   a.decision=selected;a.requested_ms=selected.width_ms;
   if(!selected.valid){noteFootSupportBackend(6);save();return true;}
   auto guard=wheel_cycle_guard_;
+  auto guard_input=selected.width_ms;
+#if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
+  // For a continuation, the wheel guard bounds the remaining actuator
+  // capacity. Select the requested energy inside that capacity: applying
+  // the attenuation to the minimum inverse width itself can leave a known
+  // shortage even when the bounded wheel command could cover it.
+  if (post_aid && evidence==return_observation_policy::Evidence::ContinuationShortfall)
+    guard_input=calculation.cap_ms;
+#endif
   uint16_t width=
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
       exhausted?0:
 #endif
-      selected.coast?0:guard.limit(side,e.pre_input_wheel_speed_rpm,true,t,selected.width_ms);
+      selected.coast?0:guard.limit(side,e.pre_input_wheel_speed_rpm,true,t,guard_input);
+  if (width>selected.width_ms) width=selected.width_ms;
 #if SUPPORT_TRANSFER_CARRY2
   if (return_aid && !post_aid && side==-1 && !exhausted && width>0 && energy_control_autonomous_target_peak_deg_==8.f &&
       energy_control_autonomous_input_peak_percent_==0) {
@@ -877,6 +898,9 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
   json+="\"return_evidence_names\":[\"unavailable\",\"observed_shape\",\"recognition_dropout\",\"range_rejected\",\"observed_unseparated\"";
 #if SUPPORT_TRANSFER_STALL_V3
   json+=",\"measured_arc_shortfall\",\"predicted_arc_shortfall\",\"post_aid_shortfall\"";
+#if WALKING_RETURN_HISTORY
+  if (isContinuationPriorityProfile()) json+=",\"continue_after_observed_loss\"";
+#endif
 #endif
   json+="],";
 #elif defined(WALKING_RETURN_ENERGY) && WALKING_RETURN_ENERGY
@@ -891,6 +915,7 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
   json+=",\"mechanical_zero_cutoff\"";
 #if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
   json+=",\"post_aid_reversal_cutoff\"";
+  if (isContinuationPriorityProfile()) json+=",\"observed_carry_cutoff\"";
 #endif
 #endif
   json+="],";
@@ -903,7 +928,9 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
   json+="\"rescue_ceiling_ms\":80,\"rescue_ceiling_basis\":\"shared_with_main_within_inherited_half_cycle_envelope_not_physics_derived\",";
 #if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
-  if (isLeftTransferCarryProfile())
+  if (isTransferPriorityProfile())
+    json+="\"online_reversal_cutoff_active\":true,\"reversal_cutoff_scope\":\"post_aid_or_priority_assist_two_fresh_outward_rates_before_zero\",";
+  else if (isLeftTransferCarryProfile())
     json+="\"online_reversal_cutoff_active\":true,\"reversal_cutoff_scope\":\"post_aid_only_two_fresh_outward_rates_before_zero\",";
   else
 #endif
@@ -1104,6 +1131,8 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
            ",\"arc_post_elapsed_increment_j\":"+n(a.post_elapsed_increment_j);
     }
 #if SUPPORT_TRANSFER_STALL_V3
+    if (a.return_evidence==static_cast<uint8_t>(return_observation_policy::Evidence::ContinuationShortfall))
+      row+=",\"arc_post_release_decel_dps2\":"+n(a.post_release_deceleration_dps2);
     if (isTransferPriorityProfile()) {
       row+=",\"arc_priority_base_ms\":"+String(a.arc_priority.base_ms)+",\"arc_priority_base_j\":"+n(a.arc_priority.base_work_j);
       row+=",\"arc_priority_zero_j\":"+n(a.arc_priority.zero_work_j)+",\"arc_priority_cap_ms\":"+String(a.arc_priority.cap_ms);

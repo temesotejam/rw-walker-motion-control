@@ -29,7 +29,7 @@ inline int weight(const char* p, const char* end) {
   return skipSpace(p) == end && result <= 1000 ? result : 0;
 }
 
-inline Encoding selectEncoding(const char* header) {
+inline Encoding selectEncoding(const char* header, bool gzip_available = true) {
   int gzip = -1, identity = -1, wildcard = -1;
   const char* item = header ? header : "";
   while (*item) {
@@ -44,7 +44,7 @@ inline Encoding selectEncoding(const char* header) {
     item = *end ? end + 1 : end;
   }
   if (gzip < 0) gzip = wildcard;
-  if (gzip > 0 && gzip >= identity) return Encoding::Gzip;
+  if (gzip_available && gzip > 0 && gzip >= identity) return Encoding::Gzip;
   if (identity > 0 || (identity < 0 && wildcard != 0)) return Encoding::Identity;
   return Encoding::Unacceptable;
 }

@@ -12,6 +12,7 @@ function harness(scenario={}) {
   const elements=new Map(),requests=[],saves=[];
   const element=id=>{if(!elements.has(id))elements.set(id,{textContent:'',style:{}});return elements.get(id);};
   let context,clock=0,prepareCount=0,manifestCount=0,chunkFailures=0;
+  let networkDeadline;
   class Clock extends Date {static now(){return clock;}}
   const abort=signal=>new Promise((_,reject)=>{
     if(signal.aborted)reject(new DOMException('signal is aborted without reason','AbortError'));
@@ -24,8 +25,16 @@ function harness(scenario={}) {
     v.setUint32(12,vm.runInContext('crc32(testPayload)',context),true);bytes.set(payload,16);return bytes;
   };
   context=vm.createContext({document:{getElementById:element,createElement:()=>({click(){saves.push({name:this.download,url:this.href});}})},
-    setTimeout:(fn,ms)=>{const timer=setTimeout(()=>{if(ms<3000)clock+=ms;fn();},ms>=3000?15:0);if(ms===60000)timer.unref();return timer;},
-    clearTimeout,AbortController,Date:Clock,DataView,Uint8Array,TextDecoder,Map,Blob,
+    setTimeout:(fn,ms)=>{
+      if(scenario.steadyNetwork && ms===8000) return networkDeadline={due:clock+ms,fire:fn};
+      const timer=setTimeout(()=>{if(ms<3000)clock+=ms;fn();},ms>=3000?15:0);
+      if(ms===60000)timer.unref();return timer;
+    },
+    clearTimeout:timer=>{
+      if(timer && timer===networkDeadline)networkDeadline=null;
+      else clearTimeout(timer);
+    },AbortController,Date:Clock,DataView,Uint8Array,TextDecoder,Map,Blob,
+    ReadableStream:scenario.noStreamApi ? undefined : ReadableStream,
     URL:{createObjectURL:blob=>blob,revokeObjectURL:()=>{}},
     fetch:async(path,opts)=>{
       requests.push(path);
@@ -70,6 +79,44 @@ function harness(scenario={}) {
       if(scenario.chunkDisconnect && offset>=8192)throw new TypeError('Failed to fetch');
       if(scenario.chunkStatus)return {ok:false,status:scenario.chunkStatus,text:async()=>'export_token_or_range_mismatch'};
       if(scenario.changedRunAt===offset)return {ok:false,status:409,text:async()=>'export_token_or_range_mismatch'};
+      if(url.searchParams.get('stream')==='1'){
+        assert.equal(scenario.manifest.stream_chunks,16);
+        assert(length>4096 && length<=65536 && !url.searchParams.has('batch'));
+        if(scenario.noResponseReader)return {ok:true,body:null};
+        let bytes=Buffer.concat(Array.from({length:Math.ceil(length/4096)},(_,i)=>
+          packet(offset+i*4096,Math.min(4096,length-i*4096))));
+        const fault=offset===0 ? scenario.streamFault : null;
+        if(['cut','idle','cancel'].includes(fault))bytes=bytes.subarray(0,2*4112+7);
+        if(fault==='corrupt')bytes[2*4112+17]^=0x40;
+        if(fault==='extra')bytes=Buffer.concat([bytes,Buffer.from([0])]);
+        if(scenario.gzip){
+          const zipped=require('node:zlib').gzipSync(bytes);
+          scenario.advertisedBytes=(scenario.advertisedBytes || 0)+zipped.length;
+          return {ok:true,headers:new Headers({'Content-Encoding':'gzip','Content-Length':String(zipped.length)}),
+            body:new Blob([zipped]).stream().pipeThrough(new DecompressionStream('gzip'))};
+        }
+        let cursor=0,reads=0;
+        return {ok:true,body:{getReader:()=>({
+          async read(){
+            if(scenario.steadyNetwork && offset===0){
+              clock+=4000;
+              assert(networkDeadline,'network idle deadline must remain armed while reading');
+              if(clock>=networkDeadline.due)networkDeadline.fire();
+            }
+            if(cursor===bytes.length){
+              if(fault==='cancel')element('cancel').onclick();
+              if(fault==='idle' || fault==='cancel')return abort(opts.signal);
+              return {done:true};
+            }
+            if(opts.signal.aborted)return abort(opts.signal);
+            const size=[5,4110,737,8646][reads++%4]; // fragment a header and span several packets
+            const value=bytes.subarray(cursor,Math.min(cursor+size,bytes.length));
+            cursor+=value.length;
+            return {done:false,value};
+          },
+          async cancel(){}, releaseLock(){}
+        })}};
+      }
       if(url.searchParams.get('batch')==='1'){
         assert.equal(scenario.manifest?.chunks_per_response,4);
         assert(length>4096 && length<=16384);
@@ -120,6 +167,56 @@ function harness(scenario={}) {
   assert.equal(transfer.chunk_requests,Math.ceil(fixture.length/16384));
   assert(Buffer.from(vm.runInContext('completedFile',grouped.context)).equals(fixture));
   assert.equal(vm.runInContext('memoryCache.size',grouped.context),Math.ceil(fixture.length/4096));
+  const streamManifest={chunks_per_response:4,stream_chunks:16};
+  const streamed=harness({manifest:streamManifest,gzip:true});await streamed.run();
+  assert.equal(streamed.diagnostic().browser_transfer.chunk_requests,Math.ceil(fixture.length/65536));
+  const gzipDiagnostic=streamed.diagnostic().browser_transfer;
+  assert.equal(gzipDiagnostic.stream_responses,gzipDiagnostic.stream_gzip_responses);
+  assert.equal(gzipDiagnostic.stream_responses,gzipDiagnostic.stream_length_advertised_responses);
+  assert.equal(gzipDiagnostic.stream_responses,streamed.requests.filter(path=>path.includes('&stream=1')).length);
+  assert.equal(gzipDiagnostic.stream_advertised_wire_bytes,streamed.scenario.advertisedBytes);
+  assert(Buffer.from(vm.runInContext('completedFile',streamed.context)).equals(fixture));
+  const flowing=harness({manifest:streamManifest,steadyNetwork:true});await flowing.run();
+  assert.equal(flowing.diagnostic().browser_transfer.stream_fallbacks,undefined);
+  assert.equal(flowing.diagnostic().browser_transfer.chunk_requests,Math.ceil(fixture.length/65536));
+  assert.equal(flowing.diagnostic().browser_transfer.stream_length_advertised_responses,0);
+  assert.equal(flowing.diagnostic().browser_transfer.stream_advertised_wire_bytes,0);
+  assert.equal(flowing.diagnostic().browser_transfer.stream_gzip_responses,0);
+  assert(Buffer.from(vm.runInContext('completedFile',flowing.context)).equals(fixture));
+  for(const fault of ['cut','idle','corrupt','extra']){
+    const h=harness({manifest:streamManifest,streamFault:fault});await h.run();
+    const checked = fault==='extra' ? Math.floor((Math.min(fixture.length,65536)-1)/4096)*4096 : 8192;
+    const diag=h.diagnostic().browser_transfer;
+    assert.equal(diag.stream_fallback_at,checked);
+    if(fault==='idle') assert.equal(diag.last_failure.code,'request_timeout');
+    const data=h.requests.filter(p=>p.startsWith('/export/chunk')).map(p=>new URL(p,'http://device'));
+    assert.equal(Number(data[1].searchParams.get('offset')),checked);
+    if (fixture.length>checked+8*4096+4096)
+      assert(data.slice(2).some(p=>p.searchParams.has('stream')));
+    assert(Buffer.from(vm.runInContext('completedFile',h.context)).equals(fixture));
+  }
+  const stopped=harness({manifest:streamManifest,streamFault:'cancel'});await stopped.run();
+  assert.equal(stopped.diagnostic().browser_transfer.phase,'paused');
+  assert.equal(stopped.diagnostic().browser_transfer.confirmed_bytes,8192);
+  assert.equal(stopped.saves.length,0);
+  stopped.scenario.streamFault=null;await stopped.run();
+  assert.equal(stopped.diagnostic().browser_transfer.cached_bytes,8192);
+  assert(Buffer.from(vm.runInContext('completedFile',stopped.context)).equals(fixture));
+  const changed=harness({manifest:streamManifest,streamFault:'cut',changedRunAt:8192});await changed.run();
+  assert.equal(changed.saves.length,0);
+  assert.equal(changed.diagnostic().browser_transfer.confirmed_bytes,8192);
+  assert.equal(changed.diagnostic().browser_transfer.chunk_requests,2);
+  const older=harness({manifest:streamManifest,noStreamApi:true});await older.run();
+  assert.equal(older.diagnostic().browser_transfer.chunk_requests,Math.ceil(fixture.length/16384));
+  const noReader=harness({manifest:streamManifest,noResponseReader:true});await noReader.run();
+  assert.equal(noReader.diagnostic().browser_transfer.chunk_requests,1+Math.ceil(fixture.length/16384));
+  const gap=harness({manifest:streamManifest});
+  gap.context.cached=gap.packet(8192,4096);
+  vm.runInContext("memoryCache.set('0123456789abcdef:8192',cached)",gap.context);
+  await gap.run();
+  assert.equal(gap.diagnostic().browser_transfer.cached_bytes,4096);
+  assert.equal(gap.diagnostic().browser_transfer.received_bytes,fixture.length-4096);
+  assert(Buffer.from(vm.runInContext('completedFile',gap.context)).equals(fixture));
   const fallback=harness({manifest:{chunks_per_response:4},brokenBatchAt:16384,interruptions:10});
   vm.runInContext('latest.wifi_export_recovery=true',fallback.context);
   await fallback.run();
@@ -305,5 +402,5 @@ function harness(scenario={}) {
     {version:1,rows:[[0,20]]})`,h.context);
   assert.deepEqual(Array.from(expanded,x=>x.control_observed_us),[120,230,null]);
   assert(h.requests.every(p=>p.startsWith('/export/')));
-  console.log(`Export retry PASS: ${fixture.length} bytes in ${grouped.diagnostic().browser_transfer.chunk_requests} batched requests; corrupt batch + 10 temporary failures auto-resumed at 16384; prepare/body, bounded failure, cache, cancellation, CRC/token, diagnostics, receipts`);
+  console.log(`Export retry PASS: ${fixture.length} bytes, ${streamed.diagnostic().browser_transfer.chunk_requests} streamed or ${grouped.diagnostic().browser_transfer.chunk_requests} legacy batch requests; gzip, incremental CRC/resume, idle timeout, cache holes, cancellation, token, diagnostics, receipts`);
 })().catch(error=>{console.error(error);process.exitCode=1;});

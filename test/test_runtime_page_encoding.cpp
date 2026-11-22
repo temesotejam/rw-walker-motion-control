@@ -8,6 +8,8 @@ int main() {
   assert(selectEncoding("") == Encoding::Identity);
   assert(selectEncoding("br") == Encoding::Identity);
   assert(selectEncoding("deflate, gzip, br") == Encoding::Gzip);
+  assert(selectEncoding("gzip,identity;q=0", false) == Encoding::Unacceptable);
+  assert(selectEncoding("gzip", false) == Encoding::Identity);
   assert(selectEncoding("  X-GZIP  ; Q=0.001 , br") == Encoding::Gzip);
   assert(selectEncoding("*") == Encoding::Gzip);
   assert(selectEncoding("identity;q=0.8, gzip;q=0.5") == Encoding::Identity);

@@ -175,6 +175,21 @@ class InterventionReport(unittest.TestCase):
         self.assertEqual(priority['center_work_j'],9.34e-6)
         self.assertFalse(event['width_extended'])
 
+    def test_continuation_reports_receiving_arc_and_observed_release(self):
+        self.meta['walking_profile'] = 'left_transfer_carry_v5'
+        first, continued, _ = self.meta['walking_energy']['records']
+        first.update(return_evidence=1, executed=True, output_start_ms=141, output_end_ms=146, actual_elapsed_ms=5)
+        continued.update(return_evidence=8, completion_reason=7, envelope_before_ms=37, envelope_after_ms=24)
+        self.meta['walking_energy']['arc_aids'][1].update(arc_predicted_terminal_deg=-1.5,
+                                                          arc_post_release_decel_dps2=172.43)
+        self.read()
+        event, = observed_prediction(self.folder)['events']
+        self.assertEqual(event['terminal_deg'], -1.5)
+        second = event['post_aid']
+        self.assertEqual((second['first_end_ms'], second['actual_elapsed_ms']), (146, 13))
+        self.assertTrue(second['coast_ready_cut'])
+        self.assertEqual(second['release_deceleration_dps2'], 172.43)
+
     def test_true_zero_and_veto(self):
         self.meta['walking_energy']['records'][1]['executed'] = False
         result = self.read()

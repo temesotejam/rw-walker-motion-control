@@ -520,8 +520,10 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
   const bool inverse_mode = energy_bridge_enabled_ && !negative_probe_mode_ &&
       autonomous_brake_max_ms_ == 25;
   const bool small_step = walking_profile_ == walking_trial::Profile::SmallStep;
+  const bool continuation_recheck = walking_profile_ == walking_trial::Profile::LeftTransferCarryV5;
   const bool post_aid_recheck = walking_profile_ == walking_trial::Profile::LeftTransferCarryV3 ||
-                                walking_profile_ == walking_trial::Profile::LeftTransferCarryV4;
+                                walking_profile_ == walking_trial::Profile::LeftTransferCarryV4 ||
+                                walking_profile_ == walking_trial::Profile::LeftTransferCarryV5;
 #if WALKING_SMALL_STEP_AB
   json += "\"walking_profile\":\"" + String(walking_trial::name(walking_profile_)) + "\",";
 #endif
@@ -587,6 +589,7 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
       }
       json += "\"peak_mpc\":{\"active\":false,\"scope\":\"inactive_legacy\"},";
       if (small_step) json += "\"foot_timing\":{\"active\":false,\"policy\":\"feet_measured_for_comparison;v14_imu_phase_lead\"},";
+      else if (continuation_recheck) json += "\"foot_timing\":{\"active\":true,\"policy\":\"left_return_aid;receiving_foot_and_projected_coast_shortfall_can_reopen_aid_once;observed_carry_can_end_continuation_early;actual_ZERO_main_recomputed;combined80ms_envelope\"},";
       else if (post_aid_recheck) json += "\"foot_timing\":{\"active\":true,\"policy\":\"left_return_aid;fresh_receiving_foot_and_rate_energy_loss_can_reopen_aid_once;actual_ZERO_main_recomputed;combined80ms_envelope\"},";
       else json += "\"foot_timing\":{\"active\":true,\"policy\":\"" + String(walking_transfer_mode ? "fresh_raw_foot_shape_or_bounded_recognition_dropout_IMU_return_aid;two_strong_deceleration_windows_for_dropout;timestamp_zero_frame_and_5deg_range_allowance_required;no_stale_angle_substitution;one_aid_per_peak;actual_ZERO_main_recomputed;combined80ms_envelope" : return_energy_mode ? "fresh_foot_amount_gates_local_return_work_budget;centre_not_required;all_rescue_energy_inverse_with_main80ms_envelope;no_ms_addition" : early_budget_mode ? "foot_pose_and_generic_early_timing;no_additive_width;generic_early_and_foot_use_same_existing_experimental80ms_ceiling;postguard_full_predicted_budget_required;infeasible_early_defers_without_consuming_normal_opportunity;stall_rescue15ms_is_separate_legacy_trial;no_reversal_cutoff" : "foot_pose_timing_only;no_additive_width_or_forced_input;normal_and_foot_energy_cap80ms;nonfoot_early_and_stall_rescue_cap15ms;guards_can_shorten") + "\"},";
       json += "\"work_control_branch_codes\":" + String(walking_admission_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\",\"21\":\"energy_pulse_lifecycle_v16\",\"22\":\"walking_return_energy_v17\",\"23\":\"walking_energy_transfer_v18\",\"24\":\"walking_energy_admission_v19\"}" : walking_transfer_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\",\"21\":\"energy_pulse_lifecycle_v16\",\"22\":\"walking_return_energy_v17\",\"23\":\"walking_energy_transfer_v18\"}" : pulse_lifecycle_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\",\"21\":\"energy_pulse_lifecycle_v16\",\"22\":\"walking_return_energy_v17\"}" : early_budget_mode ? "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\",\"20\":\"walking_early_energy_main_v15\"}" : "{\"0\":\"bootstrap_or_not_selected\",\"19\":\"walking_peak_rate_energy_v14\"}") + ",";

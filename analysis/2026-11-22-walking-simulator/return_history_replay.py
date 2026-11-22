@@ -220,7 +220,7 @@ def observed_prediction(folder):
     folder = Path(folder)
     meta = json.loads((folder / 'metadata.json').read_bytes())
     profile = meta.get('walking_profile')
-    carry = profile in ('left_transfer_carry_v1', 'left_transfer_carry_v2', 'left_transfer_carry_v3', 'left_transfer_carry_v4')
+    carry = profile in ('left_transfer_carry_v1', 'left_transfer_carry_v2', 'left_transfer_carry_v3', 'left_transfer_carry_v4', 'left_transfer_carry_v5')
     if profile != 'left_return_prediction_v1' and not carry:
         return None
     archive = meta.get('walking_energy') or {}
@@ -233,11 +233,11 @@ def observed_prediction(folder):
     if carry:
         expected += ('arc_approach_transfer_ms', 'arc_approach_terminal_deg', 'arc_approach_request_j',
                      'arc_crossing_request_j')
-    if profile in ('left_transfer_carry_v2', 'left_transfer_carry_v3', 'left_transfer_carry_v4'):
+    if profile in ('left_transfer_carry_v2', 'left_transfer_carry_v3', 'left_transfer_carry_v4', 'left_transfer_carry_v5'):
         expected += ('arc_passage_main_ms', 'arc_passage_reserve_ms', 'arc_passage_main_j', 'arc_passage_zero_dps')
-    if profile in ('left_transfer_carry_v3', 'left_transfer_carry_v4'):
+    if profile in ('left_transfer_carry_v3', 'left_transfer_carry_v4', 'left_transfer_carry_v5'):
         expected += ('arc_post_cap_ms', 'arc_post_increment_j', 'arc_post_elapsed_increment_j')
-    if profile == 'left_transfer_carry_v4':
+    if profile in ('left_transfer_carry_v4', 'left_transfer_carry_v5'):
         expected += ('arc_priority_cap_ms', 'arc_priority_base_ms', 'arc_priority_base_j', 'arc_priority_zero_j')
     complete = (archive.get('archive_available') is True and archive.get('truncated') is False and
                 archive.get('stored') == archive.get('total') == len(rows) and
@@ -248,14 +248,14 @@ def observed_prediction(folder):
         predicted = row.get('return_evidence') == 6
         before_transfer = carry and arc.get('arc_approach_transfer_ms') is not None
         extended = type(base) is int and type(selected) is int and selected > base > 0
-        post_aid = profile in ('left_transfer_carry_v3', 'left_transfer_carry_v4') and row.get('return_evidence') == 7
-        priority = profile == 'left_transfer_carry_v4' and (arc.get('arc_priority_cap_ms') or 0) > 0
+        post_aid = profile in ('left_transfer_carry_v3', 'left_transfer_carry_v4', 'left_transfer_carry_v5') and row.get('return_evidence') in (7, 8)
+        priority = profile in ('left_transfer_carry_v4', 'left_transfer_carry_v5') and (arc.get('arc_priority_cap_ms') or 0) > 0
         if not (predicted or extended or before_transfer or post_aid or priority):
             continue
         if before_transfer:
             terminal, transfer = arc.get('arc_approach_terminal_deg'), arc['arc_approach_transfer_ms']
         else:
-            terminal = arc.get('arc_predicted_terminal_deg') if predicted else arc.get('arc_terminal_deg')
+            terminal = arc.get('arc_predicted_terminal_deg') if predicted or row.get('return_evidence') == 8 else arc.get('arc_terminal_deg')
             transfer = arc.get('arc_predicted_transfer_ms')
         executed = row.get('executed') is True and bool(row.get('output_start_ms'))
         guarded = row.get('guarded_ms')
@@ -271,7 +271,7 @@ def observed_prediction(folder):
                            executed_extension=executed_extension,
                            elapsed_exceeded_base=elapsed>base if executed_extension and elapsed is not None else None,
                            executed=executed, motion=None))
-        if profile in ('left_transfer_carry_v2', 'left_transfer_carry_v3', 'left_transfer_carry_v4') and extended and (arc.get('arc_passage_reserve_ms') or 0) > 0:
+        if profile in ('left_transfer_carry_v2', 'left_transfer_carry_v3', 'left_transfer_carry_v4', 'left_transfer_carry_v5') and extended and (arc.get('arc_passage_reserve_ms') or 0) > 0:
             events[-1]['passage'] = dict(
                 reference_speed_dps=arc.get('arc_crossing_ref_dps'),
                 reference_main_ms=arc.get('arc_passage_main_ms'),
@@ -281,7 +281,7 @@ def observed_prediction(folder):
                 predicted_zero_speed_dps=arc.get('arc_passage_zero_dps'))
         if post_aid:
             previous = next((earlier for earlier, _ in reversed(left_aids)
-                             if earlier.get('executed') and earlier.get('return_evidence') != 7
+                             if earlier.get('executed') and earlier.get('return_evidence') not in (7, 8)
                              and earlier.get('peak_ms') == row['peak_ms']
                              and 0 < (earlier.get('output_end_ms') or 0) <= row['time_ms']), None)
             events[-1]['post_aid'] = dict(first_end_ms=previous['output_end_ms'] if previous else None,
@@ -289,8 +289,9 @@ def observed_prediction(folder):
                 remaining_before_ms=row.get('envelope_before_ms'), remaining_after_ms=row.get('envelope_after_ms'),
                 request_j=row.get('request_j'), gross_elapsed_model_work_j=row.get('elapsed_work_pred_j'),
                 cap_ms=arc.get('arc_post_cap_ms'), planned_increment_j=arc.get('arc_post_increment_j'),
+                release_deceleration_dps2=arc.get('arc_post_release_decel_dps2'),
                 elapsed_increment_j=arc.get('arc_post_elapsed_increment_j'),
-                planned_width_ms=guarded, actual_elapsed_ms=elapsed)
+                planned_width_ms=guarded, actual_elapsed_ms=elapsed, coast_ready_cut=row.get('completion_reason') == 7)
         if priority:
             events[-1]['center_priority'] = dict(
                 before_ms=arc.get('arc_priority_base_ms'), cap_ms=arc['arc_priority_cap_ms'],
@@ -311,7 +312,7 @@ def observed_intervention(folder):
     stats = dict(evaluated=0, matching_donors=0, width_increased=0, executed_increased=0)
     empty = dict.fromkeys(stats)
     out = {'profile': profile, **empty, 'observed_minimum': None, 'first_executed_change': None}
-    if profile not in ('left_return_history_v1', 'left_return_prediction_v1', 'left_transfer_carry_v1', 'left_transfer_carry_v2', 'left_transfer_carry_v3', 'left_transfer_carry_v4'):
+    if profile not in ('left_return_history_v1', 'left_return_prediction_v1', 'left_transfer_carry_v1', 'left_transfer_carry_v2', 'left_transfer_carry_v3', 'left_transfer_carry_v4', 'left_transfer_carry_v5'):
         return dict(out, status='not_selected' if profile else 'history_not_logged')
     complete = (archive.get('archive_available') is True and archive.get('truncated') is False
                 and archive.get('stored') == archive.get('total') == len(rows))

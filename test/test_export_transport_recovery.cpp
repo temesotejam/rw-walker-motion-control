@@ -90,6 +90,12 @@ int main() {
   assert(!rollover.requestRepair(now + stall + 1, true, true));
 
   ExportTransportRecovery manual;
+  ExportTransportRecovery stream;
+  stream.sealed(500); stream.downloadRequested(501, 1); stream.chunkRequested(502, 0);
+  stream.chunkServed(502 + stall, 65536);
+  assert(!stream.requestRepair(503 + stall, true, false));
+  stream.chunkServed(501 + 2 * stall, 65536);
+  assert(stream.requestRepair(502 + 2 * stall, true, false));
   assert(manual.requestRepair(0, true, true));  // explicit test while stopped at READY
   assert(!manual.requestRepair(quiet - 1, true, true));
   manual.startRun(); manual.sealed(quiet);

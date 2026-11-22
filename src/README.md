@@ -1,6 +1,6 @@
 # 実機ファームウェアの読み方
 
-現在の歩行版 v39-walk4 は、左足が受け側にあるとき、中心まで届くために必要な仕事を、中心通過後の主入力のために時間を確保した場合に出せる仕事と比較します。通常の±8°開始で選ぶ制御は `walking_trial::forRun()` にあります。`main.cpp` の `setup()` が制御タスクやカメラを初期化し、`controlStep()` が歩行時の更新を進めます。Arduinoの `loop()` はWebとUSB診断を処理します。[中心前の仕事配分](return_crossing_work.h) · [左補助後の再判断](return_observation_policy.h) · [右主入力](right_arrival_energy.h) · [半周期の仕事と時間](half_cycle_energy_budget.h)
+現在の歩行版 v39-walk5 は、左への最初の補助後、受け側の足形状と惰行距離から不足仕事を求め、残り時間で追加する幅を選びます。追加中は新しいIMU標本で切り上げを判定します。通常の±8°開始で選ぶ制御は `walking_trial::forRun()` にあります。`main.cpp` の `setup()` が制御タスクやカメラを初期化し、`controlStep()` が歩行時の更新を進めます。Arduinoの `loop()` はWebとUSB診断を処理します。[中心前の仕事配分](return_crossing_work.h) · [左補助後の再判断](return_observation_policy.h) · [右主入力](right_arrival_energy.h) · [半周期の仕事と時間](half_cycle_energy_budget.h)
 
 | 確認したいこと | 読む場所 | 処理の役割 |
 |---|---|---|

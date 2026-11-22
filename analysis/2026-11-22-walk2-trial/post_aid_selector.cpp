@@ -16,8 +16,10 @@ static float number() {
   return std::stof(token);
 }
 
-int main() {
+int main(int argc, char** argv) {
   using namespace return_observation_policy;
+  const bool continuation=argc==2 && std::string(argv[1])=="--continuation";
+  if (argc!=1 && !continuation) return 1;
   Input in;
   periodic_foot::Packet packet;
   PostAidObserver observer;
@@ -76,7 +78,7 @@ int main() {
       const float i0=number(), goal=number(), rpm=number();
       std::cin >> recorded_cap;
       in.periodic=&packet;
-      const auto choice=observer.observe(in,at,i0);
+      const auto choice=observer.observe(in,at,i0,continuation);
       if (choice.selected) {
         inverse.body_angle_deg=in.angle_deg; inverse.rate_dps=-in.rate_dps;
         inverse.initial_current_ma=i0; inverse.goal_current_ma=goal; inverse.return_work_j=choice.request_j;
@@ -91,7 +93,8 @@ int main() {
           inverse.cap_ms=std::min<unsigned>(cap,choice.loss_cap_ms);
           const auto selected=half_cycle_energy_budget::selectPostAid(geometry,current,inverse,choice.gross_work_limit_j);
           auto guard=wheel;
-          auto width=guard.limit(-1,rpm,true,in.now,selected.width_ms);
+          const auto guard_input=continuation?inverse.cap_ms:selected.width_ms;
+          auto width=std::min(selected.width_ms,guard.limit(-1,rpm,true,in.now,guard_input));
           const auto delivered=half_cycle_energy_budget::selectPostAid(geometry,current,inverse,choice.gross_work_limit_j,width);
           if (!selected.valid || !delivered.valid || !delivered.charge_supported || !(delivered.predicted_work_j>0)) width=0;
           min_width=std::min<int>(min_width,width); max_width=std::max<int>(max_width,width);
@@ -100,7 +103,11 @@ int main() {
         }
         std::cout << in.peak_ms << ' ' << in.now << ' ' << choice.request_j << ' '
           << choice.loss_cap_ms << ' ' << min_width << ' ' << max_width << ' '
-          << (max_width<0?0:min_work) << ' ' << max_work << '\n';
+                  << (max_width<0?0:min_work) << ' ' << max_work;
+        if (continuation)
+          std::cout << ' ' << static_cast<unsigned>(choice.evidence) << ' ' << choice.terminal_deg
+                    << ' ' << choice.deceleration_dps2 << ' ' << choice.release_deceleration_dps2;
+        std::cout << '\n';
       }
     } else return 3;
     if (!std::cin) return 4;

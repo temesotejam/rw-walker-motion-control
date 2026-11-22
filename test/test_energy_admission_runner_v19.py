@@ -67,6 +67,8 @@ fixture = fixture.replace('class ExperimentRunner {public:', '''class Experiment
  bool transfer_carry=false;
  bool transfer_priority=false;
  bool isTransferPriorityProfile()const{return transfer_priority;}
+ bool continuation_priority=false;
+ bool isContinuationPriorityProfile()const{return continuation_priority;}
  bool isLeftTransferCarryProfile()const{return transfer_carry;}
  bool returnPredictionTrialSelected()const{return prediction_trial || transfer_carry;}
  bool carryHistoryTrialSelected()const{return returnPredictionTrialSelected() || history_trial;}
@@ -621,6 +623,78 @@ int main(){
 #endif
 #if SUPPORT_TRANSFER_STALL_V3
 #if WALKING_RETURN_HISTORY
+ // Run 33406765. The first 43 ms aid was accepted and finished. Reproduce
+ // the measured post-release packet pair on the production observer and
+ // driver path. Only the high-speed trace after a new command is synthetic.
+ for(unsigned mode=0;mode<4;++mode) {
+  ExperimentRunner r;ready19(r);r.transfer_carry=r.transfer_priority=true;
+  r.continuation_priority=mode!=0;r.tilt_priority_.reset();r.tilt_priority_.peak(-1,1,4.5f);
+  for(unsigned k=0;k<8;++k){
+    const int side=k%2?-1:1;const uint32_t t=100+400*k;
+    tilt_priority::Choice c;c.selected=true;c.direction=side;c.width_ms=30;c.current_ma=1200;c.target_deg=4.5f;
+    r.tilt_priority_.crossing(side,t);r.tilt_priority_.confirm(side,t,c,true,true,false);
+    r.tilt_priority_.peak(side,t+150,4.5f);
+  }
+  assert(r.tilt_priority_.target()==5.5f);
+  r.energy_control_autonomous_last_peak_side_=1;r.energy_control_autonomous_last_peak_ms_=5633;
+  r.energy_control_autonomous_last_peak_amplitude_deg_=8.70206f;
+  r.walking_energy_peaks_[0]=4.17281f;r.walking_energy_peak_ms_[0]=5209;
+  auto& budget=r.walking_half_cycle_budget_;assert(budget.sourcePeak(5633));
+  assert(budget.accepted(half_cycle_energy_budget::Kind::ReturnAid,43) && budget.complete(43));
+  r.stall_rescue_attempted_peak_ms_=5633;
+  r.walking_post_aid_.arm(5633,5832,18.3167877f,96.903e-6f);
+  r.wheel_cycle_guard_.limit(1,-620.46f,true,5401,44);
+  assert(r.walking_energy_current_.prepare(.031652216f));r.simulated_goal_ma=352.78424f;
+  for(bool second:{false,true}) {
+    const uint32_t t=second?5927:5903;clock19(r,t);
+    auto& p=r.periodic_foot_packet_;auto& f=r.walking_return_frame_;
+    p.epoch_us=800000;p.count=second?237:236;p.scheduled_us=p.epoch_us+25000u*p.count;
+    p.published_us=p.epoch_us+(second?5925997u:5900803u);
+    f.run_id=r.status_.run_id;f.sequence=second?1607:1606;f.image_us=p.published_us-(second?39195u:34257u);
+    f.received_us=p.published_us;f.frame_ms=(f.image_us-p.epoch_us)/1000;f.ready_ms=(f.received_us-p.epoch_us)/1000;
+    f.timestamp_valid=f.frame_valid=f.zero_ready=f.left_detected=f.right_detected=f.left_range_ok=f.right_range_ok=true;
+    p.left.sequence=p.right.sequence=f.sequence;p.left.image_us=p.right.image_us=f.image_us;
+    f.left_deg=p.left.measured=second?3.542f:4.290f;f.right_deg=p.right.measured=second?-.16f:-.12f;
+    p.left.estimated=second?3.080f:4.274f;p.right.estimated=f.right_deg;
+    r.transfer_packet_=p.count;r.transfer_previous_sample_us_=mock_us;
+    r.transfer_acceleration_dps2_=second?112.299f:172.4334f;r.transfer_post_i0_ma_=second?83.f:150.f;
+    r.walking_fore_aft_last_.angle_deg=.2511f;
+    assert(r.observeInwardStallRescue(t,false,false,second?2.544f:3.053f,
+        second?-18.93353f:-21.632f)==(second && mode!=0));
+  }
+  if(!mode)continue;
+  const auto& obs=r.walking_return_observation_;
+  assert(obs.evidence==return_observation_policy::Evidence::ContinuationShortfall && obs.terminal_deg<0);
+  r.stall_rescue_event_=true;r.roller_obj.write_ok=mode!=3;
+  Event e;e.physical_next_peak_side=-1;e.zero_cross_time_ms=5927;e.target_peak_deg=8;
+  e.previous_peak_time_ms=5633;e.previous_peak_amplitude_deg=8.70206f;e.detector_angle_after_deg=2.544f;
+  e.zero_cross_rate_dps=-18.93353f;e.zero_cross_abs_rate_dps=-e.zero_cross_rate_dps;
+  e.vbat_mV=8020;e.i0_estimated_mA=-83;e.pre_input_wheel_speed_valid=true;
+  e.pre_input_wheel_speed_age_us=1000;e.pre_input_wheel_speed_rpm=-310.98f;
+  bool healthy=false;assert(r.tryWalkingEnergy(e,5927,&healthy));
+  const auto a=r.walking_energy_audit_[0];
+  assert(a.return_evidence==8 && a.post_cap_ms==37 && a.requested_ms==29 && a.guarded_ms==28);
+  assert(near(a.return_deceleration_dps2,112.299f) && near(a.post_release_deceleration_dps2,172.4334f));
+  assert(std::fabs(a.return_work_j-43.91e-6f)<.12e-6f && std::fabs(a.post_increment_j-43.06e-6f)<.12e-6f);
+  if(mode==3){assert(!a.executed && budget.remaining()==37 && !budget.active());continue;}
+  assert(healthy && a.executed && r.roller_obj.last_command==-1200 && budget.reservedMs()==28);
+  unsigned elapsed=a.guarded_ms;
+  if(mode==2){
+    for(unsigned offset:{2u,4u,5u,8u}) {
+      clock19(r,a.output_start_ms+offset);
+      r.energy_control_autonomous_previous_detector_test_ms_=a.output_start_ms+offset-2;
+      const float rate=offset<=4?-35.f:-45.f;
+      r.energy_control_autonomous_previous_detector_rate_dps_=rate;
+      r.processCrossingSample(mock_ms,mock_us,2.40f,2.35f,rate);
+      assert(r.status_.pulse_active==(offset<8));
+    }
+    elapsed=8;
+  }else{clock19(r,a.output_start_ms+elapsed);r.updateEnergyControlAutonomousPulse(mock_ms);}
+  const auto& final=r.walking_energy_active_pulse_;
+  assert(!r.status_.pulse_active && final.completion_reason==(mode==2?7:1));
+  assert(final.post_elapsed_increment_j>0 && budget.remaining()==37-elapsed && budget.allowMain(5633));
+  assert(!budget.allowPostAid(5633));
+ }
  // Run 37339215: both observed foot/IMU frames that triggered the final
  // 2 ms aid, including the prior main's actual 78 ms duration.
  for(unsigned mode=0;mode<5;++mode) {

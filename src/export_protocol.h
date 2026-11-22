@@ -6,6 +6,7 @@
 namespace export_protocol {
 constexpr uint32_t kChunkBytes = 4096;
 constexpr uint32_t kChunksPerResponse = 4;
+constexpr uint32_t kStreamChunks = 16;
 constexpr uint32_t kChunkMagic = 0x31484346; // FCH1, little endian
 inline uint32_t crc32(uint32_t crc, const uint8_t* data, size_t length) {
   crc = ~crc;
@@ -14,6 +15,9 @@ inline uint32_t crc32(uint32_t crc, const uint8_t* data, size_t length) {
     for (uint8_t bit = 0; bit < 8; ++bit) crc = (crc >> 1) ^ (0xEDB88320U & (0U - (crc & 1U)));
   }
   return ~crc;
+}
+inline size_t packetBytes(size_t length) {
+  return length + 16 * ((length + kChunkBytes - 1) / kChunkBytes);
 }
 struct Span { const uint8_t* data; size_t length; };
 inline bool validRange(size_t total, size_t offset, size_t length, size_t limit) {

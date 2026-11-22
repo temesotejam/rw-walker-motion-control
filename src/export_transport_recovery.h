@@ -30,6 +30,7 @@ class ExportTransportRecovery {
     client_ = client;
     build_bytes_ = 0;
     chunk_offset_ = UINT32_MAX;
+    sent_end_ = 0;
     progress(now);
   }
   bool pauseDownload(uint32_t client) {
@@ -48,6 +49,14 @@ class ExportTransportRecovery {
     if (state_ != State::Downloading || offset == chunk_offset_) return;
     chunk_offset_ = offset;
     progress(now);
+  }
+  // Grant time for the browser to verify a newly served range. Re-sending
+  // the same range cannot postpone repair indefinitely and is not an ACK.
+  void chunkServed(uint32_t now, uint32_t end) {
+    if (state_ == State::Downloading && end > sent_end_) {
+      sent_end_ = end;
+      progress(now);
+    }
   }
 
   // The caller verifies the browser's whole-file acknowledgement against the
@@ -84,5 +93,5 @@ class ExportTransportRecovery {
   uint8_t repairs_ = 0;
   bool have_repaired_ = false;
   uint32_t last_activity_ms_ = 0, last_repair_ms_ = 0;
-  uint32_t build_bytes_ = 0, chunk_offset_ = UINT32_MAX, client_ = 0;
+  uint32_t build_bytes_ = 0, chunk_offset_ = UINT32_MAX, sent_end_ = 0, client_ = 0;
 };
