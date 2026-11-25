@@ -39,6 +39,13 @@ class WebServer {
     _currentClientWrite("H", 1);
     _currentClientWrite_P("B", 1);
   }
+  void replyLarge(bool packets) {
+    static const char body[42156] = {};
+    _currentClientWrite("header", 6);
+    if (!packets) { _currentClientWrite_P(body, sizeof(body)); return; }
+    for (size_t at = 0; at < sizeof(body); at += 4096)
+      if (!_currentClientWrite(body + at, std::min(size_t(4096), sizeof(body) - at))) break;
+  }
   void stop() { _currentStatus = HC_NONE; }
   virtual void handleClient() {
     if (_currentStatus == HC_NONE) {
@@ -68,12 +75,37 @@ class WebServer {
 
 CASES = r"""
 #include "bounded_web_server.h"
-#include <cassert>
+#include <esp_netif.h>
+#include <lwip/api.h>
 #include <cerrno>
+#include <cstdio>
+#define assert(test) do { if (!(test)) { std::fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #test); std::exit(1); } } while (false)
 int socket_error = 0;
 int sent_calls = 0;
+tcp_pcb host_pcb{};
+netconn host_conn{NETCONN_TCP, {&host_pcb}};
+int ack_delay = 0;
+uint32_t last_ack_ms = 0;
+size_t peak_outstanding = 0, transferred = 0;
+esp_err_t esp_netif_tcpip_exec(esp_err_t(*fn)(void*), void* arg) {
+  if (ack_delay >= 0 && millis() - last_ack_ms >= unsigned(ack_delay)) {
+    host_pcb.lastack = host_pcb.snd_lbb;
+    host_pcb.snd_buf = 5760;
+    host_pcb.snd_queuelen = 0;
+    last_ack_ms = millis();
+  }
+  return fn(arg);
+}
 int send(int, const void*, size_t n, int) {
-  if (++sent_calls == 1 || !socket_error) return int(n);  // first send is the header
+  if (++sent_calls == 1 || !socket_error) {
+    assert(n <= host_pcb.mss && n <= host_pcb.snd_buf && host_pcb.snd_queuelen < 2);
+    host_pcb.snd_lbb += n; host_pcb.snd_buf -= n; ++host_pcb.snd_queuelen;
+    const uint32_t outstanding = host_pcb.snd_lbb - host_pcb.lastack;
+    assert(outstanding <= 2 * host_pcb.mss);
+    peak_outstanding = std::max(peak_outstanding, size_t(outstanding));
+    transferred += n;
+    return int(n);
+  }
   errno = socket_error;
   return -1;
 }
@@ -146,6 +178,24 @@ int main() {
   fixed.dispatch = [](WebServer& s) { s.reply(); };
   fixed.handleClient();
   assert(resumed.served == 1 && fixed.lastResponse() == Response::Complete);
+  // Both the root page (one flash write) and many RAM packet writes share ACK
+  // credit with the header. Cross TCP's 32-bit sequence rollover on each run.
+  for (const bool packets : {false, true}) {
+    fixed.dispatch = packets ? +[](WebServer& s) {
+      static_cast<BoundedWriteWebServer&>(s).beginExportResponse(); s.replyLarge(true);
+    } : +[](WebServer& s) { s.replyLarge(false); };
+    host_pcb.lastack = host_pcb.snd_lbb = UINT32_MAX - 500;
+    host_pcb.snd_queuelen = 0; host_pcb.snd_buf = 5760;
+    ack_delay = 35; last_ack_ms = millis(); transferred = peak_outstanding = 0;
+    Connection paged{true}; fixed.queue(paged); fixed.handleClient();
+    assert(transferred == 42162 && peak_outstanding == 2 * host_pcb.mss);
+    assert(fixed.lastResponse() == Response::Complete);
+  }
+  host_pcb.lastack = host_pcb.snd_lbb; host_pcb.snd_queuelen = 0; host_pcb.snd_buf = 5760;
+  ack_delay = -1; transferred = 0;
+  Connection unacked{true}; fixed.queue(unacked); fixed.handleClient();
+  assert(unacked.closed && fixed.lastResponse() == Response::Stalled);
+  assert(transferred <= 2 * host_pcb.mss);
 }
 """
 
@@ -155,6 +205,23 @@ def main():
         root = Path(directory)
         (root / "WebServer.h").write_text(SERVER, encoding="utf8")
         (root / "lwip").mkdir()
+        (root / "lwip/priv").mkdir()
+        (root / "esp_netif.h").write_text("#pragma once\nusing esp_err_t=int; constexpr int ESP_OK=0;\nesp_err_t esp_netif_tcpip_exec(esp_err_t(*)(void*),void*);\n", encoding="utf8")
+        (root / "lwip/api.h").write_text(r"""
+#pragma once
+enum {NETCONN_TCP=16, ESTABLISHED=4, CLOSE_WAIT=5};
+struct tcp_pcb {
+  unsigned mss=1436, snd_buf=5760, snd_queuelen=0;
+  uint32_t lastack=0, snd_lbb=0;
+  int state=ESTABLISHED;
+};
+struct netconn { int type; struct {tcp_pcb* tcp;} pcb; };
+extern netconn host_conn;
+#define NETCONNTYPE_GROUP(x) (x)
+#define netconn_type(c) ((c)->type)
+""", encoding="utf8")
+        (root / "lwip/tcp.h").write_text("#define tcp_mss(p) ((p)->mss)\n#define tcp_sndbuf(p) ((p)->snd_buf)\n#define tcp_sndqueuelen(p) ((p)->snd_queuelen)\n",encoding="utf8")
+        (root / "lwip/priv/sockets_priv.h").write_text("struct lwip_sock { netconn* conn; };\ninline lwip_sock* lwip_socket_dbg_get_socket(int fd) { static lwip_sock s{&host_conn}; return fd==3?&s:nullptr; }\n",encoding="utf8")
         (root / "lwip/opt.h").write_text("#define TCP_MSS 1436\n", encoding="utf8")
         (root / "lwip/sockets.h").write_text(
             "#define MSG_DONTWAIT 0\nint send(int,const void*,size_t,int);\n",

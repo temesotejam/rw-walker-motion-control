@@ -107,7 +107,7 @@ function supportTransferTrial(s) {
   return /^walking-support-transfer-v39(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function singleWalkingBuild(s = latest) {
-  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3', 'walking-support-transfer-v39-walk4', 'walking-support-transfer-v39-walk5', 'walking-support-transfer-v39-walk5-logfix1', 'walking-support-transfer-v39-walk5-logfix2', 'walking-support-transfer-v39-walk5-logfix3'].includes(s?.diagnostic_build_id);
+  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3', 'walking-support-transfer-v39-walk4', 'walking-support-transfer-v39-walk5', 'walking-support-transfer-v39-walk5-logfix1', 'walking-support-transfer-v39-walk5-logfix2', 'walking-support-transfer-v39-walk5-logfix3', 'walking-support-transfer-v39-walk5-logfix4'].includes(s?.diagnostic_build_id);
 }
 function foreAftStopText(reason) {
   return ({

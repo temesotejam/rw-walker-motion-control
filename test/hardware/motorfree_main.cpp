@@ -7,6 +7,13 @@
 #include "roller485_manager.h"
 #include "runtime_diagnostics.h"
 #include "web_ui.h"
+#if MOTORFREE_ARCHIVE
+#include <WiFi.h>
+#include <atomic>
+#include "archive_layout.h"
+extern bool replayArchiveSamples(PsramLogger&);
+extern void replayMatchInternalHeap();
+#endif
 
 // The implementation files for the motor driver, walking runner and IMU manager are
 // excluded from this link. Only these data-only metadata accessors are supplied.
@@ -28,11 +35,19 @@ static OneShotCamera camera;
 static BoundedWriteWebServer server(Config::HTTP_PORT);
 static ImmutableExport sealed;
 static WebUi web;
+#if MOTORFREE_ARCHIVE
+static constexpr uint16_t runId = replay_layout::kRunId;
+static std::atomic<bool> pressureReady{false};
+#else
 static constexpr uint16_t runId = 61111;
+#endif
 static uint32_t cameraStarted;
 static bool fixtureReady;
 
 static bool seedFixture() {
+#if MOTORFREE_ARCHIVE
+  return replayArchiveSamples(logger);
+#else
   logger.startRun(runId, 1000000, 0, 0, 0, false, 0, 0, 0, true);
   uint32_t noise = 511;
   for (uint32_t i = 0; i < 10000; ++i) {
@@ -54,6 +69,7 @@ static bool seedFixture() {
   }
   logger.seal();
   return logger.rwlogDownloadable();
+#endif
 }
 static bool idleStep(void*) {
   run_control.takeStopRequest();
@@ -73,6 +89,9 @@ static void stoppedState(void*, RunControlSnapshot& s) {
   s.sample_count = logger.sampleCount();
   s.heartbeat_us = micros();
   s.downloadable = finished && fixtureReady;
+#if MOTORFREE_ARCHIVE
+  s.downloadable = s.downloadable && pressureReady.load();
+#endif
 }
 void setup() {
   vTaskPrioritySet(nullptr, 2);
@@ -105,6 +124,18 @@ void setup() {
   RuntimeDiag::boot(RuntimeDiag::Stage::Ready);
 }
 void loop() {
+#if MOTORFREE_ARCHIVE
+  static uint32_t stationSince = 0, lastCheck = 0;
+  if (!pressureReady.load() && millis() - lastCheck >= 250) {
+    lastCheck = millis();
+    if (!WiFi.softAPgetStationNum()) stationSince = 0;
+    else if (!stationSince) stationSince = lastCheck;
+    else if (lastCheck - stationSince >= 2000) {
+      replayMatchInternalHeap();
+      pressureReady.store(true);
+    }
+  }
+#endif
   RuntimeDiag::pollFallback();
   if (RuntimeDiag::takeWifiRecoveryRequest()) web.requestWifiRecovery();
   web.update();

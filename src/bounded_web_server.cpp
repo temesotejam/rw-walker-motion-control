@@ -1,9 +1,43 @@
 #include "bounded_web_server.h"
 #include "runtime_diagnostics.h"
 #include <Arduino.h>
+#include <algorithm>
+#include <esp_netif.h>
 #include <errno.h>
+#include <lwip/api.h>
 #include <lwip/opt.h>
 #include <lwip/sockets.h>
+#include <lwip/tcp.h>
+extern "C" {
+#include <lwip/priv/sockets_priv.h>  // pinned ESP-IDF exports this fd lookup
+}
+
+namespace {
+struct SendCredit {
+  int fd;
+  size_t bytes;
+  bool connected;
+};
+
+esp_err_t inspectSendCredit(void* context) {
+  auto& credit = *static_cast<SendCredit*>(context);
+  const auto* socket = lwip_socket_dbg_get_socket(credit.fd);
+  if (!socket || !socket->conn || NETCONNTYPE_GROUP(netconn_type(socket->conn)) != NETCONN_TCP)
+    return ESP_OK;
+  const auto* pcb = socket->conn->pcb.tcp;
+  if (!pcb || (pcb->state != ESTABLISHED && pcb->state != CLOSE_WAIT)) return ESP_OK;
+  credit.connected = true;
+  const uint32_t mss = tcp_mss(pcb);
+  const uint32_t limit = 2 * mss;
+  // Sequence-number subtraction includes bytes queued but not yet sent as
+  // well as bytes sent but not yet acknowledged, including sequence wrap.
+  const uint32_t queued = pcb->snd_lbb - pcb->lastack;
+  if (queued < limit && tcp_sndqueuelen(pcb) < 2) {
+    credit.bytes = std::min<uint32_t>(std::min<uint32_t>(mss, limit - queued), tcp_sndbuf(pcb));
+  }
+  return ESP_OK;
+}
+}
 
 void BoundedWriteWebServer::beginExportResponse() {
   export_started_ms_ = millis();
@@ -53,10 +87,17 @@ size_t BoundedWriteWebServer::pacedWrite(const uint8_t* buffer, size_t length, c
   while (total < length &&
          static_cast<uint32_t>(millis() - begin) < total_limit_ms &&
          static_cast<uint32_t>(millis() - last_progress) < 3000) {
-    // TCP_NODELAY is active. A full segment avoids sending a 16-byte tail
-    // after four 1024-byte writes of a typical 4112-byte export packet.
-    const size_t slice = export_response_ ? TCP_MSS : 1024;
-    const size_t n = length - total < slice ? length - total : slice;
+    // SO_SNDBUF is unimplemented in this SDK. Inspect the PCB on the TCP/IP
+    // thread while the HTTP owner holds the fd; no lwIP pointer crosses tasks.
+    // Keep enough internal heap for the radio to receive the ACK that releases
+    // each window. This also applies to the initial HTML page and its header.
+    SendCredit credit{fd, 0, false};
+    if (esp_netif_tcpip_exec(inspectSendCredit, &credit) != ESP_OK) {
+      write_error = ENOBUFS; vTaskDelay(5); continue;
+    }
+    if (!credit.connected) { write_error = EPIPE; break; }
+    if (!credit.bytes) { write_error = EAGAIN; vTaskDelay(5); continue; }
+    const size_t n = std::min(length - total, credit.bytes);
     const int sent = ::send(fd, buffer + total, n, MSG_DONTWAIT);
     if (sent > 0) { total += sent; last_progress = millis(); write_error = 0; }
     else {
@@ -64,7 +105,7 @@ size_t BoundedWriteWebServer::pacedWrite(const uint8_t* buffer, size_t length, c
       if (write_error != EAGAIN && write_error != EWOULDBLOCK &&
           write_error != ENOMEM && write_error != ENOBUFS && write_error != EINTR) break;
     }
-    vTaskDelay(sent < 0 && export_response_ ? 5 : 1);
+    vTaskDelay(sent < 0 ? 5 : 1);
   }
   RuntimeDiag::httpWriteResult(total, length, total < length && !write_error ? ETIMEDOUT : write_error);
   if (total != length) {
