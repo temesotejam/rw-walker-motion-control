@@ -12,7 +12,7 @@ function harness(scenario={}) {
   const elements=new Map(),requests=[],saves=[];
   const element=id=>{if(!elements.has(id))elements.set(id,{textContent:'',style:{}});return elements.get(id);};
   let context,clock=0,prepareCount=0,manifestCount=0,chunkFailures=0;
-  let networkDeadline;
+  let networkDeadline, streamFaultInjected=false;
   class Clock extends Date {static now(){return clock;}}
   const abort=signal=>new Promise((_,reject)=>{
     if(signal.aborted)reject(new DOMException('signal is aborted without reason','AbortError'));
@@ -26,7 +26,8 @@ function harness(scenario={}) {
   };
   context=vm.createContext({document:{getElementById:element,createElement:()=>({click(){saves.push({name:this.download,url:this.href});}})},
     setTimeout:(fn,ms)=>{
-      if(scenario.steadyNetwork && ms===8000) return networkDeadline={due:clock+ms,fire:fn};
+      if((scenario.steadyNetwork || scenario.streamFault==='drip') && ms>=0 && ms<=4000 && ms!==500)
+        return networkDeadline={due:clock+ms,fire:fn};
       const timer=setTimeout(()=>{if(ms<3000)clock+=ms;fn();},ms>=3000?15:0);
       if(ms===60000)timer.unref();return timer;
     },
@@ -80,25 +81,29 @@ function harness(scenario={}) {
       if(scenario.changedRunAt===offset)return {ok:false,status:409,text:async()=>'export_token_or_range_mismatch'};
       if(url.searchParams.get('stream')==='1'){
         assert.equal(scenario.manifest.stream_chunks,16);
-        assert(length>4096 && length<=65536 && !url.searchParams.has('batch'));
+        assert(length>0 && length<=16384 && !url.searchParams.has('batch'));
+        if(scenario.failOverBytes && length>scenario.failOverBytes)throw new TypeError('Failed to fetch');
+        if(scenario.failAllStreams)throw new TypeError('Failed to fetch');
         if(scenario.noResponseReader)return {ok:true,body:null};
+        if(scenario.slowHeadersAt===offset) clock+=2000;
         let bytes=Buffer.concat(Array.from({length:Math.ceil(length/4096)},(_,i)=>
           packet(offset+i*4096,Math.min(4096,length-i*4096))));
-        const fault=offset===0 ? scenario.streamFault : null;
-        if(['cut','idle','cancel'].includes(fault))bytes=bytes.subarray(0,2*4112+7);
-        if(fault==='corrupt')bytes[2*4112+17]^=0x40;
+        const fault=offset===0 && !streamFaultInjected ? scenario.streamFault : null;
+        if(fault)streamFaultInjected=true;
+        if(['cut','idle','cancel'].includes(fault))bytes=bytes.subarray(0,4112+7);
+        if(fault==='corrupt')bytes[4112+17]^=0x40;
         if(fault==='extra')bytes=Buffer.concat([bytes,Buffer.from([0])]);
         if(scenario.gzip){
           const zipped=require('node:zlib').gzipSync(bytes);
           scenario.advertisedBytes=(scenario.advertisedBytes || 0)+zipped.length;
-          return {ok:true,headers:new Headers({'Content-Encoding':'gzip','Content-Length':String(zipped.length)}),
+          return {ok:true,headers:new Headers({'Content-Encoding':'gzip','Content-Length':String(zipped.length),'X-RWLOG-Gzip':'gzip_tail'}),
             body:new Blob([zipped]).stream().pipeThrough(new DecompressionStream('gzip'))};
         }
         let cursor=0,reads=0;
-        return {ok:true,body:{getReader:()=>({
+        return {ok:true,headers:scenario.gzipReason ? new Headers({'X-RWLOG-Gzip':scenario.gzipReason}) : undefined,body:{getReader:()=>({
           async read(){
-            if(scenario.steadyNetwork && offset===0){
-              clock+=4000;
+            if((scenario.steadyNetwork && offset===0) || fault==='drip'){
+              clock+=fault==='drip' ? 3000 : 1500;
               assert(networkDeadline,'network idle deadline must remain armed while reading');
               if(clock>=networkDeadline.due)networkDeadline.fire();
             }
@@ -108,7 +113,7 @@ function harness(scenario={}) {
               return {done:true};
             }
             if(opts.signal.aborted)return abort(opts.signal);
-            const size=[5,4110,737,8646][reads++%4]; // fragment a header and span several packets
+            const size=fault==='drip' ? 1 : [5,4110,737,8646][reads++%4];
             const value=bytes.subarray(cursor,Math.min(cursor+size,bytes.length));
             cursor+=value.length;
             return {done:false,value};
@@ -137,6 +142,10 @@ function harness(scenario={}) {
       return {ok:true,arrayBuffer:async()=>bytes.buffer};
     }});
   vm.runInContext(sources,context);
+  if(scenario.storageDelayMs){
+    context.delayStorage=()=>{clock+=scenario.storageDelayMs;};
+    vm.runInContext('const savePacket=cachePut; cachePut=async (key,packet)=>{delayStorage();return savePacket(key,packet);};',context);
+  }
   element('work-inertia').value='0.000028';element('work-sign').value='-1';
   vm.runInContext("latest={state:'FINISHED',boot_id:123,run_id:1,export_phase:'building',running:false,ready:false,downloadable:true,controller_fresh:true,command:{pending:false},foot:{},upright:{}};lastSeen=Date.now();",context);
   const run=()=>vm.runInContext('download()',context);
@@ -146,6 +155,23 @@ function harness(scenario={}) {
 }
 
 (async()=>{
+  const streamManifest={chunks_per_response:4,stream_chunks:16,stream_window_chunks:4};
+  const spansOf=h=>h.requests.filter(p=>p.startsWith('/export/chunk')).map(p=>new URL(p,'http://device').searchParams);
+  if(process.argv.includes('--recorded')){
+    // Exercise the actual bytes once, with a size-dependent failure after the first two 8 KiB windows.
+    const real=harness({manifest:streamManifest,gzip:true,failOverBytes:8192});await real.run();
+    const diag=real.diagnostic().browser_transfer;
+    assert.equal(diag.phase,'complete');
+    assert.equal(diag.stream_fallbacks,1);
+    assert.equal(diag.stream_fallback_at,16384);
+    assert.equal(diag.stream_responses,diag.stream_gzip_responses);
+    assert.equal(diag.stream_advertised_wire_bytes,real.scenario.advertisedBytes);
+    assert(Buffer.from(vm.runInContext('completedFile',real.context)).equals(fixture));
+    console.log(JSON.stringify({file_bytes:fixture.length,chunk_requests:diag.chunk_requests,
+      stream_responses:diag.stream_responses,stream_advertised_wire_bytes:diag.stream_advertised_wire_bytes,
+      stream_fallbacks:diag.stream_fallbacks}));
+    return;
+  }
   // The recorded failure: after reboot the manifest becomes empty. Do not wait
   // 120 seconds or promise resumption of data that no longer exists on device.
   for (const changed of [{phase:'empty'}, {boot_id:999}, {boot_id:999,phase:'ready'}, {boot_id:123, run_id:2}]) {
@@ -166,49 +192,83 @@ function harness(scenario={}) {
   assert.equal(transfer.chunk_requests,Math.ceil(fixture.length/16384));
   assert(Buffer.from(vm.runInContext('completedFile',grouped.context)).equals(fixture));
   assert.equal(vm.runInContext('memoryCache.size',grouped.context),Math.ceil(fixture.length/4096));
-  const streamManifest={chunks_per_response:4,stream_chunks:16};
   const streamed=harness({manifest:streamManifest,gzip:true});await streamed.run();
-  assert.equal(streamed.diagnostic().browser_transfer.chunk_requests,Math.ceil(fixture.length/65536));
+  const healthyCount=2+Math.ceil((fixture.length-16384)/16384);
+  assert.equal(streamed.diagnostic().browser_transfer.chunk_requests,healthyCount);
+  assert.deepEqual(spansOf(streamed).slice(0,3).map(p=>Number(p.get('length'))),[8192,8192,16384]);
   const gzipDiagnostic=streamed.diagnostic().browser_transfer;
   assert.equal(gzipDiagnostic.stream_responses,gzipDiagnostic.stream_gzip_responses);
   assert.equal(gzipDiagnostic.stream_responses,gzipDiagnostic.stream_length_advertised_responses);
   assert.equal(gzipDiagnostic.stream_responses,streamed.requests.filter(path=>path.includes('&stream=1')).length);
   assert.equal(gzipDiagnostic.stream_advertised_wire_bytes,streamed.scenario.advertisedBytes);
+  assert.deepEqual(gzipDiagnostic.stream_encoding_reasons,{gzip_tail:healthyCount});
   assert(Buffer.from(vm.runInContext('completedFile',streamed.context)).equals(fixture));
-  const flowing=harness({manifest:streamManifest,steadyNetwork:true});await flowing.run();
+  const flowing=harness({manifest:streamManifest,steadyNetwork:true,gzipReason:'no_gain'});await flowing.run();
   assert.equal(flowing.diagnostic().browser_transfer.stream_fallbacks,undefined);
-  assert.equal(flowing.diagnostic().browser_transfer.chunk_requests,Math.ceil(fixture.length/65536));
+  assert.deepEqual(spansOf(flowing).slice(0,3).map(p=>Number(p.get('length'))),[8192,4096,4096]);
+  assert.equal(flowing.diagnostic().browser_transfer.stream_slow_windows,1);
+  assert.equal(flowing.diagnostic().browser_transfer.stream_slow_at,0);
+  assert.equal(flowing.diagnostic().browser_transfer.stream_last_encoding_reason,'no_gain');
   assert.equal(flowing.diagnostic().browser_transfer.stream_length_advertised_responses,0);
   assert.equal(flowing.diagnostic().browser_transfer.stream_advertised_wire_bytes,0);
   assert.equal(flowing.diagnostic().browser_transfer.stream_gzip_responses,0);
   assert(Buffer.from(vm.runInContext('completedFile',flowing.context)).equals(fixture));
-  for(const fault of ['cut','idle','corrupt','extra']){
+  const slowHeaders=harness({manifest:streamManifest,slowHeadersAt:16384});
+  await slowHeaders.run();
+  const reduced=slowHeaders.diagnostic().browser_transfer;
+  assert.equal(reduced.stream_slow_network_ms,2000);
+  assert.equal(reduced.stream_slow_at,16384);
+  assert.equal(reduced.stream_window_chunks,2);
+  assert.equal(reduced.stream_fallbacks,undefined);
+  assert(Buffer.from(vm.runInContext('completedFile',slowHeaders.context)).equals(fixture));
+  const slowDisk=harness({manifest:streamManifest,storageDelayMs:3000});
+  await slowDisk.run();
+  assert.equal(slowDisk.diagnostic().browser_transfer.stream_slow_windows,undefined);
+  assert.equal(slowDisk.diagnostic().browser_transfer.chunk_requests,healthyCount);
+  for(const fault of ['cut','idle','drip','corrupt','extra']){
     const h=harness({manifest:streamManifest,streamFault:fault});await h.run();
-    const checked = fault==='extra' ? Math.floor((Math.min(fixture.length,65536)-1)/4096)*4096 : 8192;
+    const checked = fault==='drip' ? 0 : 4096;
     const diag=h.diagnostic().browser_transfer;
     assert.equal(diag.stream_fallback_at,checked);
     if(fault==='idle') assert.equal(diag.last_failure.code,'request_timeout');
+    if(fault==='drip') assert.equal(diag.last_failure.code,'packet_timeout');
     const data=h.requests.filter(p=>p.startsWith('/export/chunk')).map(p=>new URL(p,'http://device'));
     assert.equal(Number(data[1].searchParams.get('offset')),checked);
-    if (fixture.length>checked+8*4096+4096)
-      assert(data.slice(2).some(p=>p.searchParams.has('stream')));
+    assert(data.slice(1).every(p=>p.searchParams.has('stream') && Number(p.searchParams.get('length'))<=4096));
     assert(Buffer.from(vm.runInContext('completedFile',h.context)).equals(fixture));
   }
   const stopped=harness({manifest:streamManifest,streamFault:'cancel'});await stopped.run();
   assert.equal(stopped.diagnostic().browser_transfer.phase,'paused');
-  assert.equal(stopped.diagnostic().browser_transfer.confirmed_bytes,8192);
+  assert.equal(stopped.diagnostic().browser_transfer.confirmed_bytes,4096);
   assert.equal(stopped.saves.length,0);
   stopped.scenario.streamFault=null;await stopped.run();
-  assert.equal(stopped.diagnostic().browser_transfer.cached_bytes,8192);
+  assert.equal(stopped.diagnostic().browser_transfer.cached_bytes,4096);
   assert(Buffer.from(vm.runInContext('completedFile',stopped.context)).equals(fixture));
-  const changed=harness({manifest:streamManifest,streamFault:'cut',changedRunAt:8192});await changed.run();
+  const changed=harness({manifest:streamManifest,streamFault:'cut',changedRunAt:4096});await changed.run();
   assert.equal(changed.saves.length,0);
-  assert.equal(changed.diagnostic().browser_transfer.confirmed_bytes,8192);
+  assert.equal(changed.diagnostic().browser_transfer.confirmed_bytes,4096);
   assert.equal(changed.diagnostic().browser_transfer.chunk_requests,2);
   const older=harness({manifest:streamManifest,noStreamApi:true});await older.run();
   assert.equal(older.diagnostic().browser_transfer.chunk_requests,Math.ceil(fixture.length/16384));
   const noReader=harness({manifest:streamManifest,noResponseReader:true});await noReader.run();
   assert.equal(noReader.diagnostic().browser_transfer.chunk_requests,1+Math.ceil(fixture.length/16384));
+  for (const advertised of [1,2,3,99,null]) {
+    // Old firmware omits the hint, future firmware may advertise a wider window.
+    const limited=harness({manifest:{chunks_per_response:4,stream_chunks:16,stream_window_chunks:advertised}});await limited.run();
+    const sizes=spansOf(limited).map(p=>Number(p.get('length')));
+    assert.equal(sizes[0],advertised===1 ? 4096 : 8192);
+    assert.equal(Math.max(...sizes),Math.min(4, advertised || 4)*4096);
+    assert(Buffer.from(vm.runInContext('completedFile',limited.context)).equals(fixture));
+  }
+  const fragile=harness({manifest:streamManifest,failOverBytes:8192});await fragile.run();
+  assert.equal(fragile.diagnostic().browser_transfer.stream_fallbacks,1);
+  assert(spansOf(fragile).slice(3).every(p=>Number(p.get('length'))<=8192));
+  assert(Buffer.from(vm.runInContext('completedFile',fragile.context)).equals(fixture));
+  const identity=harness({manifest:streamManifest,failAllStreams:true});await identity.run();
+  assert.deepEqual(spansOf(identity).slice(0,3).map(p=>[p.get('stream'),p.get('offset'),p.get('length')]),
+    [['1','0','8192'],['1','0','4096'],[null,'0','4096']]);
+  assert.equal(identity.diagnostic().browser_transfer.stream_fallbacks,2);
+  assert(Buffer.from(vm.runInContext('completedFile',identity.context)).equals(fixture));
   const gap=harness({manifest:streamManifest});
   gap.context.cached=gap.packet(8192,4096);
   vm.runInContext("memoryCache.set('0123456789abcdef:8192',cached)",gap.context);

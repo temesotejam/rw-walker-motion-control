@@ -14,14 +14,17 @@ PROBE = r'''
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <string>
 #include <vector>
 int main(int argc, char** argv) {
-  if (argc!=3) return 1;
+  if (argc!=4) return 1;
+  const unsigned chunks=std::stoul(argv[3]);
+  if (!chunks || chunks>export_protocol::kStreamChunks) return 1;
   std::ifstream file(argv[1],std::ios::binary);
   std::vector<uint8_t> input{std::istreambuf_iterator<char>(file),{}};
   std::ofstream out(argv[2],std::ios::binary);
   auto codec=std::make_unique<tdefl_compressor>();
-  const uint32_t block=export_protocol::kChunkBytes, window=block*export_protocol::kStreamChunks;
+  const uint32_t block=export_protocol::kChunkBytes, window=block*chunks;
   std::vector<uint8_t> packet(block+16);
   for (size_t pos=0; pos<input.size();pos+=window) {
     const uint32_t n=std::min<size_t>(window,input.size()-pos);
@@ -78,6 +81,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('rwlog', type=Path)
     parser.add_argument('--miniz', type=Path, required=True, help='miniz.c from the upstream v114 tag')
+    parser.add_argument('--window-chunks', type=int, choices=(1, 2, 4, 16), default=4,
+                        help='number of 4 KiB packets in each HTTP response (default: 4)')
     args = parser.parse_args()
     with tempfile.TemporaryDirectory() as tmp:
         d = Path(tmp)
@@ -95,7 +100,7 @@ if __name__ == '__main__':
         random_file.write_bytes(hashlib.shake_256(b'raw fallback').digest(64001))
         for path in (args.rwlog, random_file):
             wire = d/'response.bin'
-            subprocess.run([exe,path,wire],check=True)
+            subprocess.run([exe,path,wire,str(args.window_chunks)],check=True)
             stats = verify(path,wire.read_bytes())
             if path == random_file:
                 assert stats['gzip_windows'] == 0

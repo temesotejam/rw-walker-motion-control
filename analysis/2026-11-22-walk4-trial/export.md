@@ -21,6 +21,6 @@ PC内のHTTP接続を使い、Microsoft Edge 158の実際のFetchとIndexedDBで
 PCでの再現にはESP32-S3 SDKと同じ省メモリ設定のminiz v1.14を用いた。試験用入力ソースのSHA-256は `254342f2712562d9cd86a1c5a5d7a6875d1d9f87e56a7b39b86d847368f9bebe`。[使用したminizソース](https://github.com/richgel999/miniz/blob/48605fb1bd5662effe13b789d866981225e71256/miniz.c)
 
 ```powershell
-python -B analysis/2026-11-22-walk4-trial/measure_export.py "C:/Users/arika/Downloads/energy_control_autonomous_run_1_33406765.rwlog" --miniz path/to/miniz.c
+python -B analysis/2026-11-22-walk4-trial/measure_export.py "C:/Users/arika/Downloads/energy_control_autonomous_run_1_33406765.rwlog" --miniz path/to/miniz.c --window-chunks 16
 node test/test_runtime_export_retry.js "C:/Users/arika/Downloads/energy_control_autonomous_run_1_33406765.rwlog"
 ```

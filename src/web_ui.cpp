@@ -18,6 +18,7 @@
 #include "export_gzip.h"
 #include <algorithm>
 #include <memory>
+#include <new>
 #include <errno.h>
 
 static_assert(ARDUINO_EVENT_RUNNING_CORE == 0, "Wi-Fi events must run outside the control core");
@@ -152,6 +153,10 @@ void WebUi::update() {
     return;
   }
   RuntimeDiag::phase(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpPoll);
+  if (listener_rebind_pending_ && millis() - last_listener_bind_ms_ >= 1000) {
+    last_listener_bind_ms_ = millis();
+    listener_rebind_pending_ = !startHttpListener();
+  }
   if (server_) server_->handleClient();
   const uint32_t now = millis();
   const auto response = server_ ? server_->lastResponse() : BoundedWriteWebServer::Response::None;
@@ -184,7 +189,15 @@ bool WebUi::requestWifiRecovery(bool manual) {
        ((manual || ready_stall) && ready));
   // A confirmed READY stall has its own one-shot budget; share the full stop
   // checks and cooldown with the USB command and post-run transport repairs.
-  if (!recovery_.requestRepair(now, stopped, manual || ready_stall)) return false;
+  const auto repair = recovery_.requestRepair(now, stopped, manual || ready_stall);
+  if (repair == ExportTransportRecovery::Repair::None) return false;
+  if (repair == ExportTransportRecovery::Repair::HttpListener) {
+    closeHttpTransport();
+    last_listener_bind_ms_ = now;
+    listener_rebind_pending_ = !startHttpListener();
+    return true;
+  }
+  listener_rebind_pending_ = false;
   ready_http_stall_.repairIssued();
   wifi_restart_.request();
   return true;
@@ -678,15 +691,16 @@ void WebUi::manifest() {
   char body[800];
   snprintf(body, sizeof(body),
       "{\"phase\":\"%s\",\"token\":\"%s\",\"bytes\":%lu,\"hashed_bytes\":%lu,\"crc32\":%lu,"
-      "\"chunk_bytes\":%u,\"chunks_per_response\":%u,\"stream_chunks\":%u,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"run_id\":%u,\"metadata_bytes\":%lu,"
-      "\"completion_ack\":true,\"wifi_recovery_count\":%lu,"
+      "\"chunk_bytes\":%u,\"chunks_per_response\":%u,\"stream_chunks\":%u,\"stream_window_chunks\":%u,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"run_id\":%u,\"metadata_bytes\":%lu,"
+      "\"completion_ack\":true,\"wifi_recovery_count\":%lu,\"export_http_recovery_count\":%lu,"
       "\"export_memory\":{\"sampled_ms\":%lu,\"internal_free\":%lu,\"internal_min_free\":%lu,\"internal_largest\":%lu}}",
       phase(s.phase), s.token, static_cast<unsigned long>(s.bytes), static_cast<unsigned long>(s.hashed_bytes),
       static_cast<unsigned long>(s.crc), static_cast<unsigned>(export_protocol::kChunkBytes),
       static_cast<unsigned>(export_protocol::kChunksPerResponse), static_cast<unsigned>(export_protocol::kStreamChunks),
-      s.filename, s.error,
+      static_cast<unsigned>(export_protocol::kPreferredStreamChunks), s.filename, s.error,
       static_cast<unsigned long>(boot_id_), static_cast<unsigned>(s.run_id), static_cast<unsigned long>(s.metadata_bytes),
       static_cast<unsigned long>(wifi_restart_.count()),
+      static_cast<unsigned long>(recovery_.listenerRecoveryCount()),
       static_cast<unsigned long>(millis()),
       static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
       static_cast<unsigned long>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
@@ -724,24 +738,42 @@ bool WebUi::makeExportPacket(const char* token, uint32_t offset, uint32_t length
   return true;
 }
 
-bool WebUi::sendCompressedWindow(const char* token, uint32_t offset, uint32_t length) {
-  // Temporary PSRAM only while serving a sealed log. Identity remains available
-  // if the allocation or compression fails before any response is sent.
+bool WebUi::sendCompressedWindow(const char* token, uint32_t offset, uint32_t length, const char*& reason) {
   const uint32_t plain = export_protocol::packetBytes(length);
-  std::unique_ptr<tdefl_compressor, decltype(&free)> codec(
-      static_cast<tdefl_compressor*>(ps_malloc(sizeof(tdefl_compressor))), free);
-  std::unique_ptr<uint8_t, decltype(&free)> encoded(static_cast<uint8_t*>(ps_malloc(plain)), free);
-  if (!codec || !encoded || plain <= 18) return false;
-  const size_t used = export_gzip::encode(*codec, encoded.get(), plain, chunk_buffer_, offset, length,
-      [&](uint32_t at, uint32_t n) { return makeExportPacket(token, at, n); });
+  using Codec = tdefl_compressor;
+  // A sealed export already owns a large PSRAM allocation. Its unused suffix
+  // often holds both buffers even when no comparably large free block exists.
+  auto* storage = static_cast<uint8_t*>(export_->transferWorkspace(token, sizeof(Codec) + plain, alignof(Codec)));
+  uint8_t* encoded = nullptr;
+  std::unique_ptr<void, decltype(&free)> codec_allocation(nullptr, free), output_allocation(nullptr, free);
+  const bool both_in_tail = storage != nullptr;
+  if (storage) {
+    encoded = storage + sizeof(Codec);
+  } else {
+    storage = static_cast<uint8_t*>(export_->transferWorkspace(token, sizeof(Codec), alignof(Codec)));
+    if (!storage) {
+      codec_allocation.reset(ps_malloc(sizeof(Codec)));
+      storage = static_cast<uint8_t*>(codec_allocation.get());
+      encoded = static_cast<uint8_t*>(export_->transferWorkspace(token, plain, 1));
+    }
+    if (storage && !encoded) {
+      output_allocation.reset(ps_malloc(plain));
+      encoded = static_cast<uint8_t*>(output_allocation.get());
+    }
+  }
+  if (!storage || !encoded) { reason = "no_workspace"; return false; }
+  Codec* codec = new (storage) Codec;
+  const size_t used = export_gzip::encode(*codec, encoded, plain, chunk_buffer_, offset, length,
+      [&](uint32_t at, uint32_t n) { return makeExportPacket(token, at, n); }, &reason);
   if (!used) return false;
-  codec.reset();
+  codec_allocation.reset();
+  server_->sendHeader("X-RWLOG-Gzip", both_in_tail ? "gzip_tail" : "gzip_heap");
   server_->sendHeader("Content-Encoding", "gzip");
   server_->setContentLength(used);
   server_->send(200, "application/octet-stream", "");
   for (size_t at = 0; at < used && server_->lastResponse() == BoundedWriteWebServer::Response::Complete;) {
     const size_t n = std::min<size_t>(export_protocol::kChunkBytes, used - at);
-    server_->sendContent(reinterpret_cast<const char*>(encoded.get() + at), n);
+    server_->sendContent(reinterpret_cast<const char*>(encoded + at), n);
     at += n;
   }
   return true; // the HTTP response has already started
@@ -766,16 +798,19 @@ void WebUi::chunk() {
     server_->send(409, "text/plain", "export_token_or_range_mismatch"); return;
   }
   recovery_.chunkRequested(millis(), offset);
+  server_->beginExportResponse();
   server_->sendHeader("Cache-Control", "no-store");
   const uint32_t end = offset + length;
   if (stream) {
     server_->sendHeader("Vary", "Accept-Encoding");
     const String accept = server_->header("Accept-Encoding");
     const auto encoding = runtime_page::selectEncoding(accept.c_str());
-    if (encoding == runtime_page::Encoding::Gzip && sendCompressedWindow(token.c_str(), offset, length)) {
+    const char* reason = "identity_not_negotiated";
+    if (encoding == runtime_page::Encoding::Gzip && sendCompressedWindow(token.c_str(), offset, length, reason)) {
       if (server_->lastResponse() == BoundedWriteWebServer::Response::Complete) recovery_.chunkServed(millis(), end);
       return;
     }
+    server_->sendHeader("X-RWLOG-Gzip", reason);
     if (runtime_page::selectEncoding(accept.c_str(), false) == runtime_page::Encoding::Unacceptable) {
       server_->send(406, "text/plain", "unsupported_encoding"); return;
     }

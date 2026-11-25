@@ -2,7 +2,13 @@
 #include "runtime_diagnostics.h"
 #include <Arduino.h>
 #include <errno.h>
+#include <lwip/opt.h>
 #include <lwip/sockets.h>
+
+void BoundedWriteWebServer::beginExportResponse() {
+  export_started_ms_ = millis();
+  export_response_ = true;
+}
 
 void BoundedWriteWebServer::closeTransport() {
   _currentClient.stop();
@@ -14,6 +20,7 @@ void BoundedWriteWebServer::closeTransport() {
 
 void BoundedWriteWebServer::handleClient() {
   response_ = Response::None;
+  export_response_ = false;
   // The Arduino server gives one TCP client up to 5 s to send its first byte.
   // A browser can preconnect an empty socket ahead of the 2.5 s status poll.
   // Give that client a grace period, then let a queued connection use the slot.
@@ -37,14 +44,19 @@ size_t BoundedWriteWebServer::pacedWrite(const uint8_t* buffer, size_t length, c
     return 0;
   }
   size_t total = 0;
-  const uint32_t begin = millis();
-  uint32_t last_progress = begin;
-  // Permit a slow client while bounding each write by idle and total deadlines.
+  const uint32_t begin = export_response_ ? export_started_ms_ : millis();
+  const uint32_t total_limit_ms = export_response_ ? 6000 : 15000;
+  uint32_t last_progress = millis();
+  // Leave time for the browser to retry; a trickle through many sendContent()
+  // calls must not keep the single HTTP handler occupied for minutes.
   int write_error = 0;
   while (total < length &&
-         static_cast<uint32_t>(millis() - begin) < 15000 &&
+         static_cast<uint32_t>(millis() - begin) < total_limit_ms &&
          static_cast<uint32_t>(millis() - last_progress) < 3000) {
-    const size_t n = length - total < 1024 ? length - total : 1024;
+    // TCP_NODELAY is active. A full segment avoids sending a 16-byte tail
+    // after four 1024-byte writes of a typical 4112-byte export packet.
+    const size_t slice = export_response_ ? TCP_MSS : 1024;
+    const size_t n = length - total < slice ? length - total : slice;
     const int sent = ::send(fd, buffer + total, n, MSG_DONTWAIT);
     if (sent > 0) { total += sent; last_progress = millis(); write_error = 0; }
     else {
@@ -52,7 +64,7 @@ size_t BoundedWriteWebServer::pacedWrite(const uint8_t* buffer, size_t length, c
       if (write_error != EAGAIN && write_error != EWOULDBLOCK &&
           write_error != ENOMEM && write_error != ENOBUFS && write_error != EINTR) break;
     }
-    vTaskDelay(1);
+    vTaskDelay(sent < 0 && export_response_ ? 5 : 1);
   }
   RuntimeDiag::httpWriteResult(total, length, total < length && !write_error ? ETIMEDOUT : write_error);
   if (total != length) {

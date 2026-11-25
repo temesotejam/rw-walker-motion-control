@@ -128,6 +128,24 @@ int main() {
     fixed.handleClient();
     assert(fixed.lastResponse() == Response::None);
   }
+  // Repeated short writes can each succeed while the transaction as a whole
+  // exceeds its deadline. Later requests must get the socket immediately.
+  fixed.dispatch = [](WebServer& s) {
+    auto& b = static_cast<BoundedWriteWebServer&>(s);
+    b.beginExportResponse();
+    for (unsigned i = 0; i < 8; ++i) {
+      s.reply();
+      if (b.lastResponse() != Response::Complete) break;
+      delay(1100);
+    }
+  };
+  socket_error = 0; sent_calls = 0;
+  Connection trickle{true}, resumed{true};
+  fixed.queue(trickle); fixed.queue(resumed); fixed.handleClient();
+  assert(fixed.lastResponse() == Response::Incomplete && trickle.closed && sent_calls == 12);
+  fixed.dispatch = [](WebServer& s) { s.reply(); };
+  fixed.handleClient();
+  assert(resumed.served == 1 && fixed.lastResponse() == Response::Complete);
 }
 """
 
@@ -137,6 +155,7 @@ def main():
         root = Path(directory)
         (root / "WebServer.h").write_text(SERVER, encoding="utf8")
         (root / "lwip").mkdir()
+        (root / "lwip/opt.h").write_text("#define TCP_MSS 1436\n", encoding="utf8")
         (root / "lwip/sockets.h").write_text(
             "#define MSG_DONTWAIT 0\nint send(int,const void*,size_t,int);\n",
             encoding="utf8",

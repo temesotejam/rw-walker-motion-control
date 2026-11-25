@@ -13,6 +13,8 @@ class BoundedWriteWebServer : public WebServer {
   void handleClient() override;
   void closeTransport();
   Response lastResponse() const { return response_; }
+  // Header and all packet writes share one deadline for the requested log range.
+  void beginExportResponse();
 
  protected:
   size_t _currentClientWrite(const char* buffer, size_t length) override;
@@ -20,6 +22,8 @@ class BoundedWriteWebServer : public WebServer {
 
  private:
   uint32_t last_queue_probe_ms_ = 0;
+  uint32_t export_started_ms_ = 0;
+  bool export_response_ = false;
   Response response_ = Response::None;
   size_t pacedWrite(const uint8_t* buffer, size_t length, const char* source_tag);
 };

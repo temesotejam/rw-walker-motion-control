@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <string.h>
+#include <memory>
 #include <utility>
 
 // Large exports must never fall back to scarce internal/DMA RAM. Fixed capacity,
@@ -41,6 +42,13 @@ class PsramString {
   // Formatting or rejecting an optional row may consume time without appending bytes.
   void checkpoint() const { if (progress_) progress_(progress_context_, length_); }
   size_t length() const { return length_; }
+  // The owner may borrow unused storage only while the string remains sealed.
+  void* unusedTail(size_t bytes, size_t alignment) {
+    if (!ok() || !bytes || !alignment || (alignment & (alignment - 1))) return nullptr;
+    void* cursor = data_ + length_ + 1;  // preserve the published NUL as well
+    size_t space = capacity_ - length_;
+    return std::align(alignment, bytes, cursor, space);
+  }
   const char* c_str() const { return data_ ? data_ : ""; }
   bool ok() const { return data_ && !failure_; }
   const char* failureReason() const { return failure_ ? failure_ : (data_ ? nullptr : "reserve"); }

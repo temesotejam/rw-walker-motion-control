@@ -22,6 +22,8 @@ class ImmutableExport {
   bool reset();
   Status status() const;
   bool chunk(const char* token, uint32_t offset, uint32_t length, uint8_t* out) const;
+  // Only the synchronous HTTP handler may borrow this until it returns.
+  void* transferWorkspace(const char* token, size_t bytes, size_t alignment);
  private:
   static void entry(void* p) { static_cast<ImmutableExport*>(p)->loop(); }
   void loop();

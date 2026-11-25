@@ -97,6 +97,11 @@ void ImmutableExport::build() {
   complete.phase = Phase::Ready;
   portENTER_CRITICAL(&mux_); status_ = complete; portEXIT_CRITICAL(&mux_);
 }
+void* ImmutableExport::transferWorkspace(const char* token, size_t bytes, size_t alignment) {
+  const auto s = status();
+  if (s.phase != Phase::Ready || !token || strcmp(s.token, token)) return nullptr;
+  return metadata_.unusedTail(bytes, alignment);
+}
 bool ImmutableExport::chunk(const char* token, uint32_t offset, uint32_t length, uint8_t* out) const {
   const auto s = status();
   if (s.phase != Phase::Ready || !token || strcmp(s.token, token)) return false;

@@ -8,7 +8,8 @@ namespace export_gzip {
 // The caller owns all workspace. The compressed result must reduce wire bytes.
 template <class Fill>
 size_t encode(tdefl_compressor& codec, uint8_t* encoded, size_t capacity, uint8_t* packet,
-              uint32_t offset, uint32_t length, Fill fill) {
+              uint32_t offset, uint32_t length, Fill fill, const char** failure = nullptr) {
+  if (failure) *failure = "codec_error";
   if (!length || length > export_protocol::kStreamChunks * export_protocol::kChunkBytes ||
       offset > UINT32_MAX - length || !encoded || !packet || capacity <= 18) return 0;
   const uint32_t plain = export_protocol::packetBytes(length);
@@ -21,17 +22,21 @@ size_t encode(tdefl_compressor& codec, uint8_t* encoded, size_t capacity, uint8_
     const uint32_t n = std::min(export_protocol::kChunkBytes, length - done);
     if (!fill(offset + done, n)) return 0;
     size_t input = n + 16, output = capacity - 8 - used;
-    if (!output) return 0;
+    if (!output) { if (failure) *failure = "no_gain"; return 0; }
+    const size_t available = output;
     checksum = export_protocol::crc32(checksum, packet, input);
     done += n;
     // Flush packet boundaries so the browser can persist full packets from a truncated response.
     const bool final = done == length;
     const auto status = tdefl_compress(&codec, packet, &input, encoded + used, &output,
                                        final ? TDEFL_FINISH : TDEFL_SYNC_FLUSH);
-    if (input != n + 16 || status != (final ? TDEFL_STATUS_DONE : TDEFL_STATUS_OKAY)) return 0;
+    if (input != n + 16 || status != (final ? TDEFL_STATUS_DONE : TDEFL_STATUS_OKAY)) {
+      if (failure && status >= 0 && output == available) *failure = "no_gain";
+      return 0;
+    }
     used += output;
   }
-  if (used + 8 >= plain) return 0;
+  if (used + 8 >= plain) { if (failure) *failure = "no_gain"; return 0; }
   const uint32_t trailer[] = {checksum, plain};  // gzip trailer is little endian, as is ESP32-S3
   memcpy(encoded + used, trailer, sizeof(trailer));
   return used + sizeof(trailer);

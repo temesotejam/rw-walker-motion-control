@@ -38,7 +38,7 @@ class WebUi {
   void confirmExport();
   bool reserveChunkBuffer();
   bool makeExportPacket(const char* token, uint32_t offset, uint32_t length);
-  bool sendCompressedWindow(const char* token, uint32_t offset, uint32_t length);
+  bool sendCompressedWindow(const char* token, uint32_t offset, uint32_t length, const char*& reason);
   void chunk();
   void previewCapture();
   void previewChunk();
@@ -60,6 +60,8 @@ class WebUi {
   ReadyHttpStallRecovery ready_http_stall_;
   WifiTransportRestart wifi_restart_;
   uint32_t recovery_poll_ms_ = 0;
+  bool listener_rebind_pending_ = false;
+  uint32_t last_listener_bind_ms_ = 0;
   bool start_observed_ = false;
   uint32_t offline_poll_ms_ = 0;
   uint32_t start_command_id_ = 0;

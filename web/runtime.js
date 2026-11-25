@@ -7,7 +7,7 @@ let lastPeriodicStatusAt = 0, lastStatusFailure = null;
 let diagnosticInFlight = false;
 let transferRunning = false, cancelTransfer = false, completedFile = null, completedName = '', completedFoot = null;
 let transferAbort = null, transferDiagnostic = null, pendingExportPause = null;
-const exportPolicy = {requestTimeoutMs:8000, maxAttempts:5, buildWaitMs:120000, pollMs:500};
+const exportPolicy = {requestTimeoutMs:8000, promptWindowMs:2000, chunkIdleMs:4000, packetWaitMs:8000, maxAttempts:5, buildWaitMs:120000, pollMs:500};
 let wheelWorkReport = null;
 function calculateWheelWork() {
   wheelWorkReport = null;
@@ -50,14 +50,17 @@ function crc32(data, crc = 0) {
 }
 async function request(path, {method = 'GET', kind = 'json', timeout = 3000, signal = null, readBody = null} = {}) {
   const controller = new AbortController();
-  let timedOut = false;
+  let timeoutCode;
   const abortFromCaller = () => controller.abort();
   if (signal?.aborted) abortFromCaller();
   else signal?.addEventListener('abort', abortFromCaller, {once:true});
   let timer;
-  function waitingForNetwork(waiting) {
+  function waitingForNetwork(waiting, packetBudget = Infinity) {
     clearTimeout(timer);
-    if (waiting) timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeout);
+    if (waiting) timer = setTimeout(() => {
+      timeoutCode = packetBudget <= timeout ? 'packet_timeout' : 'request_timeout';
+      controller.abort();
+    }, Math.min(timeout, Math.max(0, packetBudget)));
   }
   waitingForNetwork(true);
   try {
@@ -74,10 +77,12 @@ async function request(path, {method = 'GET', kind = 'json', timeout = 3000, sig
     return await response.json();
   } catch (error) {
     if (readBody) controller.abort();
-    if (timedOut) {
-      const failure = new Error(`通信の応答待ちが${timeout / 1000}秒を超えました（${path.split('?')[0]}）。`);
-      failure.name = 'RequestTimeoutError'; failure.code = 'request_timeout';
-      failure.path = path.split('?')[0]; failure.timeout_ms = timeout;
+    if (timeoutCode) {
+      const packetTimeout = timeoutCode === 'packet_timeout';
+      const failure = new Error(packetTimeout ? 'ログのパケットを8秒以内に受信完了できませんでした。' :
+        `通信の応答待ちが${timeout / 1000}秒を超えました（${path.split('?')[0]}）。`);
+      failure.name = 'RequestTimeoutError'; failure.code = timeoutCode;
+      failure.path = path.split('?')[0]; failure.timeout_ms = packetTimeout ? exportPolicy.packetWaitMs : timeout;
       throw failure;
     }
     throw error;
@@ -102,7 +107,7 @@ function supportTransferTrial(s) {
   return /^walking-support-transfer-v39(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function singleWalkingBuild(s = latest) {
-  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3', 'walking-support-transfer-v39-walk4', 'walking-support-transfer-v39-walk5', 'walking-support-transfer-v39-walk5-logfix1'].includes(s?.diagnostic_build_id);
+  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3', 'walking-support-transfer-v39-walk4', 'walking-support-transfer-v39-walk5', 'walking-support-transfer-v39-walk5-logfix1', 'walking-support-transfer-v39-walk5-logfix2'].includes(s?.diagnostic_build_id);
 }
 function foreAftStopText(reason) {
   return ({
@@ -794,9 +799,16 @@ function exportPackets(bytes, offset, length, chunkBytes) {
   }
   return packets;
 }
-async function streamExportPackets(response, waiting, offset, length, chunkBytes, commit) {
+async function streamExportPackets(response, waiting, offset, length, chunkBytes, commit, headerWaitMs) {
   // These are advertised HTTP body lengths, including incomplete responses and retries.
   const encoding = response.headers?.get('Content-Encoding') ?? '';
+  const gzipReason = response.headers?.get('X-RWLOG-Gzip');
+  if (gzipReason) {
+    const reasons = transferDiagnostic.stream_encoding_reasons;
+    const key = ['gzip_tail','gzip_heap','no_workspace','no_gain','codec_error','identity_not_negotiated'].includes(gzipReason) ? gzipReason : 'other';
+    reasons[key] = (reasons[key] || 0) + 1;
+    transferNote({stream_last_encoding_reason:key});
+  }
   const size = response.headers?.get('Content-Length');
   const lengthKnown = typeof size === 'string' && /^\d+$/.test(size) && Number.isSafeInteger(Number(size));
   transferNote({
@@ -813,20 +825,26 @@ async function streamExportPackets(response, waiting, offset, length, chunkBytes
   // Fetch supplies decompressed bytes. A network read can split even the 16-byte header.
   const end = offset + length;
   let packet = new Uint8Array(16 + Math.min(chunkBytes, length)), filled = 0;
+  let packetBudget = exportPolicy.packetWaitMs, networkWaitMs = headerWaitMs;
   try {
-    waiting(true);
     for (;;) {
       transferCheck();
+      waiting(true, packetBudget);
+      const readStarted = Date.now();
       const {value, done} = await reader.read();
+      const readWaitMs = Math.max(0, Date.now() - readStarted);
+      packetBudget -= readWaitMs;
+      networkWaitMs += readWaitMs;
+      waiting(false); // Exclude local validation and IndexedDB writes from the network budget.
       if (done) break;
       if (!value.length) continue;
-      waiting(false); // IndexedDB writes and local validation are not Wi-Fi idle time.
       for (let i = 0; i < value.length;) {
         if (offset === end) throw new Error('チャンク長の不一致');
         const n = Math.min(packet.length - filled, value.length - i);
         packet.set(value.subarray(i, i+n), filled); i += n; filled += n;
         if (filled === packet.length) {
           validateChunk(packet, offset, Math.min(chunkBytes, end-offset));
+          packetBudget = exportPolicy.packetWaitMs;
           offset += filled - 16;
           if (offset < end) {
             await commit(packet);
@@ -835,11 +853,10 @@ async function streamExportPackets(response, waiting, offset, length, chunkBytes
           }
         }
       }
-      waiting(true);
     }
-    waiting(false);
     if (offset !== end) throw new Error('チャンク長の不一致');
     await commit(packet); // Check the response terminator before publishing its last packet.
+    return networkWaitMs;
   } catch (error) {
     // An invalid body may still own the walker's only active HTTP connection.
     reader.cancel().catch(() => {});
@@ -941,7 +958,7 @@ async function exportRequest(path, options, label, validate = value => value, tr
     transferNote({request:path, attempt, request_started_at:new Date().toISOString()});
     if (transferDiagnostic.phase === 'chunks') transferNote({chunk_requests:transferDiagnostic.chunk_requests + 1});
     try {
-      const value = await request(path, {...options, timeout:exportPolicy.requestTimeoutMs, signal:transferAbort?.signal});
+      const value = await request(path, {timeout:exportPolicy.requestTimeoutMs, ...options, signal:transferAbort?.signal});
       transferCheck();
       return validate(value);
     } catch (error) {
@@ -951,7 +968,7 @@ async function exportRequest(path, options, label, validate = value => value, tr
       const preparingRun = path.split('?')[0] === '/export/prepare' && error.status === 409 && error.responseText === 'run_preparing';
       const permanent = !preparingRun && Number.isInteger(error.status) && error.status >= 400 && error.status < 500 &&
         ![408,429].includes(error.status);
-      const linkLost = error.name === 'TypeError' || error.code === 'request_timeout';
+      const linkLost = error.name === 'TypeError' || error.code === 'request_timeout' || error.code === 'packet_timeout';
       const busy = [408,429,502,503,504].includes(error.status);
       const maxAttempts = canResume && (linkLost || busy) ? 20 :
         hasWifiRecovery && linkLost ? 9 : exportPolicy.maxAttempts;
@@ -968,10 +985,11 @@ async function download() {
   transferAbort = new AbortController();
   const session = latest?.wifi_export_recovery === true && Number.isInteger(latest.boot_id) && Number.isInteger(latest.run_id)
     ? {client:Math.floor(Math.random() * 0xffffffff) + 1, boot_id:latest.boot_id, run_id:latest.run_id} : null;
-  transferDiagnostic = {revision:'resumable_export_stream_v4', phase:'prepare',
+  transferDiagnostic = {revision:'resumable_export_stream_v5', phase:'prepare',
     started_at:new Date().toISOString(), boot_id:latest?.boot_id ?? null, run_id:latest?.run_id ?? null,
     confirmed_bytes:0, cached_bytes:0, received_bytes:0, retries:0, chunk_requests:0,
     stream_responses:0, stream_gzip_responses:0, stream_length_advertised_responses:0, stream_advertised_wire_bytes:0,
+    stream_encoding_reasons:{},
     manifest:null, last_failure:null};
   try {
     $('progress').value = 0;
@@ -1015,9 +1033,17 @@ async function download() {
     await pruneCache(m.token);
     transferNote({phase:'chunks'});
     const file = new Uint8Array(m.bytes); $('progress').max = m.bytes; $('progress').value = 0;
-    const group = m.chunks_per_response === 4 ? 4 : 1;
+    let group = m.chunks_per_response === 4 ? 4 : 1;
     let streamEnabled = m.stream_chunks === 16 && typeof ReadableStream !== 'undefined';
-    let offset = 0, streamCooldown = 0, singleRemaining = 0, failedBatches = 0;
+    let streamLimit = Number.isInteger(m.stream_window_chunks) && m.stream_window_chunks > 0
+      ? Math.min(4, m.stream_window_chunks) : 4;
+    let streamWindow = Math.min(2, streamLimit), healthyWindows = 0;
+    let offset = 0, singleRemaining = 0, failedBatches = 0;
+    function reduceStreamWindow(packets) {
+      streamLimit = Math.max(1, Math.floor(packets / 2));
+      streamWindow = streamLimit;
+      healthyWindows = 0;
+    }
     async function commit(packet, cached = false) {
       transferCheck();
       const payload = packet.subarray(16);
@@ -1039,8 +1065,7 @@ async function download() {
       } else {
         // End a batch before an already retained packet, including after a page reload.
         let requested = length;
-        const stream = streamEnabled && !streamCooldown && !singleRemaining;
-        const count = stream ? m.stream_chunks : (!singleRemaining && failedBatches < 2 ? group : 1);
+        const count = streamEnabled ? streamWindow : (!singleRemaining && failedBatches < 2 ? group : 1);
         // Queue the disk lookups together. Resume may already have retained disjoint ranges.
         const pending = [];
         for (let next = offset + length; next < m.bytes && pending.length < count-1; next += m.chunk_bytes)
@@ -1050,32 +1075,53 @@ async function download() {
           requested += Math.min(m.chunk_bytes, m.bytes - offset - requested);
         }
         const batched = requested > m.chunk_bytes;
-        const streaming = stream && batched;
         const path = `/export/chunk?token=${m.token}&offset=${offset}&length=${requested}` +
-          (streaming ? '&stream=1' : batched ? '&batch=1' : '');
+          (streamEnabled ? '&stream=1' : batched ? '&batch=1' : '');
         try {
           const label = `${offset} bytesまで取得済み`;
-          if (streaming) {
-            const start = offset;
-            await exportRequest(path, {readBody:(response, waiting) =>
-              streamExportPackets(response, waiting, start, requested, m.chunk_bytes, commit)}, label, undefined, true);
+          if (streamEnabled) {
+            const start = offset, started = Date.now();
+            transferNote({stream_window_chunks:streamWindow});
+            const networkMs = await exportRequest(path, {timeout:exportPolicy.chunkIdleMs, readBody:(response, waiting) =>
+              streamExportPackets(response, waiting, start, requested, m.chunk_bytes, commit, Math.max(0, Date.now() - started))}, label, undefined, true);
+            // Only full requests measure the selected window. Count header and reader waits,
+            // excluding CRC and local cache writes, so slow storage cannot shrink the radio window.
+            const fullWindow = requested === streamWindow * m.chunk_bytes;
+            if (fullWindow && networkMs >= exportPolicy.promptWindowMs && streamWindow > 1) {
+              reduceStreamWindow(streamWindow);
+              transferNote({stream_slow_windows:(transferDiagnostic.stream_slow_windows || 0) + 1,
+                stream_slow_at:start, stream_slow_network_ms:networkMs, stream_window_chunks:streamWindow});
+            } else if (fullWindow && networkMs < exportPolicy.promptWindowMs) {
+              if (++healthyWindows >= 2) {
+                streamWindow = Math.min(streamWindow * 2, streamLimit);
+                healthyWindows = 0;
+              }
+            } else healthyWindows = 0;
           } else {
-            const packets = await exportRequest(path, {kind:'bytes'}, label,
+            const packets = await exportRequest(path, {kind:'bytes', timeout:exportPolicy.chunkIdleMs}, label,
               bytes => exportPackets(bytes, offset, requested, m.chunk_bytes), batched);
             for (const packet of packets) await commit(packet);
-            streamCooldown = Math.max(0, streamCooldown-packets.length);
           }
           if (batched) failedBatches = 0;
-          else if (singleRemaining && --singleRemaining === 0 && streamEnabled) failedBatches = 0;
+          else if (singleRemaining) --singleRemaining;
         } catch (error) {
           transferCheck();
-          if (!batched || (error.status >= 400 && error.status < 500 && ![408,429].includes(error.status))) throw error;
-          if (streaming) {
+          if (error.status >= 400 && error.status < 500 && ![408,429].includes(error.status)) throw error;
+          if (streamEnabled) {
             if (error.code === 'reader_unavailable') streamEnabled = false;
-            streamCooldown = 8;
-            transferNote({stream_fallback_at:offset, stream_fallbacks:(transferDiagnostic.stream_fallbacks || 0)+1});
+            else {
+              // Never retry a failed size in this download. After a partial stream, offset
+              // already points at the first unverified packet; cap using the actual request.
+              const packetsRequested = Math.ceil(requested / m.chunk_bytes);
+              reduceStreamWindow(packetsRequested);
+              if (packetsRequested === 1) { streamEnabled = false; group = 1; }
+              await waitForTransfer(500);
+            }
+            transferNote({stream_fallback_at:offset, stream_window_chunks:streamEnabled ? streamWindow : 0,
+              stream_fallbacks:(transferDiagnostic.stream_fallbacks || 0)+1});
             continue;
           }
+          if (!batched) throw error;
           // Retry this offset as individual packets. After eight successful reads, try a batch
           // again. Two consecutive unsuccessful batches keep this connection in single-packet mode.
           ++failedBatches;

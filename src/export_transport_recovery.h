@@ -2,26 +2,33 @@
 #include <stdint.h>
 #include <string.h>
 
-// HTTP-task owned. Browsing is sufficient liveness until a download is
-// requested. During a download only progress on that export extends its grace.
+// Owned by the HTTP task. Export progress and Wi-Fi reachability have
+// separate clocks: a stalled range can still have a working Wi-Fi link.
 class ExportTransportRecovery {
  public:
   static constexpr uint32_t kQuietMs = 35000;
   static constexpr uint32_t kTransferStallMs = 20000;
+  enum class Repair { None, HttpListener, WifiRadio };
 
-  void startRun() { state_ = State::Idle; }
+  void startRun() {
+    state_ = State::Idle;
+    radio_used_ = false;
+    listener_attempted_ = false;
+    listener_recoveries_ = 0;
+  }
   void sealed(uint32_t now) {
     if (state_ != State::Idle) return;
     state_ = State::Sealed;
-    repairs_ = 0;
     last_activity_ms_ = now;
   }
   bool awaitingDownload() const {
-    return (state_ == State::Sealed && repairs_ == 0) ||
-           (state_ == State::Downloading && repairs_ < kMaxTransferRepairs);
+    return (state_ == State::Sealed && !radio_used_) ||
+           (state_ == State::Downloading && (!listener_attempted_ || !radio_used_));
   }
+  uint32_t listenerRecoveryCount() const { return listener_recoveries_; }
   void onRequest(uint32_t now) {
     if (state_ == State::Sealed) last_activity_ms_ = now;
+    if (state_ == State::Downloading) last_request_ms_ = now;
   }
   void downloadRequested(uint32_t now, uint32_t client) {
     if (state_ == State::Idle ||
@@ -31,6 +38,7 @@ class ExportTransportRecovery {
     build_bytes_ = 0;
     chunk_offset_ = UINT32_MAX;
     sent_end_ = 0;
+    last_request_ms_ = now;
     progress(now);
   }
   bool pauseDownload(uint32_t client) {
@@ -46,12 +54,14 @@ class ExportTransportRecovery {
   void chunkRequested(uint32_t now, uint32_t offset) {
     // The next distinct, validated offset is evidence of client progress,
     // including a resume from a different cache. Repeating one offset is not.
-    if (state_ != State::Downloading || offset == chunk_offset_) return;
+    if (state_ != State::Downloading) return;
+    last_request_ms_ = now;
+    if (offset == chunk_offset_) return;
     chunk_offset_ = offset;
     progress(now);
   }
   // Grant time for the browser to verify a newly served range. Re-sending
-  // the same range cannot postpone repair indefinitely and is not an ACK.
+  // the same range does not renew the transfer progress deadline.
   void chunkServed(uint32_t now, uint32_t end) {
     if (state_ == State::Downloading && end > sent_end_) {
       sent_end_ = end;
@@ -70,28 +80,42 @@ class ExportTransportRecovery {
     if (state_ != State::Idle) state_ = State::Complete;
   }
 
-  bool requestRepair(uint32_t now, bool stopped, bool manual) {
-    if (!stopped) return false;
-    const uint32_t grace = state_ == State::Downloading ? kTransferStallMs : kQuietMs;
-    if (!manual && (!awaitingDownload() || now - last_activity_ms_ < grace)) return false;
-    if (have_repaired_ && now - last_repair_ms_ < kQuietMs) return false;
+  Repair requestRepair(uint32_t now, bool stopped, bool manual) {
+    if (!stopped) return Repair::None;
+    if (!manual) {
+      if (!awaitingDownload()) return Repair::None;
+      if (state_ == State::Downloading && !listener_attempted_) {
+        if (now - last_activity_ms_ < kTransferStallMs) return Repair::None;
+        listener_attempted_ = true;
+        ++listener_recoveries_;
+        last_activity_ms_ = now;
+        return Repair::HttpListener;
+      }
+      if (now - last_activity_ms_ < kQuietMs) return Repair::None;
+      // A status request or same-offset retry proves that the browser can reach
+      // the AP, even if the body transfer failed. Keep its Wi-Fi association.
+      if (state_ == State::Downloading && now - last_request_ms_ < kQuietMs)
+        return Repair::None;
+    }
+    if (have_repaired_ && now - last_repair_ms_ < kQuietMs) return Repair::None;
     have_repaired_ = true;
     last_repair_ms_ = now;
-    if (awaitingDownload()) ++repairs_;
-    return true;
+    if (state_ != State::Idle) radio_used_ = true;
+    return Repair::WifiRadio;
   }
 
  private:
-  // At 20 s and 55 s both attempts fall within the browser's 70 s retry window.
-  static constexpr uint8_t kMaxTransferRepairs = 2;
   enum class State { Idle, Sealed, Downloading, Paused, Complete };
   void progress(uint32_t now) {
     last_activity_ms_ = now;
-    repairs_ = 0;
+    listener_attempted_ = false;
   }
   State state_ = State::Idle;
-  uint8_t repairs_ = 0;
+  // Only starting/clearing a measurement renews its automatic radio budget.
+  bool radio_used_ = false;
+  bool listener_attempted_ = false;
+  uint32_t listener_recoveries_ = 0;
   bool have_repaired_ = false;
-  uint32_t last_activity_ms_ = 0, last_repair_ms_ = 0;
+  uint32_t last_activity_ms_ = 0, last_repair_ms_ = 0, last_request_ms_ = 0;
   uint32_t build_bytes_ = 0, chunk_offset_ = UINT32_MAX, sent_end_ = 0, client_ = 0;
 };

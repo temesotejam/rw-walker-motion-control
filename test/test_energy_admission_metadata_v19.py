@@ -142,10 +142,21 @@ fixture = fixture.replace(marker, r'''
     CHECK(out.reserve(foot_fast_policy::kMetadataReserveBytes));
     CHECK(!out.failureReason());
     PsramString small;
+    CHECK(!small.unusedTail(1,1));
     CHECK(small.reserve(7));
+    small+="abc";
+    auto* tail=static_cast<char*>(small.unusedTail(4,1));
+    CHECK(tail==small.c_str()+4 && !small.unusedTail(5,1));
+    CHECK(!small.unusedTail(1,3) && !small.unusedTail(0,1));
+    memset(tail,'x',4);
+    CHECK(small.length()==3 && !strcmp(small.c_str(),"abc"));
+    small+="1234";
+    CHECK(!small.unusedTail(1,1) && !strcmp(small.c_str(),"abc1234"));
+    small.clear();
     small.append("12345678",8);
     small.fail("walking_arc_row");
     CHECK(!small.ok() && small.length()==0 && std::string(small.failureReason())=="capacity");
+    CHECK(!small.unusedTail(1,1));
     host_psram_failure=true;  // only the preallocated export buffer is available
     for (unsigned attempt=0; attempt<2; ++attempt) {
       out.clear();
@@ -156,6 +167,12 @@ fixture = fixture.replace(marker, r'''
         return 2;
       }
       const auto crc=export_protocol::crc32(0,reinterpret_cast<const uint8_t*>(out.c_str()),out.length());
+      if (auto* scratch=out.unusedTail(64,16)) {
+        CHECK(reinterpret_cast<uintptr_t>(scratch)%16==0);
+        memset(scratch,0xa5,64);
+        CHECK(strlen(out.c_str())==out.length());
+        CHECK(crc==export_protocol::crc32(0,reinterpret_cast<const uint8_t*>(out.c_str()),out.length()));
+      }
       std::cout<<crc<<'\n';
       std::cout.write(out.c_str(),out.length())<<'\n';
     }
