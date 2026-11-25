@@ -71,6 +71,14 @@ def fixture():
 #include "foot_phase_prediction.h"
 #include "foot_local_prediction.h"
 #include "foot_control_range.h"
+// Report a failed host check to the caller. The Windows CRT assertion dialog
+// can otherwise leave an unattended test waiting on the user's desktop.
+#undef assert
+#define assert(condition) ((condition) ? static_cast<void>(0) : failCheck(#condition, __FILE__, __LINE__))
+[[noreturn]] static void failCheck(const char* expression, const char* file, int line) {
+ std::fprintf(stderr, "%s:%d: check failed: %s\n", file, line, expression);
+ std::exit(EXIT_FAILURE);
+}
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
 #include "camera_row_overlap.h"
 #if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
@@ -107,6 +115,10 @@ using TaskHandle_t=void*;
 using SemaphoreHandle_t=void*;
 using portMUX_TYPE=int;
 constexpr int portMUX_INITIALIZER_UNLOCKED=0,pdPASS=1,pdTRUE=1;
+constexpr TickType_t portMAX_DELAY=UINT32_MAX;
+static uint32_t pending_wake=0;
+static void xTaskNotifyGive(TaskHandle_t task){assert(task);++pending_wake;}
+static uint32_t ulTaskNotifyTake(int clear,TickType_t timeout);
 constexpr int MALLOC_CAP_INTERNAL=1,MALLOC_CAP_8BIT=2;
 constexpr int PIXFORMAT_GRAYSCALE=1,FRAMESIZE_QVGA=2,LEDC_TIMER_0=0,LEDC_CHANNEL_0=0;
 constexpr int CAMERA_FB_IN_PSRAM=1,CAMERA_GRAB_LATEST=2,CAMERA_GRAB_WHEN_EMPTY=1,I2C_NUM_0=0;
@@ -159,6 +171,7 @@ static void cameraTaskPriorityPatchSampleStack(){}
         'void FootObserver::publishPreview(', 'FootSnapshot FootObserver::snapshot()',
         'void FootObserver::recordControlObservation(', 'void FootObserver::beginRun(',
         'void FootObserver::finishRun()', 'void FootObserver::clearRun()',
+        'void FootObserver::setExportQuiet(', 'bool FootObserver::exportParked()',
         'void FootObserver::loop()'])
     methods += '\n#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24\n' + function(
         observer, 'void FootObserver::prepareUpper(') + '\n#endif\n'
@@ -189,8 +202,11 @@ static Image image(int right=203,int left=202){
  return out;
 }
 enum class Invalid {None,NullFrame,Short,NullBuffer,FutureTimestamp,OldTimestamp,FullLogicalLength,WrongHeight};
+enum class ParkExit {None,Confirm,Clear,Start};
 struct Plan {
  Image original=image();ControlSnapshot before,after;
+ ParkExit park_exit=ParkExit::None;
+ bool start_run=false;
  Invalid invalid=Invalid::None;uint32_t wait_us=2000;bool stop=false;
  bool early=true;int64_t early_stamp_delta=0;Image early_image;
 #if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
@@ -209,12 +225,36 @@ static bool live=true,borrowed=false,poison=false,enforce_rows=true;
 static Image buffer;
 static camera_fb_t frame;
 static FootObserver* current=nullptr;
+static unsigned parked_waits=0;
+static uint32_t ulTaskNotifyTake(int clear,TickType_t timeout){
+ assert(clear==pdTRUE && timeout==portMAX_DELAY && pending_wake==0);
+ assert(current->exportParked() && !borrowed && !live);
+ assert(!current->cameraSnapshot().receiver_active && !current->cameraSnapshot().xclk_active);
+ ++parked_waits;
+ const auto& p=plans.at(plan_index);
+ const auto sealed=current->snapshot();
+ assert(!sealed.recording);
+ current->setExportQuiet(true); // duplicate range request
+ host_clock+=10000000;
+ assert(pending_wake==0 && current->snapshot().count==sealed.count);
+ switch(p.park_exit){
+  case ParkExit::Confirm:current->setExportQuiet(false);break;
+  case ParkExit::Clear:current->clearRun();break;
+  case ParkExit::Start:current->beginRun(7,500000);break;
+  default:assert(false);
+ }
+ current->setExportQuiet(false); // idempotent even before the task wakes
+ assert(pending_wake==1);
+ pending_wake=0;return 1;
+}
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
 static bool override_stamp=false;
 static uint64_t full_stamp=0;
 #endif
 ControlSnapshot RunControlWorker::snapshot()const {
  const auto& p=plans.at(plan_index);const bool before=context_calls++==0;
+ if(before && p.park_exit!=ParkExit::None){current->finishRun();current->setExportQuiet(true);}
+ if(before && p.start_run)current->beginRun(7,500000);
  if(!before && borrowed && p.invalid==Invalid::WrongHeight)frame.height=240;
  if(!before && p.force_delivered_us)host_clock=p.force_delivered_us-1;
  return before?p.before:p.after;
@@ -360,7 +400,7 @@ static Result run(std::vector<Plan> input,bool poison_image,bool archive_full=fa
   assert(observer.frames_[FootObserver::kCapacity].sequence==canary.sequence);}
  else {
   assert(status.count==takes);
-  if(status.count){
+  if(status.count && status.recording){
    auto& last=observer.frames_[status.count-1];
    observer.recordControlObservation(7,last.sequence,last.ready_us+1000);
    assert(last.control_observed_us==last.ready_us+1000);
@@ -474,6 +514,25 @@ static void edgeCases(){
  assert(c.xclk_freq_hz==20000000 && c.sccb_i2c_port==I2C_NUM_0 && c.pin_sccb_sda==-1 && c.pin_sccb_scl==-1);
  assert(foot_fast_policy::kArchiveCapacity==1280);
  std::cout<<"invalid idle preview, bad timestamps, overrun, full archive, source camera2/LATEST/SCCB0/priority3 Core0 PASS\n";
+}
+static void sealedTransferPause(){
+ parked_waits=0;
+ for(auto action:{ParkExit::Confirm,ParkExit::Clear,ParkExit::Start}){
+  Plan terminal;terminal.before.state_id=terminal.after.state_id=action==ParkExit::Clear?5:4;
+  terminal.park_exit=action;
+  if(action==ParkExit::Confirm){
+   auto result=run({Plan{},terminal},true);
+   assert(result.take==1 && result.give==1 && result.stop==1);
+   assert(result.history.back().snapshot.count==1 && result.history.back().delay==20);
+  }else{
+   Plan next;next.start_run=action==ParkExit::Clear;
+   auto result=run({terminal,next},true);
+   assert(result.take==1 && result.give==1 && result.stop==1);
+   assert(result.history.back().snapshot.latest.frame_valid && result.history.back().snapshot.recording);
+  }
+ }
+ assert(parked_waits==3 && pending_wake==0);
+ std::cout<<"sealed transfer: camera owner sleeps with clock/receiver off, confirm/clear/start restore PASS\n";
 }
 static void manualOneShot(){
  // Execute the actual manual acquire/release path: stop receiver/XCLK before
@@ -634,7 +693,7 @@ static void lowerOverlapAdmission(){
  std::cout<<"real v26 observer: staged/missing/repeated prefix, frame reset/admission, owned features, all-row copy skip/fallback, no speculative state commits PASS\n";
 #endif
 }
-int main(){fullPipeline();edgeCases();manualOneShot();idleReceipt();overlapAdmission();nativeGeometryAdmission();nativePreviewCadence();lowerOverlapAdmission();}
+int main(){fullPipeline();edgeCases();sealedTransferPause();manualOneShot();idleReceipt();overlapAdmission();nativeGeometryAdmission();nativePreviewCadence();lowerOverlapAdmission();}
 ''')
 
 

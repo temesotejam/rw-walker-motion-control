@@ -68,8 +68,8 @@ const char* phaseName(uint32_t p) {
       "control_runner", "control_finish", "control_idle", "snapshot", "publish", "imu_read", "imu_audit",
       "camera_capture", "camera_process", "camera_release", "camera_stop", "http_poll", "http_root",
       "http_status", "http_command", "http_manifest", "http_chunk", "http_json", "http_memory", "http_send",
-      "http_close", "roller_init", "roller_io", "export_metadata", "export_crc"};
-  static_assert(sizeof(names) / sizeof(names[0]) == static_cast<unsigned>(Phase::ExportCrc) + 1, "phase names");
+      "http_close", "roller_init", "roller_io", "export_metadata", "export_crc", "export_compress"};
+  static_assert(sizeof(names) / sizeof(names[0]) == static_cast<unsigned>(Phase::ExportCompress) + 1, "phase names");
   return p < sizeof(names) / sizeof(names[0]) ? names[p] : "unknown";
 }
 const char* reason(uint32_t reset) {

@@ -4,7 +4,11 @@ v39は±8°歩行中に、胴体の速度と足の姿勢を使い、次の支持
 
 ## 現行の歩行版 v39-walk5
 
-配布ビルドは `walking-support-transfer-v39-walk5-logfix2`。歩行方式は `left_transfer_carry_v5`。前版logfix1から、通常の左補助と継続用の追加補助を同じ測定でRWLOGに記録できる。walk5のコンパクト表 `walking_energy.arc_aids` では、全行が一つの列名一覧を共有する。追加補助中の早期解除に使う減速度 `arc_post_release_decel_dps2` を全行に用意し、該当しない行にはJSONの `null` を記録する。数値を持つ行はそのままCSVに変換され、該当しない行は空欄になる。
+配布ビルドは `walking-support-transfer-v39-walk5-logfix3`。歩行方式は `left_transfer_carry_v5`。logfix1から、通常の左補助と継続用の追加補助を同じ測定でRWLOGに記録できる。walk5のコンパクト表 `walking_energy.arc_aids` では、全行が一つの列名一覧を共有する。追加補助中の早期解除に使う減速度 `arc_post_release_decel_dps2` を全行に用意し、該当しない行にはJSONの `null` を記録する。数値を持つ行はそのままCSVに変換され、該当しない行は空欄になる。
+
+logfix3は、測定終了後のログ取得中に足カメラの観測タスクを休止し、別タブのプレビューや大きな診断応答を延期する。状態、姿勢角、電流は軽量な応答で確認できる。完了をブラウザーが通知したときと一時停止時には、直前の測定終了状態へ戻る。ブラウザーを閉じた場合も、ログ取得の要求が35秒途絶えれば自動解除する。別タブの状態確認はこの期限を延長しない。状態とマニフェストの `export_priority_active` は転送優先の有効化、`export_camera_parked` はカメラ側で休止が成立したことを示す。
+
+実機で、gzip圧縮をHTTPの8 KiBスタック上で行うと、ROMのHuffman符号表作成中にスタックの下限を52バイト越えて例外が発生した。圧縮を既設の12 KiBのログ専用タスクに移した。モータ実装をリンクしない実機試験版では、1,770,448バイトの模擬ログを実測定画面のEdgeで6.545秒、110件の圧縮応答、再試行0回、Wi-Fi再起動0回で保存・確認できた。CRC、別クライアントでのSHA-256一致、一時停止・再開・終了後の詳細表示復帰も確認した。マニフェストの `compression_stack_min_bytes` はこの試験で5,092バイト。実際の歩行ログの取得時間は測定ごとに確認する。[実機試験版の作成](../test/hardware/prepare_motorfree.py) · [圧縮処理](../src/immutable_export.cpp)
 
 旧版の実機では、測定終了後に `metadata_build_failed_at_967452_bytes` が返り、`hashed_bytes=0`、`bytes=0`、`token=""` だった。967,452は確定処理が停止するまでに本体で作成した付加情報の長さを示す。ユーザーの録画では同じ測定で再試行しても967,452または967,453バイトで停止した。旧版コードに2種類の補助行を渡すと列の不一致を再現でき、修正版はそれぞれを先頭にした順序でもログを確定する。新しい測定画面は確定失敗と転送開始後の中断を区別し、診断JSONに失敗理由を残す。[記録コード](../src/walking_energy_runner.inc) · [再現試験](../test/test_energy_admission_metadata_v19.py)
 

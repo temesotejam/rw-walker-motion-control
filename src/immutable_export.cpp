@@ -9,6 +9,7 @@ bool ImmutableExport::reserveMetadata() {
 bool ImmutableExport::begin(PsramLogger& logger) {
   logger_ = &logger; boot_nonce_ = esp_random();
   if (!reserveMetadata()) return false;
+  compression_done_ = xSemaphoreCreateBinaryStatic(&compression_done_storage_);
   return xTaskCreatePinnedToCore(entry, "log_export", 12288, this, 1, &task_, 0) == pdPASS;
 }
 ImmutableExport::Status ImmutableExport::status() const {
@@ -26,15 +27,48 @@ bool ImmutableExport::prepare() {
   xTaskNotifyGive(task_); return true;
 }
 bool ImmutableExport::reset() {
-  if (status().phase == Phase::Building) return false;
-  metadata_.clear();
-  portENTER_CRITICAL(&mux_); status_ = Status{}; portEXIT_CRITICAL(&mux_); return true;
+  portENTER_CRITICAL(&mux_);
+  const bool idle = status_.phase != Phase::Building && !compression_;
+  if (idle) status_ = Status{};
+  portEXIT_CRITICAL(&mux_);
+  if (idle) metadata_.clear();
+  return idle;
+}
+bool ImmutableExport::dispatchCompression(const char* token, CompressionFunction compress, const void* context) {
+  if (!task_ || !compression_done_ || !token || xTaskGetCurrentTaskHandle() == task_) return false;
+  portENTER_CRITICAL(&mux_);
+  const bool available = status_.phase == Phase::Ready && !strcmp(token, status_.token) && !compression_;
+  if (available) { compression_ = compress; compression_context_ = context; }
+  portEXIT_CRITICAL(&mux_);
+  if (!available) return false;
+  xTaskNotifyGive(task_);
+  // A disconnect cannot invalidate the caller's buffers while ROM is running.
+  // Work is bounded by the validated range (at most 16 packets).
+  xSemaphoreTake(compression_done_, portMAX_DELAY);
+  portENTER_CRITICAL(&mux_); compression_ = nullptr; compression_context_ = nullptr; portEXIT_CRITICAL(&mux_);
+  return true;
 }
 void ImmutableExport::loop() {
   for (;;) {
     RuntimeDiag::beat(RuntimeDiag::Lane::Export);
     RuntimeDiag::phase(RuntimeDiag::Lane::Export, RuntimeDiag::Phase::Wait);
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY); build();
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    portENTER_CRITICAL(&mux_);
+    const auto compress = compression_;
+    const auto context = compression_context_;
+    const bool building = status_.phase == Phase::Building;
+    portEXIT_CRITICAL(&mux_);
+    if (compress) {
+      // ESP32-S3 ROM's Huffman path uses over 6 KiB of stack. The export
+      // worker already has 12 KiB and no nested HTTP/Arduino dispatch frames.
+      RuntimeDiag::phase(RuntimeDiag::Lane::Export, RuntimeDiag::Phase::ExportCompress);
+      compress(context);
+      const uint32_t free_stack = uxTaskGetStackHighWaterMark(nullptr);
+      portENTER_CRITICAL(&mux_); status_.compression_stack_min_bytes = free_stack; portEXIT_CRITICAL(&mux_);
+      xSemaphoreGive(compression_done_);
+    } else if (building) {
+      build();
+    }
   }
 }
 void ImmutableExport::metadataProgress(void* context, size_t bytes) {

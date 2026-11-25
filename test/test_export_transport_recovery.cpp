@@ -141,5 +141,42 @@ int main() {
   assert(intermittent.listenerRecoveryCount() == 0);
   intermittent.sealed(now + stall + quiet);
   assert(intermittent.requestRepair(now + stall + 2 * quiet, true, false) == Repair::WifiRadio);
+
+  ExportTransportRecovery camera;
+  now = UINT32_MAX - 8000;
+  camera.sealed(now);
+  camera.exportContact(now); // automatic seal or a manifest check alone never parks the observer
+  assert(!camera.priorityRequested(now));
+  camera.downloadRequested(now, client);
+  assert(camera.priorityRequested(now));
+  camera.onRequest(now + quiet - 5);
+  camera.buildProgress(now + quiet - 1, 8192);
+  assert(camera.priorityRequested(now + quiet - 1));
+  assert(!camera.priorityRequested(now + quiet)); // abandoned while status/worker remained active, past rollover
+  now += quiet;
+  camera.chunkRequested(now, 0); // resumed after abandonment
+  assert(camera.priorityRequested(now));
+  now += quiet - 1;
+  camera.chunkRequested(now, 0); // receiver retry is still an active client
+  assert(camera.priorityRequested(now + quiet - 1));
+  now += quiet - 1;
+  camera.exportContact(now); // explicit manifest poll whilst sealing
+  now += quiet - 1;
+  assert(camera.priorityRequested(now));
+  assert(camera.pauseDownload(client));
+  camera.downloadRequested(++now, client); // late duplicate prepare/manifest/chunk after Pause
+  camera.exportContact(now);
+  camera.chunkRequested(now, 4096);
+  assert(!camera.priorityRequested(now));
+  camera.downloadRequested(++now, other);
+  assert(camera.priorityRequested(now));
+  camera.downloadComplete();
+  camera.exportContact(now);
+  assert(!camera.priorityRequested(now));
+  camera.downloadRequested(++now, client);
+  assert(camera.priorityRequested(now));
+  camera.startRun(); // accepted Clear/next measurement
+  camera.chunkRequested(now, 8192);
+  assert(!camera.priorityRequested(now));
   std::puts("PASS sealed export Wi-Fi repair timing, progress, acknowledgement and deduplication");
 }

@@ -39,6 +39,14 @@ static String gaitTurnField(const RunControlSnapshot& snapshot) {
 }
 #endif
 static bool unsignedArg(const String& text, uint32_t& value);
+static bool controlStopped(const RunControlSnapshot& s) {
+  return !s.running && !s.pulse_active && s.motor_cmd_mA == 0 &&
+      !s.upright_reference_capturing && !s.equilibrium_capturing &&
+      s.heartbeat_us && static_cast<uint32_t>(micros() - s.heartbeat_us) < 500000;
+}
+static bool terminalRun(const RunControlSnapshot& s) {
+  return !strcmp(s.state_name, "FINISHED") || !strcmp(s.state_name, "ESTOP");
+}
 static const char* phase(ImmutableExport::Phase p) {
   switch (p) {
     case ImmutableExport::Phase::Building: return "building";
@@ -104,7 +112,10 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
       server_->send(400, "text/plain", "invalid_export_client"); return;
     }
     const bool ok = prepareCompletedExport();
-    if (ok) recovery_.downloadRequested(millis(), client);
+    if (ok) {
+      recovery_.downloadRequested(millis(), client);
+      updateExportPriority();
+    }
     server_->send(ok ? 202 : 409, "text/plain", ok ? "preparing" : "completed_run_required");
   });
   s.on("/export/pause", HTTP_POST, [this]() {
@@ -112,6 +123,7 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
     const bool ok = unsignedArg(server_->arg("boot_id"), boot) && boot == boot_id_ &&
         unsignedArg(server_->arg("run_id"), run) && run == export_->status().run_id &&
         unsignedArg(server_->arg("client"), client) && recovery_.pauseDownload(client);
+    if (ok) updateExportPriority();
     server_->send(ok ? 200 : 409, "text/plain", ok ? "paused" : "export_session_mismatch");
   });
   s.on("/export/manifest", HTTP_GET, [this]() { manifest(); });
@@ -134,6 +146,7 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
   wifi_restart_.afterStartup(millis(), ap_ready, listening);
 }
 void WebUi::update() {
+  if (export_priority_active_) updateExportPriority();
   if (wifi_restart_.active()) {
     const auto count = wifi_restart_.count();
     wifi_restart_.update(millis(), *this);
@@ -174,6 +187,23 @@ void WebUi::update() {
   RuntimeDiag::beat(RuntimeDiag::Lane::Http);
   RuntimeDiag::phase(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::Wait);
 }
+void WebUi::updateExportPriority() {
+  const bool wanted = !offline_.busy() && recovery_.priorityRequested(millis());
+  if (wanted == export_priority_active_) return;
+  if (wanted) {
+    const auto s = control_->snapshot();
+    if (!s.downloadable || !control_->commandsSettled() || !terminalRun(s) || !controlStopped(s)) return;
+  }
+  export_priority_active_ = wanted;
+  feet_->setExportQuiet(wanted);
+}
+bool WebUi::deferCameraDiagnostics() {
+  if (!export_priority_active_) return false;
+  server_->sendHeader("Retry-After", "5");
+  server_->sendHeader("Cache-Control", "no-store");
+  server_->send(503, "text/plain; charset=utf-8", "RWLOG転送中です。完了後にもう一度お試しください。");
+  return true;
+}
 bool WebUi::requestWifiRecovery() { return requestWifiRecovery(true); }
 bool WebUi::requestWifiRecovery(bool manual) {
   if (!server_ || !control_ || offline_.busy() || wifi_restart_.active()) return false;
@@ -182,11 +212,7 @@ bool WebUi::requestWifiRecovery(bool manual) {
   const uint32_t now = millis();
   const bool ready = !strcmp(s.state_name, "READY_TO_MEASURE");
   const bool ready_stall = ready && ready_http_stall_.due(now);
-  const bool stopped = !s.running && !s.pulse_active && s.motor_cmd_mA == 0 &&
-      !s.upright_reference_capturing && !s.equilibrium_capturing &&
-      s.heartbeat_us && static_cast<uint32_t>(micros() - s.heartbeat_us) < 500000 &&
-      (!strcmp(s.state_name, "FINISHED") || !strcmp(s.state_name, "ESTOP") ||
-       ((manual || ready_stall) && ready));
+  const bool stopped = controlStopped(s) && (terminalRun(s) || ((manual || ready_stall) && ready));
   // A confirmed READY stall has its own one-shot budget; share the full stop
   // checks and cooldown with the USB command and post-run transport repairs.
   const auto repair = recovery_.requestRepair(now, stopped, manual || ready_stall);
@@ -368,6 +394,7 @@ void WebUi::command(RunControlWorker::Command cmd) {
     }
     const bool ok = offline_.queue(millis());
     if (ok) {
+      updateExportPriority();
       start_target_deg_ = target_deg;
       start_input_peak_percent_ = input_peak_percent;
       start_input_current_mA_ = input_current_mA;
@@ -383,12 +410,17 @@ void WebUi::command(RunControlWorker::Command cmd) {
     const bool ok = control_->request(cmd);
     // Only this HTTP owner can start an export, and Building was excluded
     // above. A refused Clear must leave the download token usable.
-    if (ok && cmd == RunControlWorker::Command::Clear) { export_->reset(); recovery_.startRun(); }
+    if (ok && cmd == RunControlWorker::Command::Clear) {
+      export_->reset();
+      recovery_.startRun();
+      updateExportPriority();
+    }
     server_->send(ok ? 202 : 409, "text/plain", ok ? "command_queued" : "command_busy");
   }
 }
 #if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
 void WebUi::cameraLatency() {
+  if (deferCameraDiagnostics()) return;
   if(quietResponse())return;
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http,RuntimeDiag::Phase::HttpStatus);
   const auto latency=feet_->latencySnapshot();
@@ -439,14 +471,12 @@ void WebUi::status() {
   if (quietResponse()) return;
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpStatus);
 #if defined(FOOT_LIVE_STATUS_V35) && FOOT_LIVE_STATUS_V35
-  const bool live=server_->arg("view")=="live";
+  const bool live = export_priority_active_ || server_->arg("view") == "live";
 #else
-  constexpr bool live=false;
+  const bool live = export_priority_active_;
 #endif
   const auto s = control_->snapshot(); const auto f = feet_->snapshot();
   const auto c = control_->commandState(); const auto e = export_->status();
-  const auto h = control_->healthSnapshot();
-  const auto camera = feet_->cameraSnapshot();
   const bool fresh = s.heartbeat_us && static_cast<uint32_t>(micros() - s.heartbeat_us) < 500000;
   RuntimeDiag::phase(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpJson);
   auto& json=status_json_; json.clear();
@@ -457,6 +487,8 @@ void WebUi::status() {
 #endif
   json += ",\"boot_id\":" + String(boot_id_);
   json += ",\"wifi_export_recovery\":true";
+  json += ",\"export_priority_active\":" + String(export_priority_active_ ? "true" : "false");
+  json += ",\"export_camera_parked\":" + String(feet_->exportParked() ? "true" : "false");
 #if FOOT_PERIODIC_V38
   json += ",\"foot_periodic\":" + periodicFeet.liveJson();
 #endif
@@ -556,7 +588,7 @@ void WebUi::status() {
   if(!live) json += ",\"calibration\":" + footCalibrationDiagnosticsJson();
   json += ",\"zero_ready\":" + String(f.zero_ready ? "true" : "false") + ",\"zero_samples\":" + String(f.zero_samples);
   json += ",\"zero_reason\":\"" + String(footZeroReasonName(f.zero_reason)) + "\"";
-  json += ",\"preview_available\":" + String(f.preview_available && preview_buffer_ ? "true" : "false");
+  json += ",\"preview_available\":" + String(!export_priority_active_ && f.preview_available && preview_buffer_ ? "true" : "false");
   json += ",\"right_zero_x\":" + num(f.right_zero) + ",\"left_zero_x\":" + num(f.left_zero);
   json += ",\"right_x\":" + num(f.latest.right_x) + ",\"left_x\":" + num(f.latest.left_x);
   json += ",\"right_deg\":" + num(f.latest.right_deg) + ",\"left_deg\":" + num(f.latest.left_deg);
@@ -635,6 +667,8 @@ void WebUi::status() {
   json += ",\"pitch_error_deg\":" + num(s.upright_pitch_error_deg);
   json += ",\"gyro_dps\":" + num(s.gyro_norm_dps) + "}";
   if(!live) {
+  const auto camera = feet_->cameraSnapshot();
+  const auto h = control_->healthSnapshot();
   json += ",\"camera\":{\"initialized\":" + String(camera.camera_ok ? "true" : "false");
   json += ",\"error\":\"" + String(camera.error) + "\"";
   json += ",\"sensor_pid\":" + String(camera.sensor_pid);
@@ -688,11 +722,16 @@ void WebUi::manifest() {
 #endif
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpManifest);
   const auto s = export_->status();
+  if (s.phase == ImmutableExport::Phase::Building || s.phase == ImmutableExport::Phase::Ready) {
+    recovery_.exportContact(millis());
+    updateExportPriority();
+  }
   char body[800];
   snprintf(body, sizeof(body),
       "{\"phase\":\"%s\",\"token\":\"%s\",\"bytes\":%lu,\"hashed_bytes\":%lu,\"crc32\":%lu,"
       "\"chunk_bytes\":%u,\"chunks_per_response\":%u,\"stream_chunks\":%u,\"stream_window_chunks\":%u,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"run_id\":%u,\"metadata_bytes\":%lu,"
-      "\"completion_ack\":true,\"wifi_recovery_count\":%lu,\"export_http_recovery_count\":%lu,"
+      "\"completion_ack\":true,\"wifi_recovery_count\":%lu,\"export_http_recovery_count\":%lu,\"compression_stack_min_bytes\":%lu,"
+      "\"export_priority_active\":%s,\"export_camera_parked\":%s,"
       "\"export_memory\":{\"sampled_ms\":%lu,\"internal_free\":%lu,\"internal_min_free\":%lu,\"internal_largest\":%lu}}",
       phase(s.phase), s.token, static_cast<unsigned long>(s.bytes), static_cast<unsigned long>(s.hashed_bytes),
       static_cast<unsigned long>(s.crc), static_cast<unsigned>(export_protocol::kChunkBytes),
@@ -701,6 +740,9 @@ void WebUi::manifest() {
       static_cast<unsigned long>(boot_id_), static_cast<unsigned>(s.run_id), static_cast<unsigned long>(s.metadata_bytes),
       static_cast<unsigned long>(wifi_restart_.count()),
       static_cast<unsigned long>(recovery_.listenerRecoveryCount()),
+      static_cast<unsigned long>(s.compression_stack_min_bytes),
+      export_priority_active_ ? "true" : "false",
+      feet_->exportParked() ? "true" : "false",
       static_cast<unsigned long>(millis()),
       static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
       static_cast<unsigned long>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),
@@ -722,7 +764,10 @@ void WebUi::confirmExport() {
   const bool ok = unsignedArg(server_->arg("crc32"), crc) && unsignedArg(server_->arg("run_id"), run) &&
       ExportTransportRecovery::matchesCompletion(s.phase == ImmutableExport::Phase::Ready, s.token, s.crc,
           s.run_id, server_->arg("token").c_str(), crc, run);
-  if (ok) recovery_.downloadComplete();
+  if (ok) {
+    recovery_.downloadComplete();
+    updateExportPriority();
+  }
   server_->send(ok ? 200 : 409, "text/plain", ok ? "confirmed" : "export_identity_mismatch");
 }
 bool WebUi::reserveChunkBuffer() {
@@ -763,8 +808,11 @@ bool WebUi::sendCompressedWindow(const char* token, uint32_t offset, uint32_t le
   }
   if (!storage || !encoded) { reason = "no_workspace"; return false; }
   Codec* codec = new (storage) Codec;
-  const size_t used = export_gzip::encode(*codec, encoded, plain, chunk_buffer_, offset, length,
-      [&](uint32_t at, uint32_t n) { return makeExportPacket(token, at, n); }, &reason);
+  size_t used = 0;
+  if (!export_->runCompression(token, [&]() {
+    used = export_gzip::encode(*codec, encoded, plain, chunk_buffer_, offset, length,
+        [&](uint32_t at, uint32_t n) { return makeExportPacket(token, at, n); }, &reason);
+  })) { reason = "worker_unavailable"; return false; }
   if (!used) return false;
   codec_allocation.reset();
   server_->sendHeader("X-RWLOG-Gzip", both_in_tail ? "gzip_tail" : "gzip_heap");
@@ -798,6 +846,7 @@ void WebUi::chunk() {
     server_->send(409, "text/plain", "export_token_or_range_mismatch"); return;
   }
   recovery_.chunkRequested(millis(), offset);
+  updateExportPriority();
   server_->beginExportResponse();
   server_->sendHeader("Cache-Control", "no-store");
   const uint32_t end = offset + length;
@@ -844,6 +893,7 @@ static String previewMarkerJson(const WhiteMarkerObservation& m) {
   return s;
 }
 void WebUi::previewCapture() {
+  if (deferCameraDiagnostics()) return;
 #if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
   ++latency_preview_requests_;
 #endif
@@ -887,6 +937,7 @@ void WebUi::previewCapture() {
   server_->sendHeader("Cache-Control", "no-store"); server_->send(200, "application/json", json);
 }
 void WebUi::previewChunk() {
+  if (deferCameraDiagnostics()) return;
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpChunk);
   if (!reserveChunkBuffer()) { server_->send(503, "text/plain", "chunk_buffer_unavailable"); return; }
   uint32_t token = 0, offset = 0, length = 0;

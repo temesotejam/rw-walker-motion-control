@@ -12,6 +12,7 @@ class ExportTransportRecovery {
 
   void startRun() {
     state_ = State::Idle;
+    priority_requested_ = false;
     radio_used_ = false;
     listener_attempted_ = false;
     listener_recoveries_ = 0;
@@ -26,19 +27,35 @@ class ExportTransportRecovery {
            (state_ == State::Downloading && (!listener_attempted_ || !radio_used_));
   }
   uint32_t listenerRecoveryCount() const { return listener_recoveries_; }
+  // Only an export client requests transfer priority. Ordinary status polls,
+  // metadata building and radio recovery cannot extend a departed client's lease.
+  void exportContact(uint32_t now) {
+    if (state_ != State::Downloading) return;
+    last_export_request_ms_ = now;
+    priority_requested_ = true;
+  }
+  bool priorityRequested(uint32_t now) {
+    if (state_ != State::Downloading || now - last_export_request_ms_ >= kQuietMs)
+      priority_requested_ = false;
+    return priority_requested_;
+  }
   void onRequest(uint32_t now) {
     if (state_ == State::Sealed) last_activity_ms_ = now;
     if (state_ == State::Downloading) last_request_ms_ = now;
   }
   void downloadRequested(uint32_t now, uint32_t client) {
-    if (state_ == State::Idle ||
-        ((state_ == State::Downloading || state_ == State::Paused) && client_ == client)) return;
+    if (state_ == State::Idle || (state_ == State::Paused && client_ == client)) return;
+    if (state_ == State::Downloading && client_ == client) {
+      exportContact(now);
+      return;
+    }
     state_ = State::Downloading;
     client_ = client;
     build_bytes_ = 0;
     chunk_offset_ = UINT32_MAX;
     sent_end_ = 0;
     last_request_ms_ = now;
+    exportContact(now);
     progress(now);
   }
   bool pauseDownload(uint32_t client) {
@@ -55,6 +72,7 @@ class ExportTransportRecovery {
     // The next distinct, validated offset is evidence of client progress,
     // including a resume from a different cache. Repeating one offset is not.
     if (state_ != State::Downloading) return;
+    exportContact(now);
     last_request_ms_ = now;
     if (offset == chunk_offset_) return;
     chunk_offset_ = offset;
@@ -114,6 +132,8 @@ class ExportTransportRecovery {
   // Only starting/clearing a measurement renews its automatic radio budget.
   bool radio_used_ = false;
   bool listener_attempted_ = false;
+  bool priority_requested_ = false;
+  uint32_t last_export_request_ms_ = 0;
   uint32_t listener_recoveries_ = 0;
   bool have_repaired_ = false;
   uint32_t last_activity_ms_ = 0, last_repair_ms_ = 0, last_request_ms_ = 0;

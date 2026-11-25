@@ -124,6 +124,8 @@ class FootObserver {
   void beginRun(uint16_t id, uint64_t log_epoch_us);
   void finishRun();
   void clearRun();
+  void setExportQuiet(bool enabled);
+  bool exportParked() const;
   FootSnapshot snapshot() const;
 #if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
   FootLatencyHistogram latencySnapshot() const;
@@ -144,6 +146,7 @@ class FootObserver {
   WhiteMarker1DTracker right_{0}, left_{1};
   mutable portMUX_TYPE mux_ = portMUX_INITIALIZER_UNLOCKED;
   FootSnapshot status_;
+  bool export_quiet_requested_ = false, export_parked_ = false;
 #if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
   FootLatencyHistogram latency_;
 #endif

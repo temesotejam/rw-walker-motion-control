@@ -172,6 +172,7 @@ void FootObserver::recordControlObservation(uint16_t run_id, uint32_t sequence, 
   portEXIT_CRITICAL(&mux_);
 }
 void FootObserver::beginRun(uint16_t id, uint64_t epoch) {
+  setExportQuiet(false);
   portENTER_CRITICAL(&mux_);
   recording_run_id_ = id; log_epoch_us_ = epoch;
   control_observation_attempts_ = control_observation_unmatched_ = 0;
@@ -182,9 +183,25 @@ void FootObserver::finishRun() {
   portENTER_CRITICAL(&mux_); status_.recording = false; portEXIT_CRITICAL(&mux_);
 }
 void FootObserver::clearRun() {
+  setExportQuiet(false);
   portENTER_CRITICAL(&mux_);
   status_.recording = false; status_.count = 0; status_.overflow = false;
   portEXIT_CRITICAL(&mux_);
+}
+void FootObserver::setExportQuiet(bool enabled) {
+  portENTER_CRITICAL(&mux_);
+  const bool wake = !enabled && export_quiet_requested_ && export_parked_;
+  export_quiet_requested_ = enabled;
+  portEXIT_CRITICAL(&mux_);
+  // A notification persists even if the mode changes just before the owner
+  // enters its wait. No other consumer uses this task's notification.
+  if (wake && task_) xTaskNotifyGive(task_);
+}
+bool FootObserver::exportParked() const {
+  portENTER_CRITICAL(&mux_);
+  const bool parked = export_parked_;
+  portEXIT_CRITICAL(&mux_);
+  return parked;
 }
 void FootObserver::loop() {
   uint32_t seq = 0;
@@ -214,7 +231,19 @@ void FootObserver::loop() {
       camera_->stopContinuous();
       RuntimeDiag::beat(RuntimeDiag::Lane::Camera, seq);
       RuntimeDiag::phase(RuntimeDiag::Lane::Camera, RuntimeDiag::Phase::Wait);
-      vTaskDelay(pdMS_TO_TICKS(20)); continue;
+      // Only this task touches the receiver. At this boundary there is no
+      // borrowed frame and receiver/DMA and XCLK have stopped.
+      portENTER_CRITICAL(&mux_);
+      const bool park = export_quiet_requested_ && !status_.recording && !run_before.running;
+      export_parked_ = park;
+      portEXIT_CRITICAL(&mux_);
+      if (park) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        portENTER_CRITICAL(&mux_); export_parked_ = false; portEXIT_CRITICAL(&mux_);
+      } else {
+        vTaskDelay(pdMS_TO_TICKS(20));
+      }
+      continue;
     }
     const uint64_t begin = esp_timer_get_time();
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24

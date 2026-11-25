@@ -45,7 +45,7 @@
 #elif defined(SUPPORT_TRANSFER_V39) && SUPPORT_TRANSFER_V39
 #if WALKING_TURN_OBSERVER
 #if WALKING_RETURN_HISTORY && WALKING_RIGHT_ARRIVAL && WALKING_SMALL_STEP_AB && SUPPORT_TRANSFER_STALL_V3 && SUPPORT_TRANSFER_ARC_FEEDBACK
-#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-support-transfer-v39-walk5-logfix2"
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-support-transfer-v39-walk5-logfix3"
 #elif WALKING_RIGHT_ARRIVAL && WALKING_SMALL_STEP_AB && SUPPORT_TRANSFER_STALL_V3 && SUPPORT_TRANSFER_ARC_FEEDBACK
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-support-transfer-v39-arrival1"
 #elif WALKING_SMALL_STEP_AB && SUPPORT_TRANSFER_STALL_V3 && SUPPORT_TRANSFER_ARC_FEEDBACK
@@ -196,7 +196,7 @@ enum class Phase : uint32_t {
   CameraCapture, CameraProcess, CameraRelease, CameraStop,
   HttpPoll, HttpRoot, HttpStatus, HttpCommand, HttpManifest, HttpChunk,
   HttpJson, HttpMemory, HttpSend, HttpClose, RollerInit, RollerIo,
-  ExportMetadata, ExportCrc
+  ExportMetadata, ExportCrc, ExportCompress
 };
 #if defined(ARDUINO_ARCH_ESP32)
 void begin();

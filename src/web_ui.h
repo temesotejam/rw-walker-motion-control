@@ -16,6 +16,8 @@ class WebUi {
   friend class OfflineRunSession;
   friend class WifiTransportRestart;
   bool requestWifiRecovery(bool manual);
+  void updateExportPriority();
+  bool deferCameraDiagnostics();
   void closeHttpTransport();
   bool stopWifiRadio();
   bool startWifiAp();
@@ -57,6 +59,7 @@ class WebUi {
   uint32_t boot_id_ = 0;
   OfflineRunSession offline_;
   ExportTransportRecovery recovery_;
+  bool export_priority_active_ = false;
   ReadyHttpStallRecovery ready_http_stall_;
   WifiTransportRestart wifi_restart_;
   uint32_t recovery_poll_ms_ = 0;

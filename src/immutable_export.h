@@ -2,6 +2,7 @@
 #include "psram_logger.h"
 #include "export_protocol.h"
 #include <freertos/task.h>
+#include <freertos/semphr.h>
 
 // Web owns lifecycle. Export task reads sealed logs only, never runs during a
 // measurement. Start/Clear are rejected until this worker has returned to idle.
@@ -13,6 +14,7 @@ class ImmutableExport {
     uint16_t run_id = 0;
     uint32_t bytes = 0, hashed_bytes = 0, crc = 0;
     uint32_t metadata_bytes = 0;
+    uint32_t compression_stack_min_bytes = 0;
     char token[24] = {}, filename[80] = {}, error[80] = {};
   };
   bool reserveMetadata();
@@ -24,7 +26,17 @@ class ImmutableExport {
   bool chunk(const char* token, uint32_t offset, uint32_t length, uint8_t* out) const;
   // Only the synchronous HTTP handler may borrow this until it returns.
   void* transferWorkspace(const char* token, size_t bytes, size_t alignment);
+  template<typename Work>
+  bool runCompression(const char* token, const Work& work) {
+    return dispatchCompression(token, [](const void* p) { (*static_cast<const Work*>(p))(); }, &work);
+  }
  private:
+  using CompressionFunction = void (*)(const void*);
+  bool dispatchCompression(const char* token, CompressionFunction compress, const void* context);
+  CompressionFunction compression_ = nullptr;
+  const void* compression_context_ = nullptr;
+  StaticSemaphore_t compression_done_storage_{};
+  SemaphoreHandle_t compression_done_ = nullptr;
   static void entry(void* p) { static_cast<ImmutableExport*>(p)->loop(); }
   void loop();
   void build();

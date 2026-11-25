@@ -51,6 +51,26 @@ const state={boot_id:1,run_id:0,input_peak_percent:0,input_current_mA:300,brake_
   context.fetch=async path=>{paths.push(path);return {ok:true,json:async()=>structuredClone(state)};};
   await vm.runInContext('refresh()',context); // old firmware replaces the capability too
   await vm.runInContext('refresh()',context);assert.equal(paths.pop(),'/status.json');
+  response={...structuredClone(state),state:'FINISHED',export_phase:'ready',downloadable:true,
+    ready:false,live_status_supported:true,status_view:'live',export_priority_active:true,
+    export_camera_parked:false};
+  response.foot.preview_available=false;
+  context.fetch=async path=>{paths.push(path);return {ok:true,json:async()=>structuredClone(response)};};
+  await vm.runInContext('refresh(true)',context); // another tab asked for full detail during export
+  assert.equal(paths.pop(),'/status.json');
+  assert.equal(element('connection').textContent,'接続中');
+  assert.equal(element('download').disabled,false);
+  assert.equal(element('preview').disabled,true);
+  assert.equal(vm.runInContext('latest.export_camera_parked',context),false);
+  response.export_camera_parked=true;
+  await vm.runInContext('refresh()',context);
+  assert.equal(vm.runInContext('latest.export_priority_active && latest.export_camera_parked',context),true);
+  response.export_camera_parked=response.export_priority_active=false;
+  response.foot.preview_available=true;
+  response.status_view='full';
+  await vm.runInContext('refresh(true)',context);
+  assert.equal(element('preview').disabled,false);
+  assert.equal(vm.runInContext('latest.status_view',context),'full');
   if(process.argv[2]) {
     const actual=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
     for(const view of ['full','live']) {
