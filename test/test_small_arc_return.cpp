@@ -274,6 +274,51 @@ static void testPassageWork() {
   assert(!plan(f,passages,3022,80).final_ms); // Required charge above the measured range.
 }
 
+static void testPostAidPassage() {
+  using namespace return_crossing_work;
+  lateral_energy::CurrentTable current;
+  assert(current.prepare(.031652216f));
+  walking_return_energy::Input in;
+  in.side=-1;in.body_angle_deg=1.5f;in.rate_dps=14;
+  in.initial_current_ma=60;in.goal_current_ma=330;in.cap_ms=40;
+  constexpr float target=.00034f, gross_limit=.00015f;
+  MainPassages refs;
+  refs.observe(1300,1450,3.f,18.f,target,38,.00007f,true);
+  const auto plan=[&](uint16_t envelope,float decel=120.f,uint16_t width=40) {
+    return planPostAidPassage(refs,2000,2200,envelope,current,in,target,gross_limit,decel,width);
+  };
+  const auto fit=plan(70);
+  assert(fit.zero_ms==1300 && fit.peak_ms==1450 && fit.base_ms==40 && fit.final_ms==29);
+  assert(fit.passage_reserve_ms==38 && fit.passage_main_ms==38 && fit.passage_zero_dps==18);
+  assert(std::fabs(fit.request_j-32.177e-6f)<1.e-8f && fit.final_ms+fit.passage_reserve_ms<=70);
+  const auto coeff=lateral_energy::coefficients(-1);
+  const auto gain=[&](unsigned width) {
+    const float q=lateral_energy::charge(current,width,in.initial_current_ma,in.goal_current_ma);
+    return lateral_energy::work(coeff,in.rate_dps*lateral_energy::kRadPerDeg,q)
+        -half_cycle_energy_budget::postAidCoastWork(in.rate_dps,in.initial_current_ma,width);
+  };
+  assert(gain(fit.final_ms-1)<fit.request_j && gain(fit.final_ms)>=fit.request_j);
+  assert(plan(70,85).final_ms<fit.final_ms && plan(70,145).final_ms>fit.final_ms);
+  assert(!plan(66).final_ms && !plan(70,120,20).final_ms); // No jointly feasible split.
+  assert(!plan(80).final_ms); // Existing guarded command already leaves room.
+  assert(!plan(70,NAN).final_ms && !plan(70,120,41).final_ms);
+  refs.recent[0].target_j=target-.00001f;
+  const auto raised=plan(73);
+  assert(raised.final_ms==fit.final_ms && raised.passage_reserve_ms>fit.passage_reserve_ms);
+  assert(std::fabs(raised.passage_main_j-.00008f)<1.e-8f);
+  refs.recent[0].target_j=target+.00001f;
+  assert(!plan(70).final_ms);
+  refs.recent[0].target_j=target;
+  assert(!planPostAidPassage(refs,6000,6200,70,current,in,target,gross_limit,120,40).final_ms);
+  assert(!planPostAidPassage(refs,1400,1700,70,current,in,target,gross_limit,120,40).final_ms);
+  assert(!planPostAidPassage(refs,2000,2200,70,current,in,target,1.e-6f,120,40).final_ms);
+  // If a different proven passage fits the original width, preserve it.
+  refs.observe(1600,1750,3.f,18.f,target,20,20.e-6f,true);
+  assert(!plan(70).final_ms);
+  in.initial_current_ma=NAN;
+  assert(!plan(70).final_ms);
+}
+
 static void testMeasuredArcPriority() {
   // The matched 195727101 return reached ZERO. The same 80 ms envelope
   // and old 58 ms reserve already paid the minimum work for that event.
@@ -297,7 +342,39 @@ static void testMeasuredArcPriority() {
   assert(!plan(84,95,80).cap_ms);
 }
 
+// The 18.279 s loss in 44453706 leaves 31.5 ms until predicted reversal.
+// A missing, expired or opposing current cannot advance the decision.
+static void testPostAidWithResidualCurrent() {
+  for (unsigned mode=0;mode<6;++mode) {
+    Fixture f; PostAidObserver observer;
+    f.in.peak_ms=18005; f.in.peak_deg=7.964f; f.in.target_j=432.975e-6f;
+    f.in.current_rise_tau_s=.0316522f;
+    f.in.current_goal_ma=mode==4?NAN:352.7842f;
+    observer.arm(18005,18211,18.5782f,53.855e-6f);
+    for (bool last:{false,true}) {
+      f.frame(last?731:730,last?18279:18252);
+      f.p.scheduled_us=f.p.epoch_us+(last?18275000:18250000);
+      f.p.left.measured=f.p.left.estimated=f.in.foot.left_deg=last?1.92f:2.48f;
+      f.p.right.measured=f.p.right.estimated=f.in.foot.right_deg=last?-.55f:-.59f;
+      f.in.fore_aft_deg=last?.73f:.64f;
+      f.in.angle_deg=last?2.4463f:3.0487f;
+      f.in.rate_dps=last?-13.3366f:-25.1405f;
+      f.in.periodic_acceleration_dps2=last?423.3985f:383.4531f;
+      f.in.current_age_us=mode==3?50001:5386;
+      const float current=mode==1?0.f:mode==2?-95.f:last?95.f:170.f;
+      const auto result=observer.observe(f.in,f.in.sample_us,current,true,mode!=5);
+      assert(result.selected==(last && mode==0));
+      if (result.selected) {
+        assert(result.loss_cap_ms==26 && result.response_window_ms>28 && result.response_window_ms<29);
+        assert(result.evidence==Evidence::ContinuationShortfall && result.request_j>0);
+      }
+    }
+  }
+}
+
 int main() {
+  testPostAidWithResidualCurrent();
+  testPostAidPassage();
   testMeasuredArcPriority();
   testPredictedReturn();
   testPostAidReplan();

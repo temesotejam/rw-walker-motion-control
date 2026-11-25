@@ -47,6 +47,8 @@ struct Input {
   float fore_aft_deg=NAN, periodic_acceleration_dps2=NAN;
   bool predict_left_return=false;
   float current_rise_tau_s=NAN;
+  float current_goal_ma=NAN;
+  uint32_t current_age_us=UINT32_MAX;
 #endif
 };
 struct Choice {
@@ -61,6 +63,7 @@ struct Choice {
   float aligned_current_ma=NAN, gross_work_limit_j=NAN;
   float release_deceleration_dps2=NAN;
   float previous_arc_deceleration_dps2=NAN;
+  float response_window_ms=NAN;
 #endif
 };
 
@@ -125,11 +128,12 @@ class PostAidObserver {
       peak_=peak;end_=end;first_work_=gross_work_sum_j;recheck_decel_=previous_decel;
     }
   }
-  Choice observeRecheck(const Input& in,uint64_t now_us,float aligned_current_ma) {
+  Choice observeRecheck(const Input& in,uint64_t now_us,float aligned_current_ma,bool event_allocation=false) {
     if (!(recheck_decel_>0)) return {};
-    return observe(in,now_us,aligned_current_ma,true);
+    return observe(in,now_us,aligned_current_ma,true,event_allocation);
   }
-  Choice observe(const Input& in,uint64_t now_us,float aligned_current_ma=NAN,bool continuation=false) {
+  Choice observe(const Input& in,uint64_t now_us,float aligned_current_ma=NAN,bool continuation=false,
+                 bool event_allocation=false) {
     Choice out;
     if (!peak_) return out;
     const bool recheck=recheck_decel_>0;
@@ -189,7 +193,20 @@ class PostAidObserver {
     if (!lost_first_work && (!continuation || in.angle_deg-stopping_distance<=one_slot_travel)) return out;
     const float higher_decel=std::fmax(last_decel,a);
     const float time_to_stop=speed/higher_decel;
-    if (!(in.current_rise_tau_s>0 && time_to_stop>=in.current_rise_tau_s+.005f)) return out;
+    if (!(in.current_rise_tau_s>0 && std::isfinite(in.current_rise_tau_s))) return out;
+    const float dispatch_s=.005f;
+    float response_s=in.current_rise_tau_s+dispatch_s;
+    if (time_to_stop<response_s && event_allocation && continuation && in.current_age_us<=50000 &&
+        aligned_current_ma>0 && std::isfinite(in.current_goal_ma) && aligned_current_ma<in.current_goal_ma) {
+      // Compare at the same current as a cold start at one time constant.
+      // Propagate the last zero-command current to the latest allowed start.
+      const float at_start=aligned_current_ma*std::exp(-(in.current_age_us*1.e-6f+dispatch_s)/
+                                                       walking_energy_policy::kCoastFallTauS);
+      const float rise_fraction=std::fmax(0.f,1.f+std::log1p(-at_start/in.current_goal_ma));
+      response_s=dispatch_s+in.current_rise_tau_s*rise_fraction;
+    }
+    if (!(time_to_stop>=response_s && time_to_stop>=dispatch_s+.001f)) return out;
+    out.response_window_ms=1000.f*response_s;
     const float carry=support_transfer_plan::kCarryDps;
     out.gross_work_limit_j=.5f*in.target_j-first_work_;
     const float terminal=continuation ? support_transfer_plan::arcEntryDeg(-1,l.measured+in.fore_aft_deg) : 0.f;
@@ -197,7 +214,7 @@ class PostAidObserver {
     if (!(out.request_j>0)) return out;
     // Keep the command inside the observed inward interval even allowing
     // the same five ms of dispatch latency as the normal freshness gate.
-    out.loss_cap_ms=static_cast<uint16_t>(std::fmin(1000.f*time_to_stop-5.f,walking_energy_policy::kMaxPulseMs));
+    out.loss_cap_ms=static_cast<uint16_t>(std::fmin(1000.f*(time_to_stop-dispatch_s),walking_energy_policy::kMaxPulseMs));
     out.selected=true;
     out.evidence=recheck?Evidence::RecheckedShortfall:(continuation?Evidence::ContinuationShortfall:Evidence::PostAidShortfall);
     out.terminal_deg=terminal;

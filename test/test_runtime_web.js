@@ -275,7 +275,7 @@ vm.runInContext(code,context);
   gate.diagnostic_build_id='walking-support-transfer-v39-walk5-logfix4';
   assert.strictEqual(vm.runInContext('singleWalkingBuild(gate)',context), true);
   gate.foot_periodic=footPacket;
-  for(const version of ['walk6','walk6-logfix1']) {
+  for(const version of ['walk6','walk6-logfix1','walk7']) {
     gate.diagnostic_build_id='walking-support-transfer-v39-'+version;
     vm.runInContext('adoptStatus(gate);render(gate)',context);
     assert.match(element('work-description').textContent,/自動で揺り戻す/);
@@ -308,7 +308,7 @@ vm.runInContext(code,context);
   assert.match(element('run-model').textContent,/勢いが足りたら通電を切り上げ/);
   assert.match(element('run-percent').textContent,/中心の手前から補助/);
   assert.match(element('work-start-status').textContent,/歩行測定中/);
-  for (const [profile,text] of [['left_transfer_carry_v6',/残り時間で補います/],['left_transfer_carry_v4',/中心通過後の主入力/],['left_transfer_carry_v3',/左補助の後/],['left_transfer_carry_v2',/中心を越える前後/],['left_transfer_carry_v1',/左支持に移った後/],['left_return_history_v1',/左への戻り/],['left_return_prediction_v1',/支持移行を予測/],['right_arrival_v1',/到達エネルギー/]]) {
+  for (const [profile,text] of [['left_transfer_carry_v7',/観測した減速と残留電流/],['left_transfer_carry_v6',/残り時間で補います/],['left_transfer_carry_v4',/中心通過後の主入力/],['left_transfer_carry_v3',/左補助の後/],['left_transfer_carry_v2',/中心を越える前後/],['left_transfer_carry_v1',/左支持に移った後/],['left_return_history_v1',/左への戻り/],['left_return_prediction_v1',/支持移行を予測/],['right_arrival_v1',/到達エネルギー/]]) {
     vm.runInContext(`renderWalkingProfile('${profile}')`,context);
     assert.match(element('run-model').textContent,text);
   }

@@ -36,9 +36,11 @@ fixture = fixture.replace(marker, marker + r'''
   bool post_aid=false;
   bool prediction_trial=false;
   bool transfer_carry=false;
+  bool transfer_recheck=false;
   bool isLeftTransferCarryProfile() const { return transfer_carry; }
   bool isTransferPriorityProfile() const { return transfer_carry; }
   bool isRecoveryWalkingProfile() const { return transfer_carry; }
+  bool isTransferRecheckProfile() const { return transfer_recheck; }
   bool isContinuationPriorityProfile() const { return transfer_carry; }
   bool returnPredictionTrialSelected() const { return prediction_trial || transfer_carry; }
   bool carryHistoryTrialSelected() const { return returnPredictionTrialSelected() || history_trial; }
@@ -90,6 +92,7 @@ fixture = fixture.replace(marker, marker + r'''
       }
       if (runner.post_aid) {
         a.return_evidence=8;a.post_cap_ms=38;a.post_release_deceleration_dps2=172.43f;
+        a.post_response_window_ms=21.5f;
         a.post_increment_j=.000051f;a.post_elapsed_increment_j=.000049f;
       } else if (runner.passage) {
         a.return_evidence=1;
@@ -133,6 +136,7 @@ fixture = fixture.replace(marker, r'''
     auto& continuation=first_continues?first:second;
     continuation.return_evidence=8;
     continuation.post_release_deceleration_dps2=172.43f;
+    continuation.post_response_window_ms=21.5f;
     const std::string prefix(std::stoul(argv[2]),'x');
     PsramString out;
     host_psram_failure=true;
@@ -199,23 +203,25 @@ fixture = fixture.replace('const bool small_step=false;', '''
 #if WALKING_RETURN_HISTORY
   runner.history_trial=argc>1 && std::string(argv[1])=="history";
   runner.passage=argc>1 && std::string(argv[1])=="passage";
-  runner.post_aid=argc>1 && std::string(argv[1])=="post-aid";
+  runner.post_aid=argc>1 && (std::string(argv[1])=="post-aid" || std::string(argv[1])=="post-aid-v6");
   runner.prediction_trial=argc>1 && std::string(argv[1])=="prediction";
   runner.transfer_carry=!runner.baseline && !runner.history_trial && !runner.prediction_trial;
+  runner.transfer_recheck=runner.transfer_carry && !(argc>1 && std::string(argv[1])=="post-aid-v6");
 #endif
 #endif
   const bool small_step=argc>1 && std::string(argv[1])=="small-step";''')
 fixture = fixture.replace('const bool return_energy_mode=true;', 'const bool return_energy_mode=!small_step;')
 fixture = fixture.replace('early_energy_mode=EARLY_ENERGY_MAIN;', 'early_energy_mode=EARLY_ENERGY_MAIN && !small_step;')
 profile_line = next(line for line in context['logger'].splitlines() if 'String(walking_trial::name(walking_profile_))' in line)
+profile_flags = context['logger'].split('  const bool transfer_recheck =', 1)[1].split('#if WALKING_SMALL_STEP_AB', 1)[0]
 fixture = fixture.replace('json+="{";', 'json+="{";\n#if WALKING_SMALL_STEP_AB\n'
                           '  auto walking_profile_=small_step ? walking_trial::Profile::SmallStep : walking_trial::forRun(true,8.f,0.f);\n'
                           '#if WALKING_RETURN_HISTORY\n  if(runner.history_trial) walking_profile_=walking_trial::Profile::CarryHistory;\n#endif\n'
                           '#if WALKING_RETURN_HISTORY\n  if(runner.prediction_trial) walking_profile_=walking_trial::Profile::ReturnPrediction;\n#endif\n'
+                          '  if(argc>1 && std::string(argv[1])=="post-aid-v6") walking_profile_=walking_trial::Profile::LeftTransferCarryV6;\n'
                           + profile_line + '\n#endif\n'
-                          '#if WALKING_SMALL_STEP_AB\n  const bool recovery_walk=walking_profile_==walking_trial::Profile::LeftTransferCarryV6;\n  const bool post_aid_recheck=walking_profile_==walking_trial::Profile::LeftTransferCarryV3 || walking_profile_==walking_trial::Profile::LeftTransferCarryV4 || walking_profile_==walking_trial::Profile::LeftTransferCarryV5 || walking_profile_==walking_trial::Profile::LeftTransferCarryV6;\n'
-                          '  const bool continuation_recheck=walking_profile_==walking_trial::Profile::LeftTransferCarryV5 || walking_profile_==walking_trial::Profile::LeftTransferCarryV6;\n'
-                          '#else\n  const bool post_aid_recheck=false, continuation_recheck=false, recovery_walk=false;\n#endif\n')
+                          '#if WALKING_SMALL_STEP_AB\n  const bool transfer_recheck =' + profile_flags +
+                          '#else\n  const bool post_aid_recheck=false, continuation_recheck=false, recovery_walk=false, transfer_recheck=false;\n#endif\n')
 with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
     temp = Path(folder)
     (temp / 'test.cpp').write_text(fixture, encoding='utf8')
@@ -258,8 +264,10 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                     value = aid['arc_post_release_decel_dps2']
                     if expected:
                         assert abs(value - 172.43) < 1.e-4
+                        assert aid['arc_post_response_window_ms'] == 21.5
                     else:
                         assert value is None
+                        assert aid['arc_post_response_window_ms'] is None
                 output_dir = temp / mode
                 rwlog = temp / (mode + '.rwlog')
                 write_fixture(rwlog, raw)
@@ -270,9 +278,11 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                     rows = list(csv.DictReader(stream))
                 assert abs(float(rows[continuation_index]['arc_post_release_decel_dps2']) - 172.43) < 1.e-4
                 assert rows[3-continuation_index]['arc_post_release_decel_dps2'] == ''
+                assert float(rows[continuation_index]['arc_post_response_window_ms']) == 21.5
+                assert rows[3-continuation_index]['arc_post_response_window_ms'] == ''
                 print(f'{mode}: sealed metadata {len(payload)} bytes, CRC {int(retry_crc):08x}, '
                       'identical on retry, combined RWLOG and CSV verified')
-        modes = [('', 7), ('empty', 0)] + ([('small-step', 7)] if turn else []) + ([('history', 7),('prediction', 7),('passage', 7),('post-aid', 7)] if arrival else [])
+        modes = [('', 7), ('empty', 0)] + ([('small-step', 7)] if turn else []) + ([('history', 7),('prediction', 7),('passage', 7),('post-aid', 7),('post-aid-v6', 7)] if arrival else [])
         for mode, count in modes:
             output = subprocess.check_output([str(exe)] + ([mode] if mode else []), text=True).splitlines()
             raw, _ = map(parse, output)
@@ -282,11 +292,12 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 assert raw['walking_profile'] == ('v14_small_step' if mode=='small-step' else
                                                   'left_return_history_v1' if mode=='history' else
                                                   'left_return_prediction_v1' if mode=='prediction' else
-                                                  'left_transfer_carry_v6' if arrival else 'turn3')
+                                                  'left_transfer_carry_v6' if mode=='post-aid-v6' else
+                                                  'left_transfer_carry_v7' if arrival else 'turn3')
             if arrival and mode!='small-step':
                 model=metadata['walking_energy']
                 assert model['right_arrival_model']==('positive_unassisted_real_zero_startup_4p5_5_v1'
-                       if raw['walking_profile']=='left_transfer_carry_v6' else 'positive_unassisted_real_zero_startup_4p5_v1')
+                       if raw['walking_profile'] in ('left_transfer_carry_v6', 'left_transfer_carry_v7') else 'positive_unassisted_real_zero_startup_4p5_v1')
                 if rows:
                     r=rows[0]
                     assert r['right_arrival_checked'] and r['right_arrival_eligible']
@@ -349,7 +360,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 assert 'arc_aid_reason' not in block['records']['fields']
                 if count:
                     assert aids[0]['row_index'] == 1 and aids[0]['arc_foot_source'] == 2
-                    if raw.get('walking_profile') != 'left_transfer_carry_v6':
+                    if raw.get('walking_profile') not in ('left_transfer_carry_v6', 'left_transfer_carry_v7'):
                         assert 'arc_post_release_decel_dps2' not in aids[0]
                     assert block['arc_aid_reason_names'][aids[0]['arc_aid_reason']] == 'applied'
                     assert block['arc_aid_reason_names'][10] == 'command_veto'
@@ -382,7 +393,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
             fields = raw['walking_energy']['records']['fields']
             assert len(fields) == len(set(fields))
             assert all(len(row) == len(fields) for row in raw['walking_energy']['records']['rows'])
-            for prior, current in zip(previous_rows['' if mode in ('history','prediction','passage','post-aid') else mode], rows):
+            for prior, current in zip(previous_rows['' if mode in ('history','prediction','passage','post-aid','post-aid-v6') else mode], rows):
                 for key in ['available_j', 'target_j', 'potential_j', 'request_j', 'predicted_work_j',
                             'predicted_arrival_j', 'unmet_j', 'q_mas', 'requested_ms', 'guarded_ms']:
                     assert current[key] == prior[key], (key, current[key], prior[key])
@@ -417,7 +428,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 if carry:
                     assert csv_rows[1]['arc_base_guarded_ms'] == '28' and csv_rows[1]['arc_main_reserve_ms'] == '50'
                     assert all(row['arc_aid_reason'] == '' for i, row in enumerate(csv_rows) if i != 1)
-                    if arrival and mode in ('','history','prediction','passage','post-aid'):
+                    if arrival and mode in ('','history','prediction','passage','post-aid','post-aid-v6'):
                         assert csv_rows[1]['arc_history_base_ms']=='19' and csv_rows[1]['arc_history_selected_ms']=='24'
                         assert csv_rows[1]['arc_history_first_peak_ms']=='2519' and csv_rows[1]['arc_history_second_peak_ms']=='4242'
                         assert csv_rows[1]['arc_history_limit_ms']=='28' and float(csv_rows[1]['arc_history_request_j'])>0
@@ -439,10 +450,16 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                         assert abs(float(csv_rows[1]['arc_approach_request_j'])-.000036)<1e-9
                         assert int(csv_rows[1]['arc_crossing_ref_zero_ms'])==3168
                         assert int(csv_rows[1]['arc_crossing_selected_ms'])==32
-                    elif arrival and mode=='post-aid':
+                    elif arrival and mode in ('post-aid','post-aid-v6'):
                         row = csv_rows[1]
-                        assert 'one_fresh_inward_recheck' in raw['foot_timing']['policy']
-                        assert 'observed_carry_can_end_continuation_early' in raw['foot_timing']['policy']
+                        if mode=='post-aid-v6':
+                            assert 'one_fresh_inward_recheck' in raw['foot_timing']['policy']
+                            assert 'observed_carry_can_end_continuation_early' in raw['foot_timing']['policy']
+                            assert 'arc_post_response_window_ms' not in row
+                        else:
+                            assert 'recheck_measured_deceleration_and_residual_current' in raw['foot_timing']['policy']
+                            assert 'estimate_work_for_next_support_and_actual_ZERO_main' in raw['foot_timing']['policy']
+                            assert float(row['arc_post_response_window_ms']) == 21.5
                         assert block['return_evidence_names'][8]=='continue_after_observed_loss'
                         assert block['completion_reason_names'][7]=='observed_carry_cutoff'
                         assert block['reversal_cutoff_scope']=='post_aid_or_priority_assist_two_fresh_outward_rates_before_zero'

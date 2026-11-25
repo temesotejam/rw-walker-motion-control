@@ -166,6 +166,70 @@ inline uint16_t mainDuration(const lateral_energy::CurrentTable& current,
   return lateral_energy::charge(current,hi,initial,in.goal_current_ma)<=c.charge_max_mAs ? hi : 0;
 }
 
+#if WALKING_RETURN_HISTORY
+// Replan an already wheel-limited continuation. A shorter pulse must first
+// pay for reaching ZERO at a speed that previously led into the receiving
+// arc. Only the gain over the present zero-command current tail is available.
+inline Audit planPostAidPassage(const MainPassages& passages,uint32_t departure,uint32_t now,
+    uint16_t envelope,const lateral_energy::CurrentTable& current,const walking_return_energy::Input& in,
+    float target_j,float gross_limit_j,float conservative_decel,uint16_t guarded_width) {
+  Audit best;
+  if (!(departure && now>departure && now-departure<=1500 && in.side==-1 &&
+        in.body_angle_deg>0 && in.body_angle_deg<=12 && in.rate_dps>=support_transfer_plan::kCarryDps &&
+        in.rate_dps<=35 && conservative_decel>0 && std::isfinite(conservative_decel) &&
+        target_j>0 && std::isfinite(target_j) && gross_limit_j>0 && std::isfinite(gross_limit_j) &&
+        current.ready && in.initial_current_ma>=0 && in.initial_current_ma<in.goal_current_ma &&
+        std::isfinite(in.goal_current_ma) && guarded_width>1 && guarded_width<=in.cap_ms &&
+        guarded_width<=envelope && envelope<=half_cycle_energy_budget::kEnvelopeMs)) return best;
+
+  const auto coeff=lateral_energy::coefficients(-1);
+  const float omega=in.rate_dps*lateral_energy::kRadPerDeg;
+  const auto net_work=[&](uint16_t ms) {
+    const float q=lateral_energy::charge(current,ms,in.initial_current_ma,in.goal_current_ma);
+    return lateral_energy::work(coeff,omega,q)-
+        half_cycle_energy_budget::postAidCoastWork(in.rate_dps,in.initial_current_ma,ms);
+  };
+  const float q=lateral_energy::charge(current,guarded_width,in.initial_current_ma,in.goal_current_ma);
+  if (!(q>0 && q<=coeff.charge_max_mAs && lateral_energy::work(coeff,omega,q)<=gross_limit_j)) return best;
+  const float maximum_gain=net_work(guarded_width);
+  uint16_t best_total=envelope+1;
+  for (const auto& pass:passages.recent) {
+    if (!(pass.zero_ms && pass.peak_ms>pass.zero_ms && pass.peak_ms-pass.zero_ms<=1500 &&
+          pass.peak_ms<departure && now-pass.peak_ms<=4000 && pass.target_j>0 && pass.target_j<=target_j+1.e-9f &&
+          pass.speed_dps>=support_transfer_plan::kCarryDps &&
+          pass.speed_dps<=walking_energy_policy::passiveCoefficients(-1).rate_max_dps &&
+          pass.main_ms>0 && pass.main_ms<=half_cycle_energy_budget::kEnvelopeMs &&
+          pass.main_j>0 && std::isfinite(pass.main_j))) continue;
+    const float needed=energyShortfall(in.body_angle_deg,0,in.rate_dps,pass.speed_dps,conservative_decel);
+    if (!(needed>0 && maximum_gain>=needed)) continue;
+
+    // Model the later main at the reference speed, starting with no current
+    // credit from this pulse. The real main is solved again at measured ZERO.
+    const float main_work=pass.main_j+std::fmax(0.f,target_j-pass.target_j);
+    const uint16_t reserve=mainDuration(current,in,pass.speed_dps,main_work,envelope);
+    if (!reserve) continue;
+    if (guarded_width+reserve<=envelope) return {};  // Both events already fit.
+    const uint16_t available=envelope-reserve;
+    if (!available || net_work(available)<needed) continue;
+    // A nonnegative initial current below the goal makes incremental work
+    // relative to the decaying coast tail monotone over this interval.
+    uint16_t lo=0,hi=available;
+    while (hi-lo>1) {
+      const uint16_t mid=(lo+hi)/2;
+      if (net_work(mid)<needed) lo=mid; else hi=mid;
+    }
+    const uint16_t total=hi+reserve;
+    if (total>best_total || (total==best_total && hi>=best.final_ms)) continue;
+    best_total=total;
+    best.zero_ms=pass.zero_ms;best.peak_ms=pass.peak_ms;best.speed_dps=pass.speed_dps;
+    best.request_j=needed;best.base_ms=guarded_width;best.final_ms=hi;
+    best.passage_main_ms=pass.main_ms;best.passage_reserve_ms=reserve;
+    best.passage_main_j=main_work;best.passage_zero_dps=pass.speed_dps;
+  }
+  return best;
+}
+#endif
+
 // Fallback for an accepted left aid while the receiving sole is still
 // higher. A fixed-foot path must change supporting side before body zero,
 // in both the measured and delay-compensated poses. Its exact impact time

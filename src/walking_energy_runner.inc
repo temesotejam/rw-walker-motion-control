@@ -213,6 +213,7 @@ bool ExperimentRunner::tryWalkingEnergy(
     a.return_foot_age_ms=walking_return_observation_.foot_age_ms;
     a.predicted_transfer_ms=walking_return_observation_.predicted_transfer_ms;
     a.predicted_terminal_deg=walking_return_observation_.terminal_deg;
+    a.post_response_window_ms=walking_return_observation_.response_window_ms;
   }
 #endif
 #endif
@@ -380,6 +381,17 @@ bool ExperimentRunner::tryWalkingEnergy(
 #endif
       selected.coast?0:guard.limit(side,e.pre_input_wheel_speed_rpm,true,t,guard_input);
   if (width>selected.width_ms) width=selected.width_ms;
+#if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
+  if (isTransferRecheckProfile() && post_aid && return_observation_policy::targetsReceivingArc(evidence) && width) {
+    const auto split=return_crossing_work::planPostAidPassage(walking_main_passages_,a.peak_ms,t,
+        a.envelope_before_ms,walking_energy_current_,calculation,selected.target_j,
+        walking_return_observation_.gross_work_limit_j,a.return_deceleration_dps2,width);
+    if (split.final_ms) {
+      a.crossing_work=split;
+      width=split.final_ms;
+    }
+  }
+#endif
 #if SUPPORT_TRANSFER_CARRY2
   if (return_aid && !post_aid && side==-1 && !exhausted && width>0 && energy_control_autonomous_target_peak_deg_==8.f &&
       energy_control_autonomous_input_peak_percent_==0) {
@@ -979,6 +991,8 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
   if (isLeftTransferCarryProfile()) {
     json+="\"post_aid_work_comparison\":\"modeled_pulse_work_minus_zero_command_tail_over_same_duration\",";
     json+="\"post_aid_coast_fall_tau_s\":"+String(walking_energy_policy::kCoastFallTauS,6)+",";
+    if (isTransferRecheckProfile())
+      json+="\"post_aid_policy\":\"measured_current_to_cold_tau_level_with_age_and_dispatch_decay;reserve_main_if_both_event_work_targets_fit\",";
   }
 #endif
 #if WALKING_RIGHT_ARRIVAL
@@ -1144,6 +1158,8 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
     // have no release observation; their default NaN is serialized as null.
     if (isContinuationPriorityProfile())
       row+=",\"arc_post_release_decel_dps2\":"+n(a.post_release_deceleration_dps2);
+    if (isTransferRecheckProfile())
+      row+=",\"arc_post_response_window_ms\":"+n(a.post_response_window_ms);
     if (isTransferPriorityProfile()) {
       row+=",\"arc_priority_base_ms\":"+String(a.arc_priority.base_ms)+",\"arc_priority_base_j\":"+n(a.arc_priority.base_work_j);
       row+=",\"arc_priority_zero_j\":"+n(a.arc_priority.zero_work_j)+",\"arc_priority_cap_ms\":"+String(a.arc_priority.cap_ms);

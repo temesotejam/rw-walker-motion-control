@@ -520,7 +520,8 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
   const bool inverse_mode = energy_bridge_enabled_ && !negative_probe_mode_ &&
       autonomous_brake_max_ms_ == 25;
   const bool small_step = walking_profile_ == walking_trial::Profile::SmallStep;
-  const bool recovery_walk = walking_profile_ == walking_trial::Profile::LeftTransferCarryV6;
+  const bool transfer_recheck = walking_profile_ == walking_trial::Profile::LeftTransferCarryV7;
+  const bool recovery_walk = walking_trial::hasRecovery(walking_profile_);
   const bool continuation_recheck = walking_profile_ == walking_trial::Profile::LeftTransferCarryV5 || recovery_walk;
   const bool post_aid_recheck = walking_profile_ == walking_trial::Profile::LeftTransferCarryV3 ||
                                 walking_profile_ == walking_trial::Profile::LeftTransferCarryV4 ||
@@ -590,6 +591,8 @@ bool PsramLogger::buildMetadataJson(PsramString& json) const {
       }
       json += "\"peak_mpc\":{\"active\":false,\"scope\":\"inactive_legacy\"},";
       if (small_step) json += "\"foot_timing\":{\"active\":false,\"policy\":\"feet_measured_for_comparison;v14_imu_phase_lead\"},";
+      else if (transfer_recheck)
+        json += "\"foot_timing\":{\"active\":true,\"policy\":\"left_return_aid;recheck_measured_deceleration_and_residual_current;estimate_work_for_next_support_and_actual_ZERO_main;combined80ms_envelope\"},";
       else if (recovery_walk)
         json += "\"foot_timing\":{\"active\":true,\"policy\":\"left_return_aid;continuation_then_one_fresh_inward_recheck;observed_carry_can_end_continuation_early;actual_ZERO_main_recomputed;combined80ms_envelope\"},";
       else if (continuation_recheck) json += "\"foot_timing\":{\"active\":true,\"policy\":\"left_return_aid;receiving_foot_and_projected_coast_shortfall_can_reopen_aid_once;observed_carry_can_end_continuation_early;actual_ZERO_main_recomputed;combined80ms_envelope\"},";

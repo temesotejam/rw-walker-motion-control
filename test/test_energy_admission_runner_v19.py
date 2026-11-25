@@ -69,7 +69,9 @@ fixture = fixture.replace('class ExperimentRunner {public:', '''class Experiment
  bool isTransferPriorityProfile()const{return transfer_priority;}
  bool continuation_priority=false;
  bool recovery_profile=false;
+ bool transfer_recheck=false;
  bool isRecoveryWalkingProfile()const{return recovery_profile;}
+ bool isTransferRecheckProfile()const{return transfer_recheck;}
  bool isContinuationPriorityProfile()const{return continuation_priority;}
  bool isLeftTransferCarryProfile()const{return transfer_carry;}
  bool returnPredictionTrialSelected()const{return prediction_trial || transfer_carry;}

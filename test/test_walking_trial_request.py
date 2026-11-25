@@ -86,7 +86,8 @@ int main(){
     const auto measured=r.logger.walkingTrialProfile();
     if(target==8 && WALKING_SMALL_STEP_AB) {
 #if WALKING_RETURN_HISTORY
-      assert(!std::strcmp(walking_trial::name(measured),"left_transfer_carry_v6"));
+      assert(!std::strcmp(walking_trial::name(measured),"left_transfer_carry_v7"));
+      assert(r.isTransferRecheckProfile());
       assert(r.isRecoveryWalkingProfile() && r.isContinuationPriorityProfile() && r.isTransferPriorityProfile() && r.isLeftTransferCarryProfile() && r.carryHistoryTrialSelected() && r.returnPredictionTrialSelected());
 #elif WALKING_RIGHT_ARRIVAL
       assert(measured==Profile::RightArrival);
@@ -106,6 +107,9 @@ int main(){
   assert(http.status==409 && q.takeCommand()==Queue::Command::None);
   assert(walking_trial::forRun(false,8,0)==Profile::None);
   assert(walking_trial::forRun(true,8,1)==Profile::None);
+  r.logger.profile=Profile::LeftTransferCarryV6;
+  assert(!std::strcmp(walking_trial::name(r.logger.profile),"left_transfer_carry_v6"));
+  assert(r.isRecoveryWalkingProfile() && !r.isTransferRecheckProfile());
 }
 '''
 

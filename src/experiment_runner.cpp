@@ -2682,7 +2682,7 @@ void ExperimentRunner::resetEnergyControlAutonomous() {
   walking_crossing_reference_={};
 #if SUPPORT_TRANSFER_STALL_V3
   walking_main_passages_={};
-  walking_post_aid_={};transfer_post_i0_ma_=NAN;
+  walking_post_aid_={};transfer_post_i0_ma_=transfer_post_goal_ma_=NAN;transfer_post_current_us_=0;
 #endif
   walking_return_history_={};
 #endif
@@ -3575,9 +3575,12 @@ __attribute__((noinline)) bool ExperimentRunner::observeInwardStallRescue(
   const bool recheck=isRecoveryWalkingProfile() && walking_half_cycle_budget_.allowRecheck(ri.peak_ms);
   if (isLeftTransferCarryProfile() && (walking_half_cycle_budget_.allowPostAid(ri.peak_ms) || recheck)) {
     ri.active=waiting && walkingForeAftAllowsOutput();
+    const bool allocate=isTransferRecheckProfile();
+    ri.current_goal_ma=transfer_post_goal_ma_;
+    if (transfer_post_current_us_) ri.current_age_us=micros()-transfer_post_current_us_;
     const auto post=recheck
-        ? walking_post_aid_.observeRecheck(ri,esp_timer_get_time(),transfer_post_i0_ma_)
-        : walking_post_aid_.observe(ri,esp_timer_get_time(),transfer_post_i0_ma_,isContinuationPriorityProfile());
+        ? walking_post_aid_.observeRecheck(ri,esp_timer_get_time(),transfer_post_i0_ma_,allocate)
+        : walking_post_aid_.observe(ri,esp_timer_get_time(),transfer_post_i0_ma_,isContinuationPriorityProfile(),allocate);
     if (post.selected) walking_return_observation_=post;
   }
 #endif
@@ -3950,7 +3953,8 @@ void ExperimentRunner::observeSupportTransfer(uint32_t t, uint32_t sample_us, fl
 #if SUPPORT_TRANSFER_STALL_V3
   transfer_acceleration_dps2_=acceleration;
 #if WALKING_RETURN_HISTORY
-  transfer_post_i0_ma_=NAN;
+  transfer_post_i0_ma_=transfer_post_goal_ma_=NAN;
+  transfer_post_current_us_=0;
 #endif
 #endif
   const int side = -energy_control_autonomous_last_peak_side_;
@@ -4025,7 +4029,11 @@ void ExperimentRunner::observeSupportTransfer(uint32_t t, uint32_t sample_us, fl
   if (first.return_event && first.peak_ms==s.peak_ms && first.completion_reason==1 &&
       !s.gate_mask && s.current_after_zero_ms!=UINT16_MAX) {
     const uint32_t on=static_cast<uint32_t>(packet.epoch_us+uint64_t(first.output_start_ms)*1000);
-    if (tel.applied_command_time_us-on<0x80000000u) transfer_post_i0_ma_=in.initial_current_ma;
+    if (tel.applied_command_time_us-on<0x80000000u) {
+      transfer_post_i0_ma_=in.initial_current_ma;
+      transfer_post_goal_ma_=in.goal_current_ma;
+      transfer_post_current_us_=tel.current_sample_time_us;
+    }
   }
 #endif
   transfer_audit_.submit(s);
