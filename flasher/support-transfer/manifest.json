@@ -7,19 +7,19 @@
       "chipFamily": "ESP32-S3",
       "parts": [
         {
-          "path": "firmware/bootloader.bin",
+          "path": "firmware/bootloader.bin?v=walking-support-transfer-v39-walk7",
           "offset": 0
         },
         {
-          "path": "firmware/partitions.bin",
+          "path": "firmware/partitions.bin?v=walking-support-transfer-v39-walk7",
           "offset": 32768
         },
         {
-          "path": "firmware/boot_app0.bin",
+          "path": "firmware/boot_app0.bin?v=walking-support-transfer-v39-walk7",
           "offset": 57344
         },
         {
-          "path": "firmware/firmware.bin",
+          "path": "firmware/firmware.bin?v=walking-support-transfer-v39-walk7",
           "offset": 65536
         }
       ]

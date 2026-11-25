@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import struct
 import tempfile
+from urllib.parse import urljoin
 from urllib.request import ProxyHandler, build_opener
 import webbrowser
 
@@ -17,7 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ENVIRONMENT = "atoms3cam-foot-periodic40"
 BUILD_ID = "walking-support-transfer-v39-walk7"
 PAGE = "support-transfer"
-URL = f"http://127.0.0.1:8767/{PAGE}/"
+VERSION_QUERY = f"?v={BUILD_ID}"
+URL = f"http://127.0.0.1:8767/{PAGE}/{VERSION_QUERY}"
 PARTS = {"bootloader.bin": 0, "partitions.bin": 0x8000,
          "boot_app0.bin": 0xe000, "firmware.bin": 0x10000}
 SCRIPTS = ("flasher-completion.js", "soft-boot.js")
@@ -27,13 +29,20 @@ def check_page(root):
     flasher = root / "flasher"
     directory = flasher / PAGE
     html = (directory / "index.html").read_text(encoding="utf-8")
-    if (BUILD_ID not in html or 'manifest="manifest.json"' not in html
+    if (f"<code>{BUILD_ID}</code>" not in html or f'manifest="manifest.json{VERSION_QUERY}"' not in html
             or html.count("<esp-web-install-button ") != 1):
         raise ValueError(f"Installer page does not identify {BUILD_ID}")
     if any(f'src="{name}"' not in html for name in SCRIPTS):
         raise ValueError("Installer page is missing a helper script")
+    for filename, prefix in (("index.html", ""), ("foot-periodic40/index.html", "../")):
+        redirect = (flasher / filename).read_text(encoding="utf-8")
+        destination = prefix + PAGE + "/" + VERSION_QUERY
+        if f'url={destination}"' not in redirect or f'href="{destination}"' not in redirect:
+            raise ValueError(f"Installer redirect in {filename} differs from the current version")
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
-    parts = [{"path": "firmware/" + name, "offset": offset} for name, offset in PARTS.items()]
+    # ESP Web Tools resolves each part against the manifest URL. A relative
+    # path does not inherit the manifest's query, so version each part as well.
+    parts = [{"path": "firmware/" + name + VERSION_QUERY, "offset": offset} for name, offset in PARTS.items()]
     if (manifest.get("version") != BUILD_ID or manifest.get("new_install_improv_wait_time") != 0
             or manifest.get("builds") != [{"chipFamily": "ESP32-S3", "parts": parts}]):
         raise ValueError("Unexpected installer identity or flash layout")
@@ -169,7 +178,8 @@ def serve(root=ROOT):
         names = ["index.html", "manifest.json", *SCRIPTS, *("firmware/" + n for n in PARTS)]
         for name in names:
             expected = (directory / PAGE / name).read_bytes()
-            with client.open(URL + name, timeout=5) as response:
+            versioned = name in ("index.html", "manifest.json") or name.startswith("firmware/")
+            with client.open(urljoin(URL, name) + (VERSION_QUERY if versioned else ""), timeout=5) as response:
                 if response.read(len(expected) + 1) != expected:
                     raise ValueError("Port 8767 is serving a different installer")
         webbrowser.open_new_tab(URL)

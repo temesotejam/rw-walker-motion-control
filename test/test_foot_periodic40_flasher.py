@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.parse import urljoin
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -23,6 +24,8 @@ class InstallerTests(unittest.TestCase):
         self.page.mkdir(parents=True)
         for file in ("index.html", "manifest.json", *flasher.SCRIPTS):
             shutil.copyfile(ROOT / "flasher" / file, directory / file)
+        (directory / "foot-periodic40").mkdir()
+        shutil.copyfile(ROOT / "flasher/foot-periodic40/index.html", directory / "foot-periodic40/index.html")
         for file in ("index.html", "manifest.json"):
             shutil.copyfile(ROOT / "flasher" / flasher.PAGE / file, self.page / file)
         self.build = self.root / ".pio/build" / flasher.ENVIRONMENT
@@ -41,12 +44,24 @@ class InstallerTests(unittest.TestCase):
     def test_main_and_direct_page_share_one_firmware(self):
         hashes = flasher.prepare(self.root, self.boot_app)
         self.assertEqual(hashes, flasher.check(self.root))
-        self.assertIn(f'url={flasher.PAGE}/', (self.root / "flasher/index.html").read_text(encoding="utf-8"))
-        for folder in (self.root / "flasher", self.page):
+        query = f"?v={flasher.BUILD_ID}"
+        self.assertTrue(flasher.URL.endswith("/" + query))
+        expected = [urljoin(flasher.URL, "firmware/" + name + query) for name in flasher.PARTS]
+        for folder, relative in ((self.root / "flasher", "/manifest.json"), (self.page, "manifest.json")):
             manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
             binaries = manifest["builds"][0]["parts"]
-            self.assertEqual([folder / part["path"] for part in binaries],
-                             [self.page / "firmware" / name for name in flasher.PARTS])
+            manifest_url = urljoin(flasher.URL, relative + query)
+            self.assertEqual([urljoin(manifest_url, part["path"]) for part in binaries], expected)
+
+    def test_stale_cache_urls_are_rejected(self):
+        for file in (self.page / "index.html", self.page / "manifest.json", self.page.parent / "manifest.json",
+                     self.page.parent / "index.html", self.page.parent / "foot-periodic40/index.html"):
+            with self.subTest(file=file):
+                original = file.read_text(encoding="utf-8")
+                file.write_text(original.replace(flasher.VERSION_QUERY, ""), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    flasher.check_page(self.root)
+                file.write_text(original, encoding="utf-8")
 
     def test_web_text_cannot_authorize_the_wrong_firmware(self):
         known = flasher.prepare(self.root, self.boot_app)
