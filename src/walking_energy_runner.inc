@@ -40,7 +40,7 @@ bool ExperimentRunner::cutReturnAidAtZero(uint32_t now_ms,uint32_t sample_us,
       before>0 && after>=before && rate>0 && energy_control_autonomous_previous_detector_rate_dps_>0;
   if (!centre && !reversed) {
     const uint32_t t=now_ms-run_start_ms_;
-    if (evidence!=return_observation_policy::Evidence::ContinuationShortfall || side!=1 || t<pulse.output_start_ms ||
+    if (!return_observation_policy::targetsReceivingArc(evidence) || side!=1 || t<pulse.output_start_ms ||
         !walking_post_aid_.releaseOnCarry(sample_us,static_cast<uint32_t>(micros()-sample_us),
             t-pulse.output_start_ms,after,rate,pulse.predicted_terminal_deg,
             pulse.post_release_deceleration_dps2)) return false;
@@ -96,9 +96,15 @@ void ExperimentRunner::finishWalkingEnergyPulse(uint32_t now_ms,uint8_t reason){
   a.envelope_after_ms=walking_half_cycle_budget_.remaining();
 #if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
   if (isLeftTransferCarryProfile() && a.return_event && a.side==-1 && reason==1 &&
-      !return_observation_policy::isPostAid(static_cast<return_observation_policy::Evidence>(a.return_evidence)) &&
-      a.completion.duration_completed && a.completion.work_valid && a.completion.charge_supported)
-    walking_post_aid_.arm(a.peak_ms,a.output_end_ms,a.start_rate_dps,a.completion.work_j);
+      a.completion.duration_completed && a.completion.work_valid && a.completion.charge_supported) {
+    const auto evidence=static_cast<return_observation_policy::Evidence>(a.return_evidence);
+    if (!return_observation_policy::isPostAid(evidence))
+      walking_post_aid_.arm(a.peak_ms,a.output_end_ms,a.start_rate_dps,a.completion.work_j);
+    else if (isRecoveryWalkingProfile() && evidence==return_observation_policy::Evidence::ContinuationShortfall &&
+             walking_half_cycle_budget_.allowRecheck(a.peak_ms))
+      walking_post_aid_.armRecheck(a.peak_ms,a.output_end_ms,walking_post_aid_.priorWork()+a.completion.work_j,
+                                   a.post_release_deceleration_dps2);
+  }
 #endif
 #if SUPPORT_TRANSFER_CARRY2
   if (!a.return_event && reason==1 && a.completion.valid)
@@ -195,6 +201,7 @@ bool ExperimentRunner::tryWalkingEnergy(
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
   const bool return_aid=walking_return_event_ && stall_rescue_event_;
   const bool post_aid=return_aid && return_observation_policy::isPostAid(walking_return_observation_.evidence);
+  const bool recheck=post_aid && walking_return_observation_.evidence==return_observation_policy::Evidence::RecheckedShortfall;
   a.envelope_before_ms=walking_half_cycle_budget_.remaining();a.envelope_after_ms=a.envelope_before_ms;
   a.assisted_cycle=walking_half_cycle_budget_.aidUsed() || return_aid;
   a.return_evidence=return_aid?static_cast<uint8_t>(walking_return_observation_.evidence):0;
@@ -232,7 +239,8 @@ bool ExperimentRunner::tryWalkingEnergy(
   if(!motion_allowed){save();return true;}
 #endif
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
-  if(post_aid?!walking_half_cycle_budget_.allowPostAid(a.peak_ms):
+  if(recheck?!walking_half_cycle_budget_.allowRecheck(a.peak_ms):
+      post_aid?!walking_half_cycle_budget_.allowPostAid(a.peak_ms):
       return_aid?!walking_half_cycle_budget_.allowAid(a.peak_ms):
       !walking_half_cycle_budget_.allowMain(a.peak_ms)){save();return true;}
 #endif
@@ -363,7 +371,7 @@ bool ExperimentRunner::tryWalkingEnergy(
   // capacity. Select the requested energy inside that capacity: applying
   // the attenuation to the minimum inverse width itself can leave a known
   // shortage even when the bounded wheel command could cover it.
-  if (post_aid && evidence==return_observation_policy::Evidence::ContinuationShortfall)
+  if (post_aid && return_observation_policy::targetsReceivingArc(evidence))
     guard_input=calculation.cap_ms;
 #endif
   uint16_t width=
@@ -713,7 +721,7 @@ bool ExperimentRunner::tryWalkingEnergy(
     save();return true;
   }
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
-  const auto kind=post_aid?half_cycle_energy_budget::Kind::PostAid:
+  const auto kind=recheck?half_cycle_energy_budget::Kind::Recheck:post_aid?half_cycle_energy_budget::Kind::PostAid:
       return_aid?half_cycle_energy_budget::Kind::ReturnAid:half_cycle_energy_budget::Kind::Main;
   if(!walking_half_cycle_budget_.accepted(kind,width)){
     requestEmergencyStop("energy_envelope_reservation_failed");save();return true;
@@ -900,6 +908,7 @@ void ExperimentRunner::appendWalkingEnergyMetadata(PsramString& json) const {
   json+=",\"measured_arc_shortfall\",\"predicted_arc_shortfall\",\"post_aid_shortfall\"";
 #if WALKING_RETURN_HISTORY
   if (isContinuationPriorityProfile()) json+=",\"continue_after_observed_loss\"";
+  if (isRecoveryWalkingProfile()) json+=",\"recheck_after_continuation\"";
 #endif
 #endif
   json+="],";

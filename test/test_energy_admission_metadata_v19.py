@@ -38,6 +38,7 @@ fixture = fixture.replace(marker, marker + r'''
   bool transfer_carry=false;
   bool isLeftTransferCarryProfile() const { return transfer_carry; }
   bool isTransferPriorityProfile() const { return transfer_carry; }
+  bool isRecoveryWalkingProfile() const { return transfer_carry; }
   bool isContinuationPriorityProfile() const { return transfer_carry; }
   bool returnPredictionTrialSelected() const { return prediction_trial || transfer_carry; }
   bool carryHistoryTrialSelected() const { return returnPredictionTrialSelected() || history_trial; }
@@ -212,9 +213,9 @@ fixture = fixture.replace('json+="{";', 'json+="{";\n#if WALKING_SMALL_STEP_AB\n
                           '#if WALKING_RETURN_HISTORY\n  if(runner.history_trial) walking_profile_=walking_trial::Profile::CarryHistory;\n#endif\n'
                           '#if WALKING_RETURN_HISTORY\n  if(runner.prediction_trial) walking_profile_=walking_trial::Profile::ReturnPrediction;\n#endif\n'
                           + profile_line + '\n#endif\n'
-                          '#if WALKING_SMALL_STEP_AB\n  const bool post_aid_recheck=walking_profile_==walking_trial::Profile::LeftTransferCarryV3 || walking_profile_==walking_trial::Profile::LeftTransferCarryV4 || walking_profile_==walking_trial::Profile::LeftTransferCarryV5;\n'
-                          '  const bool continuation_recheck=walking_profile_==walking_trial::Profile::LeftTransferCarryV5;\n'
-                          '#else\n  const bool post_aid_recheck=false, continuation_recheck=false;\n#endif\n')
+                          '#if WALKING_SMALL_STEP_AB\n  const bool recovery_walk=walking_profile_==walking_trial::Profile::LeftTransferCarryV6;\n  const bool post_aid_recheck=walking_profile_==walking_trial::Profile::LeftTransferCarryV3 || walking_profile_==walking_trial::Profile::LeftTransferCarryV4 || walking_profile_==walking_trial::Profile::LeftTransferCarryV5 || walking_profile_==walking_trial::Profile::LeftTransferCarryV6;\n'
+                          '  const bool continuation_recheck=walking_profile_==walking_trial::Profile::LeftTransferCarryV5 || walking_profile_==walking_trial::Profile::LeftTransferCarryV6;\n'
+                          '#else\n  const bool post_aid_recheck=false, continuation_recheck=false, recovery_walk=false;\n#endif\n')
 with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
     temp = Path(folder)
     (temp / 'test.cpp').write_text(fixture, encoding='utf8')
@@ -232,7 +233,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                         '-DSUPPORT_TRANSFER_V39=' + str(int(arrival)),
                         '-DFOOT_LOW_LATENCY_V20=' + str(int(arrival)),
                         '-DFOOT_STABLE40_V36=' + str(int(arrival)),
-                        '-DWALKING_RETURN_HISTORY=' + str(int(arrival)),
+                        '-DWALKING_RETURN_HISTORY=' + str(int(arrival)), '-DWALKING_RECOVERY_V6=' + str(int(arrival)),
                         '-I' + str(ROOT / 'test/fixtures/arduino'),
                         '-I' + str(ROOT / 'src'), str(temp / 'test.cpp'), '-o', str(exe)], check=True)
         if arrival:
@@ -281,11 +282,11 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 assert raw['walking_profile'] == ('v14_small_step' if mode=='small-step' else
                                                   'left_return_history_v1' if mode=='history' else
                                                   'left_return_prediction_v1' if mode=='prediction' else
-                                                  'left_transfer_carry_v5' if arrival else 'turn3')
+                                                  'left_transfer_carry_v6' if arrival else 'turn3')
             if arrival and mode!='small-step':
                 model=metadata['walking_energy']
                 assert model['right_arrival_model']==('positive_unassisted_real_zero_startup_4p5_5_v1'
-                       if raw['walking_profile']=='left_transfer_carry_v5' else 'positive_unassisted_real_zero_startup_4p5_v1')
+                       if raw['walking_profile']=='left_transfer_carry_v6' else 'positive_unassisted_real_zero_startup_4p5_v1')
                 if rows:
                     r=rows[0]
                     assert r['right_arrival_checked'] and r['right_arrival_eligible']
@@ -348,7 +349,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                 assert 'arc_aid_reason' not in block['records']['fields']
                 if count:
                     assert aids[0]['row_index'] == 1 and aids[0]['arc_foot_source'] == 2
-                    if raw.get('walking_profile') != 'left_transfer_carry_v5':
+                    if raw.get('walking_profile') != 'left_transfer_carry_v6':
                         assert 'arc_post_release_decel_dps2' not in aids[0]
                     assert block['arc_aid_reason_names'][aids[0]['arc_aid_reason']] == 'applied'
                     assert block['arc_aid_reason_names'][10] == 'command_veto'
@@ -440,7 +441,7 @@ with tempfile.TemporaryDirectory(prefix='admission_metadata_v19_') as folder:
                         assert int(csv_rows[1]['arc_crossing_selected_ms'])==32
                     elif arrival and mode=='post-aid':
                         row = csv_rows[1]
-                        assert 'reopen_aid_once' in raw['foot_timing']['policy']
+                        assert 'one_fresh_inward_recheck' in raw['foot_timing']['policy']
                         assert 'observed_carry_can_end_continuation_early' in raw['foot_timing']['policy']
                         assert block['return_evidence_names'][8]=='continue_after_observed_loss'
                         assert block['completion_reason_names'][7]=='observed_carry_cutoff'

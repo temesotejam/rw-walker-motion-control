@@ -2,12 +2,14 @@
 #include <cstdint>
 
 namespace walking_trial {
-enum class Profile : uint8_t { None, Turn3, SmallStep, RightArrival, CarryHistory, ReturnPrediction, LeftTransferCarryV1, LeftTransferCarryV2, LeftTransferCarryV3, LeftTransferCarryV4, LeftTransferCarryV5 };
+enum class Profile : uint8_t { None, Turn3, SmallStep, RightArrival, CarryHistory, ReturnPrediction, LeftTransferCarryV1, LeftTransferCarryV2, LeftTransferCarryV3, LeftTransferCarryV4, LeftTransferCarryV5, LeftTransferCarryV6 };
 // The accepted run settings determine the logged and executed policy. Earlier
 // names remain available for interpreting archived measurements.
 inline Profile forRun(bool wheel_work, float target_deg, float input_percent) {
   if (!wheel_work || target_deg!=8.f || input_percent!=0.f) return Profile::None;
-#if WALKING_SMALL_STEP_AB && WALKING_RETURN_HISTORY
+#if WALKING_SMALL_STEP_AB && WALKING_RETURN_HISTORY && WALKING_RECOVERY_V6
+  return Profile::LeftTransferCarryV6;
+#elif WALKING_SMALL_STEP_AB && WALKING_RETURN_HISTORY
   return Profile::LeftTransferCarryV5;
 #elif WALKING_SMALL_STEP_AB && WALKING_RIGHT_ARRIVAL
   return Profile::RightArrival;
@@ -28,6 +30,7 @@ inline const char* name(Profile profile) {
     case Profile::LeftTransferCarryV2: return "left_transfer_carry_v2";
     case Profile::LeftTransferCarryV3: return "left_transfer_carry_v3";
     case Profile::LeftTransferCarryV4: return "left_transfer_carry_v4";
+    case Profile::LeftTransferCarryV6: return "left_transfer_carry_v6";
     case Profile::LeftTransferCarryV5: return "left_transfer_carry_v5";
     default: return "none";
   }

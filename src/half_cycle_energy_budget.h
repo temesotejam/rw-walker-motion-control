@@ -8,7 +8,7 @@
 namespace half_cycle_energy_budget {
 constexpr char kRevision[]="return_aid_then_main_energy_v18";
 constexpr uint16_t kEnvelopeMs=walking_energy_policy::kMaxPulseMs;
-enum class Kind : uint8_t { ReturnAid,Main,PostAid };
+enum class Kind : uint8_t { ReturnAid,Main,PostAid,Recheck };
 
 class Ledger {
  public:
@@ -33,6 +33,9 @@ class Ledger {
   bool allowPostAid(uint32_t peak)const{
     return matches(peak) && !active_ && aid_used_ && !post_aid_used_ && !main_used_ && remaining()>0;
   }
+  bool allowRecheck(uint32_t peak)const{
+    return matches(peak) && !active_ && post_aid_used_ && !recheck_used_ && !main_used_ && remaining()>0;
+  }
   // A main coast may consume the real ZERO even if the aid used the entire
   // envelope. Positive main widths must still pass cap()/accepted().
   bool allowMain(uint32_t peak)const{
@@ -48,6 +51,9 @@ class Ledger {
     }else if(kind==Kind::PostAid){
       if(!allowPostAid(peak_ms_) || !width || width>remaining())return false;
       post_aid_used_=true;
+    }else if(kind==Kind::Recheck){
+      if(!allowRecheck(peak_ms_) || !width || width>remaining())return false;
+      recheck_used_=true;
     }else if(kind==Kind::Main){
       if(!allowMain(peak_ms_) || width>remaining())return false;
       main_used_=true;
@@ -77,7 +83,7 @@ class Ledger {
   bool matches(uint32_t peak)const{return peak && peak==peak_ms_;}
   uint32_t peak_ms_=0,spent_ms_=0;
   uint16_t reserved_ms_=0;
-  bool active_=false,aid_used_=false,post_aid_used_=false,main_used_=false;
+  bool active_=false,aid_used_=false,post_aid_used_=false,recheck_used_=false,main_used_=false;
 };
 
 namespace detail {

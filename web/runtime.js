@@ -107,7 +107,7 @@ function supportTransferTrial(s) {
   return /^walking-support-transfer-v39(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function singleWalkingBuild(s = latest) {
-  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3', 'walking-support-transfer-v39-walk4', 'walking-support-transfer-v39-walk5', 'walking-support-transfer-v39-walk5-logfix1', 'walking-support-transfer-v39-walk5-logfix2', 'walking-support-transfer-v39-walk5-logfix3', 'walking-support-transfer-v39-walk5-logfix4'].includes(s?.diagnostic_build_id);
+  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3', 'walking-support-transfer-v39-walk4', 'walking-support-transfer-v39-walk5', 'walking-support-transfer-v39-walk5-logfix1', 'walking-support-transfer-v39-walk5-logfix2', 'walking-support-transfer-v39-walk5-logfix3', 'walking-support-transfer-v39-walk5-logfix4', 'walking-support-transfer-v39-walk6'].includes(s?.diagnostic_build_id);
 }
 function foreAftStopText(reason) {
   return ({
@@ -351,7 +351,9 @@ function render(s) {
   renderGaitTurn(s.gait_turn);
   if (singleWalkingBuild(s)) {
     $('work-title').textContent = '歩行のエネルギー制御';
-    $('work-description').textContent = '足角度と胴体の減速を使い、左足に支持が移った後に必要な仕事を見積もって、戻りを補助します。';
+    $('work-description').textContent = s.diagnostic_build_id === 'walking-support-transfer-v39-walk6'
+      ? '足角度と胴体の減速から左足に支持が移るための入力を選びます。30秒の測定中、片側に傾いて静止すると、自動で揺り戻す場合があります。'
+      : '足角度と胴体の減速を使い、左足に支持が移った後に必要な仕事を見積もって、戻りを補助します。';
   } else if (walkingAdmissionTrial(s)) {
     const fast = walkingFootFastTrial(s);
     $('work-title').textContent = s.foot_periodic ? '歩行のエネルギー制御（v38・足角度40 Hz・30秒）' : fast ? '歩行のエネルギー制御（v20・足角度低遅延版・30秒）' : '歩行のエネルギー制御（v19・30秒）';
@@ -531,7 +533,7 @@ async function refreshStatus(force) {
       setOffline(0);
       $('connection').textContent = '接続中 · 測定状態を自動更新';
       $('state').textContent = s.state;
-      $('work-start-status').textContent = ['left_transfer_carry_v1', 'left_transfer_carry_v2', 'left_transfer_carry_v3', 'left_transfer_carry_v4', 'left_transfer_carry_v5'].includes(s.walking_profile) ? '歩行測定中です。' : '測定中です。';
+      $('work-start-status').textContent = ['left_transfer_carry_v1', 'left_transfer_carry_v2', 'left_transfer_carry_v3', 'left_transfer_carry_v4', 'left_transfer_carry_v5', 'left_transfer_carry_v6'].includes(s.walking_profile) ? '歩行測定中です。' : '測定中です。';
       renderWalkingProfile(s.walking_profile);
       $('remaining').textContent = format(s.remaining_ms / 1000, 1) + ' s';
       $('pitch').textContent = format(s.pitch_deg) + '°';
@@ -610,6 +612,9 @@ function renderWalkingProfile(profile) {
     $('run-model').textContent = '次のピークに必要な仕事から通電幅を選びます。';
     $('run-brake').textContent = '前倒し入力は最長15 msです。';
     $('run-adaptation').textContent = '左右のピークをエネルギー計算に使います。';
+  } else if (profile === 'left_transfer_carry_v6') {
+    $('run-model').textContent = '補助の後も中心へ届くかを胴体角と角速度から見直し、足りない仕事を残り時間で補います。';
+    $('run-percent').textContent = '測定中に片側で揺れが止まった場合は、胴体と両足の状態を確認して中心へ揺り戻します。';
   } else if (profile === 'left_transfer_carry_v5') {
     $('run-model').textContent = '左へ戻る途中でも次の支持までに必要な仕事を測り直し、勢いが足りたら通電を切り上げます。';
     $('run-percent').textContent = '足角と胴体角速度を使って中心の手前から補助します。';

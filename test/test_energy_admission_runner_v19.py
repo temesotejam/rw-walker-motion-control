@@ -68,6 +68,8 @@ fixture = fixture.replace('class ExperimentRunner {public:', '''class Experiment
  bool transfer_priority=false;
  bool isTransferPriorityProfile()const{return transfer_priority;}
  bool continuation_priority=false;
+ bool recovery_profile=false;
+ bool isRecoveryWalkingProfile()const{return recovery_profile;}
  bool isContinuationPriorityProfile()const{return continuation_priority;}
  bool isLeftTransferCarryProfile()const{return transfer_carry;}
  bool returnPredictionTrialSelected()const{return prediction_trial || transfer_carry;}
@@ -694,6 +696,53 @@ int main(){
   assert(!r.status_.pulse_active && final.completion_reason==(mode==2?7:1));
   assert(final.post_elapsed_increment_j>0 && budget.remaining()==37-elapsed && budget.allowMain(5633));
   assert(!budget.allowPostAid(5633));
+ }
+ // 33863489. Feed the actual post-second-pulse samples into the production
+ // observer and output path. Only walk6 may reserve the third pulse.
+ for(bool recovery:{false,true}) {
+  ExperimentRunner r;ready19(r);r.transfer_carry=r.continuation_priority=true;r.recovery_profile=recovery;
+  r.energy_control_autonomous_last_peak_side_=1;r.energy_control_autonomous_last_peak_ms_=19395;
+  r.energy_control_autonomous_last_peak_amplitude_deg_=8.8307f;
+  r.walking_energy_peaks_[0]=2.02386f;r.walking_energy_peak_ms_[0]=19034;
+  auto& b=r.walking_half_cycle_budget_;
+  assert(b.sourcePeak(19395) && b.accepted(half_cycle_energy_budget::Kind::ReturnAid,37) && b.complete(37));
+  assert(b.accepted(half_cycle_energy_budget::Kind::PostAid,18) && b.complete(18));
+  r.walking_post_aid_.armRecheck(19395,19724,83.115e-6f,211.208725f);
+  r.stall_rescue_attempted_peak_ms_=19395;
+  assert(r.walking_energy_current_.prepare(.031652216f));
+  for(bool later:{false,true}) {
+   const unsigned t=later?19753:19728;clock19(r,t);
+   auto& p=r.periodic_foot_packet_;auto& f=r.walking_return_frame_;
+   p.epoch_us=800000;p.count=later?790:789;p.scheduled_us=p.epoch_us+25000u*p.count;
+   p.published_us=p.scheduled_us+1000;
+   f.run_id=r.status_.run_id;f.sequence=p.count;
+   f.image_us=p.scheduled_us-(later?37831u:33237u);f.received_us=p.published_us;
+   f.frame_ms=(f.image_us-p.epoch_us)/1000;f.ready_ms=(f.received_us-p.epoch_us)/1000;
+   f.timestamp_valid=f.frame_valid=f.zero_ready=f.left_detected=f.right_detected=f.left_range_ok=f.right_range_ok=true;
+   p.left.sequence=p.right.sequence=f.sequence;p.left.image_us=p.right.image_us=f.image_us;
+   f.left_deg=p.left.measured=later?3.07882f:3.15718f;f.right_deg=p.right.measured=later?-.15835f:-.09711f;
+   p.left.estimated=later?2.98244f:2.89656f;p.right.estimated=later?-.15835f:-.08764f;
+   r.transfer_packet_=p.count;r.transfer_previous_sample_us_=mock_us;
+   r.transfer_acceleration_dps2_=later?209.659f:-175.3229f;r.transfer_post_i0_ma_=later?107.f:NAN;
+   r.walking_fore_aft_last_.angle_deg=.25f;
+   assert(r.observeInwardStallRescue(t,false,false,later?3.129997f:3.286819f,
+       later?-10.20007f:-15.41953f)==(recovery && later));
+  }
+  if(!recovery)continue;
+  const auto& observation=r.walking_return_observation_;assert(observation.evidence==return_observation_policy::Evidence::RecheckedShortfall);
+  r.stall_rescue_event_=true;
+  Event e;e.physical_next_peak_side=-1;e.zero_cross_time_ms=19753;e.target_peak_deg=8;
+  e.previous_peak_time_ms=19395;e.previous_peak_amplitude_deg=8.8307f;e.detector_angle_after_deg=3.129997f;
+  e.zero_cross_rate_dps=-10.20007f;e.zero_cross_abs_rate_dps=-e.zero_cross_rate_dps;
+  e.vbat_mV=7510;e.i0_estimated_mA=-107;e.pre_input_wheel_speed_valid=true;
+  e.pre_input_wheel_speed_age_us=1000;e.pre_input_wheel_speed_rpm=0;
+  bool healthy=false;assert(r.tryWalkingEnergy(e,19753,&healthy));
+  const auto a=r.walking_energy_active_pulse_;
+  assert(healthy && a.executed && a.return_evidence==9 && a.guarded_ms>0 && a.guarded_ms<=25);
+  assert(r.roller_obj.last_command==-1200 && b.reservedMs()==a.guarded_ms);
+  clock19(r,a.output_start_ms+a.guarded_ms);r.updateEnergyControlAutonomousPulse(mock_ms);
+  assert(!r.status_.pulse_active && !b.allowRecheck(19395) && b.allowMain(19395));
+  assert(b.remaining()==25-a.guarded_ms);
  }
  // Run 37339215: both observed foot/IMU frames that triggered the final
  // 2 ms aid, including the prior main's actual 78 ms duration.

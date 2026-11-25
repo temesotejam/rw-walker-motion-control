@@ -39,6 +39,9 @@
 #endif
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
 #include "walking_energy_policy_v15.h"
+#if WALKING_RECOVERY_V6
+#include "settled_walking_restart.h"
+#endif
 #include "walking_return_energy.h"
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
 #include "half_cycle_energy_budget.h"
@@ -183,7 +186,11 @@ public:
                        isContinuationPriorityProfile());
   }
   bool isContinuationPriorityProfile() const {
-    return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::LeftTransferCarryV5;
+    return logger_ && (logger_->walkingTrialProfile()==walking_trial::Profile::LeftTransferCarryV5 ||
+                       isRecoveryWalkingProfile());
+  }
+  bool isRecoveryWalkingProfile() const {
+    return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::LeftTransferCarryV6;
   }
   bool smallStepBaselineSelected() const {
     return logger_ && logger_->walkingTrialProfile()==walking_trial::Profile::SmallStep;
@@ -783,6 +790,12 @@ private:
   return_observation_policy::FootFrame walking_return_frame_;
   return_observation_policy::Choice walking_return_observation_;
   bool walking_aid_zero_seen_=false;
+#if WALKING_RECOVERY_V6
+  settled_walking_restart::Detector walking_restart_;
+  uint32_t walking_restart_checked_packet_=0;
+  bool serviceWalkingRestart(uint32_t ms,uint32_t sample,float before,float angle,float rate);
+  void appendWalkingRestartMetadata(PsramString& json) const;
+#endif
   bool cutReturnAidAtZero(uint32_t now_ms,uint32_t sample_us,float before,float after,float rate);
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
   fore_aft_motion_guard::Guard walking_fore_aft_guard_;

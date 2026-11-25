@@ -1,6 +1,6 @@
 # 実機ファームウェアの読み方
 
-現在の歩行版 v39-walk5 は、左への最初の補助後、受け側の足形状と惰行距離から不足仕事を求め、残り時間で追加する幅を選びます。追加中は新しいIMU標本で切り上げを判定します。通常の±8°開始で選ぶ制御は `walking_trial::forRun()` にあります。`main.cpp` の `setup()` が制御タスクやカメラを初期化し、`controlStep()` が歩行時の更新を進めます。Arduinoの `loop()` はWebとUSB診断を処理します。[中心前の仕事配分](return_crossing_work.h) · [左補助後の再判断](return_observation_policy.h) · [右主入力](right_arrival_energy.h) · [半周期の仕事と時間](half_cycle_energy_budget.h)
+現在の歩行版 v39-walk6 は、戻り補助の通電が終わるたびに実測の角速度と足姿勢を使い、残りの時間で補う仕事を選びます。通常の±8°開始は `walking_trial::forRun()` が選びます。測定中に揺れが止まると静止復帰の検出器が働き、観測済みの中心通過速度と電流モデルから通電幅を求めます。実機では `main.cpp` の `controlStep()` が歩行制御を更新し、Arduinoの `loop()` はWebとUSB診断を処理します。[戻りの再判定](return_observation_policy.h) · [半周期の通電予算](half_cycle_energy_budget.h) · [静止後の復帰条件](settled_walking_restart.h) · [復帰入力と記録](settled_walking_restart_runner.inc)
 
 | 確認したいこと | 読む場所 | 処理の役割 |
 |---|---|---|

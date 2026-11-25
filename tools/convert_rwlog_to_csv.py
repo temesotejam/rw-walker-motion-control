@@ -1350,6 +1350,23 @@ def write_gait_turn(metadata: dict, out_dir: Path) -> int:
     return len(block["rows"])
 
 
+def write_walking_restart(metadata: dict, out_dir: Path) -> int:
+    block = metadata.get("walking_restart")
+    if block is None:
+        return 0
+    columns = ["start_ms", "side", "angle_deg", "reference_dps", "request_j", "predicted_work_j",
+               "width_ms", "queued", "elapsed_ms", "opposite_cross_ms", "opposite_peak_ms", "timeout_ms"]
+    if (not isinstance(block, dict) or block.get("revision") != 1 or block.get("columns") != columns
+            or not isinstance(block.get("rows"), list)
+            or any(not isinstance(row, list) or len(row) != len(columns) for row in block["rows"])):
+        raise ValueError("Invalid walking restart records")
+    with (out_dir / "walking_restart.csv").open("w", newline="", encoding="utf8") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(columns)
+        writer.writerows(block["rows"])
+    return len(block["rows"])
+
+
 def write_support_transfer_shadow(metadata: dict, out_dir: Path) -> int:
     block = metadata.get("support_transfer_shadow")
     if block is None:
@@ -1436,6 +1453,7 @@ def convert(path: Path, out_dir: Path) -> None:
     support_count = write_foot_support_diagnostics(metadata, out_dir)
     walking_energy_count = write_walking_energy_diagnostics(metadata, out_dir)
     write_gait_turn(metadata, out_dir)
+    write_walking_restart(metadata, out_dir)
     write_support_transfer_shadow(metadata, out_dir)
     e2_shadow_peak_count = write_e2_shadow_peaks(metadata, out_dir)
     q1_shadow_event_count = write_q1_shadow_events(metadata, out_dir)

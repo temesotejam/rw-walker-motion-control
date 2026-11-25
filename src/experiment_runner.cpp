@@ -2664,6 +2664,9 @@ void ExperimentRunner::resetEnergyControlAutonomous() {
   walking_half_cycle_budget_.reset();walking_return_observer_.reset();
   walking_return_frame_={};walking_return_observation_={};
   walking_aid_zero_seen_=false;
+#if WALKING_RECOVERY_V6
+  walking_restart_={};walking_restart_checked_packet_=0;
+#endif
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
   walking_fore_aft_guard_.reset();walking_fore_aft_last_={};walking_fore_aft_candidates_=0;
 #endif
@@ -2888,7 +2891,8 @@ bool ExperimentRunner::beginEnergyControlAutonomousPulse(uint32_t now_ms, uint32
   const uint32_t model_t0_us = micros();
   const float i0 =
 #if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
-      walking_return_event_ && walking_return_observation_.evidence==return_observation_policy::Evidence::PostAidShortfall
+      walking_return_event_ && (walking_return_observation_.evidence==return_observation_policy::Evidence::PostAidShortfall ||
+          (isRecoveryWalkingProfile() && return_observation_policy::isPostAid(walking_return_observation_.evidence)))
       ? direction*walking_return_observation_.aligned_current_ma :
 #endif
       predicted_current_end_ms_ == 0 ? 0.0f :
@@ -3057,6 +3061,9 @@ void ExperimentRunner::updateEnergyControlAutonomousPulse(uint32_t now_ms) {
 }
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
 void ExperimentRunner::appendFootSupportMetadata(PsramString& json) const {
+#if WALKING_RECOVERY_V6
+  if(isRecoveryWalkingProfile())appendWalkingRestartMetadata(json);
+#endif
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
   appendWalkingEnergyMetadata(json);
 #endif
@@ -3512,6 +3519,9 @@ bool ExperimentRunner::recordEnergyControlAutonomousPeak(uint32_t peak_ms, int8_
   event.integral_plus_j = energy_control_autonomous_integral_plus_j_;
   event.integral_minus_j = energy_control_autonomous_integral_minus_j_;
   logger_->addEnergyControlAutonomousPeakEvent(event);
+#if WALKING_RECOVERY_V6
+  if(isRecoveryWalkingProfile())walking_restart_.peak(peak_ms,physical_side);
+#endif
 #if WALKING_TURN_OBSERVER
   // The peak becomes known at confirmation. Use the heading already available
   // on this control step, before the next gyro diagnostic update.
@@ -3562,9 +3572,12 @@ __attribute__((noinline)) bool ExperimentRunner::observeInwardStallRescue(
 #endif
   walking_return_observation_=walking_return_observer_.observe(ri);
 #if WALKING_RETURN_HISTORY && SUPPORT_TRANSFER_STALL_V3
-  if (isLeftTransferCarryProfile() && walking_half_cycle_budget_.allowPostAid(ri.peak_ms)) {
+  const bool recheck=isRecoveryWalkingProfile() && walking_half_cycle_budget_.allowRecheck(ri.peak_ms);
+  if (isLeftTransferCarryProfile() && (walking_half_cycle_budget_.allowPostAid(ri.peak_ms) || recheck)) {
     ri.active=waiting && walkingForeAftAllowsOutput();
-    const auto post=walking_post_aid_.observe(ri,esp_timer_get_time(),transfer_post_i0_ma_,isContinuationPriorityProfile());
+    const auto post=recheck
+        ? walking_post_aid_.observeRecheck(ri,esp_timer_get_time(),transfer_post_i0_ma_)
+        : walking_post_aid_.observe(ri,esp_timer_get_time(),transfer_post_i0_ma_,isContinuationPriorityProfile());
     if (post.selected) walking_return_observation_=post;
   }
 #endif
@@ -4058,6 +4071,14 @@ void ExperimentRunner::updateEnergyControlAutonomousMotion(uint32_t now_ms) {
     return;
   }
   const float before_deg = energy_control_autonomous_previous_detector_relative_angle_deg_;
+#if WALKING_RECOVERY_V6
+  if(isRecoveryWalkingProfile() && serviceWalkingRestart(t_test_ms,sample_us,before_deg,detector_relative_angle_deg,rate_dps)){
+    energy_control_autonomous_previous_detector_relative_angle_deg_=detector_relative_angle_deg;
+    energy_control_autonomous_previous_detector_rate_dps_=rate_dps;
+    energy_control_autonomous_previous_detector_test_ms_=t_test_ms;
+    return;
+  }
+#endif
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
   const bool cut_return_at_zero=cutReturnAidAtZero(now_ms,sample_us,before_deg,detector_relative_angle_deg,rate_dps);
 #endif
@@ -6759,6 +6780,9 @@ void ExperimentRunner::stopActivePulse(uint32_t now_ms) {
   status_.pulse_active = false;
   status_.pulse_direction = 0;
   last_pulse_end_ms_ = now_ms;
+#if WALKING_RECOVERY_V6
+  walking_restart_.completed(now_ms-active_pulse_start_ms_);
+#endif
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
   // Queue the stop first; completion accounting must not delay its request.
   finishWalkingEnergyPulse(now_ms,1);
@@ -8543,6 +8567,9 @@ void ExperimentRunner::stopMotor() {
   status_.pulse_active = false;
   status_.pulse_direction = 0;
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
+#if WALKING_RECOVERY_V6
+  walking_restart_.completed(stop_request_ms-active_pulse_start_ms_);
+#endif
   finishWalkingEnergyPulse(stop_request_ms,stop_reason);
 #endif
   if (roller_) status_.roller_actual_current_mA = roller_->telemetrySnapshot().actual_current_mA;
@@ -8614,3 +8641,6 @@ const char* ExperimentRunner::stateName() const {
 #include "periodic_foot_stream.h"
 #endif
 #include "walking_energy_runner.inc"
+#if WALKING_RECOVERY_V6
+#include "settled_walking_restart_runner.inc"
+#endif

@@ -13,10 +13,13 @@ namespace return_observation_policy {
 enum class Evidence : uint8_t {
   Unavailable=0, ObservedShape=1, RecognitionDropout=2, RangeRejected=3,
   ObservedUnseparated=4, MeasuredArcShortfall=5, PredictedArcShortfall=6, PostAidShortfall=7,
-  ContinuationShortfall=8
+  ContinuationShortfall=8, RecheckedShortfall=9
 };
+inline bool targetsReceivingArc(Evidence reason) {
+  return reason==Evidence::ContinuationShortfall || reason==Evidence::RecheckedShortfall;
+}
 inline bool isPostAid(Evidence reason) {
-  return reason==Evidence::PostAidShortfall || reason==Evidence::ContinuationShortfall;
+  return reason==Evidence::PostAidShortfall || targetsReceivingArc(reason);
 }
 struct FootFrame {
   uint16_t run_id=0;
@@ -111,26 +114,49 @@ class PostAidObserver {
       peak_=peak;end_=end;onset_speed_=onset_speed;first_work_=delivered_work;
     }
   }
+  float priorWork() const { return first_work_; }
+  // After the second pulse the current model may have reported zero shortfall.
+  // Its work counts against the gross-work ceiling. Reachability is inferred
+  // again from subsequent motion under a zero-current command.
+  void armRecheck(uint32_t peak,uint32_t end,float gross_work_sum_j,float previous_decel) {
+    *this=PostAidObserver{};
+    if (peak && end>peak && std::isfinite(gross_work_sum_j) && gross_work_sum_j>0 &&
+        std::isfinite(previous_decel) && previous_decel>0) {
+      peak_=peak;end_=end;first_work_=gross_work_sum_j;recheck_decel_=previous_decel;
+    }
+  }
+  Choice observeRecheck(const Input& in,uint64_t now_us,float aligned_current_ma) {
+    if (!(recheck_decel_>0)) return {};
+    return observe(in,now_us,aligned_current_ma,true);
+  }
   Choice observe(const Input& in,uint64_t now_us,float aligned_current_ma=NAN,bool continuation=false) {
     Choice out;
     if (!peak_) return out;
+    const bool recheck=recheck_decel_>0;
     if (in.peak_ms!=peak_ || in.side!=1 || in.now<end_ ||
         in.now-end_>support_transfer_plan::kForecastLimitMs ||
-        (in.sample_us && in.sample_age_us<=10000 && (in.angle_deg<=0 || in.rate_dps>=0))) {
+        (in.sample_us && in.sample_age_us<=10000 && (in.angle_deg<=0 || (!recheck && in.rate_dps>=0)))) {
       peak_=0; return out;
     }
     const auto* p=in.periodic;
     if (!p || !p->count || p->count==packet_) return out;
     if (p->published_us<p->epoch_us+uint64_t(end_)*1000 || !std::isfinite(in.periodic_acceleration_dps2)) return out;
     const bool adjacent=packet_ && p->count-packet_==1 && p->scheduled_us==slot_+periodic_foot::period_us;
-    const float last_decel=adjacent ? decel_ : 0.f, last_speed=speed_;
+    const float last_decel=adjacent ? (recheck?recheck_decel_:decel_) : 0.f, last_speed=speed_;
+    const float last_angle=angle_;
     const uint64_t last_image=image_;
     packet_=p->count;slot_=p->scheduled_us;decel_=0;speed_=0;image_=0;
     if (!adjacent) max_speed_=0;
     const auto& l=p->left;
     const auto& r=p->right;
     const float speed=-in.rate_dps;
+    if (recheck && in.sample_us && in.sample_age_us<=10000 &&
+        (speed<=0 || (adjacent && last_image && in.angle_deg>=last_angle))) {
+      peak_=0;return out;
+    }
     if (!in.active || !in.sample_us || in.sample_age_us>10000 || assessFoot(in)==Evidence::RangeRejected ||
+        (recheck && (in.run_id==0 || in.foot.run_id!=in.run_id ||
+                     in.now-end_<=in.sample_age_us/1000u+1)) ||
         !(in.angle_deg>0 && in.angle_deg<=12 &&
         speed>=support_transfer_plan::kCarryDps && speed<=35 && in.target_j>0 && std::isfinite(in.target_j)) ||
         !periodic_foot::matchesPair(*p,now_us,l.sequence,l.image_us) || !l.sequence ||
@@ -140,14 +166,17 @@ class PostAidObserver {
           support_transfer_plan::supportGap(l.estimated,r.estimated,in.fore_aft_deg,in.angle_deg)<0)) {
       max_speed_=0; return out;
     }
-    image_=l.image_us;speed_=speed;max_speed_=std::fmax(max_speed_,speed);
+    image_=l.image_us;speed_=speed;angle_=in.angle_deg;max_speed_=std::fmax(max_speed_,speed);
     const float a=in.periodic_acceleration_dps2;
     if (!(std::isfinite(a) && a>0 && speed*speed<2.f*a*in.angle_deg)) return out;
     decel_=a;
     const float kinetic=walking_energy_policy::passiveCoefficients(-1).omega2_j*
                         lateral_energy::kRadPerDeg*lateral_energy::kRadPerDeg;
+    // The foot camera is slower than the IMU. For a recheck the images certify
+    // geometry; two new body samples, not two new exposures, certify the loss.
+    const bool post_motion=recheck ? in.angle_deg<last_angle : image_>=p->epoch_us+uint64_t(end_)*1000;
     if (!(last_decel>0 && speed<last_speed && last_image && image_>last_image &&
-          image_>=p->epoch_us+uint64_t(end_)*1000 && std::isfinite(aligned_current_ma))) return out;
+          post_motion && std::isfinite(aligned_current_ma))) return out;
     // A passed work budget describes the command model. It need not all
     // appear as observable lateral kinetic energy, especially across impact.
     const float conservative=std::fmin(last_decel,a);
@@ -169,7 +198,8 @@ class PostAidObserver {
     // Keep the command inside the observed inward interval even allowing
     // the same five ms of dispatch latency as the normal freshness gate.
     out.loss_cap_ms=static_cast<uint16_t>(std::fmin(1000.f*time_to_stop-5.f,walking_energy_policy::kMaxPulseMs));
-    out.selected=true;out.evidence=continuation?Evidence::ContinuationShortfall:Evidence::PostAidShortfall;
+    out.selected=true;
+    out.evidence=recheck?Evidence::RecheckedShortfall:(continuation?Evidence::ContinuationShortfall:Evidence::PostAidShortfall);
     out.terminal_deg=terminal;
     // Both frames must predict enough residual momentum before releasing
     // the new input. The higher loss is the stricter coast projection.
@@ -182,7 +212,7 @@ class PostAidObserver {
  private:
   uint32_t peak_=0,end_=0,packet_=0,ready_sample_us_=0;
   uint64_t slot_=0,image_=0;
-  float onset_speed_=0, first_work_=0, max_speed_=0, speed_=0, decel_=0;
+  float onset_speed_=0, first_work_=0, max_speed_=0, speed_=0, decel_=0, angle_=0, recheck_decel_=0;
 };
 #endif
 

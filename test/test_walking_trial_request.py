@@ -86,8 +86,8 @@ int main(){
     const auto measured=r.logger.walkingTrialProfile();
     if(target==8 && WALKING_SMALL_STEP_AB) {
 #if WALKING_RETURN_HISTORY
-      assert(!std::strcmp(walking_trial::name(measured),"left_transfer_carry_v5"));
-      assert(r.isContinuationPriorityProfile() && r.isTransferPriorityProfile() && r.isLeftTransferCarryProfile() && r.carryHistoryTrialSelected() && r.returnPredictionTrialSelected());
+      assert(!std::strcmp(walking_trial::name(measured),"left_transfer_carry_v6"));
+      assert(r.isRecoveryWalkingProfile() && r.isContinuationPriorityProfile() && r.isTransferPriorityProfile() && r.isLeftTransferCarryProfile() && r.carryHistoryTrialSelected() && r.returnPredictionTrialSelected());
 #elif WALKING_RIGHT_ARRIVAL
       assert(measured==Profile::RightArrival);
 #else
@@ -117,7 +117,7 @@ with tempfile.TemporaryDirectory(prefix='walking_trial_request_') as directory:
         exe = temp / 'queue.exe'
         subprocess.run(['g++', '-std=c++17', '-Wall', '-Wextra', '-Werror',
                         f'-DWALKING_SMALL_STEP_AB={walking}', f'-DWALKING_RIGHT_ARRIVAL={arrival}',
-                        f'-DWALKING_RETURN_HISTORY={history}', '-I' + str(root / 'test/fixtures/arduino'),
+                        f'-DWALKING_RETURN_HISTORY={history}', f'-DWALKING_RECOVERY_V6={history}', '-I' + str(root / 'test/fixtures/arduino'),
                         '-I' + str(root / 'src'), str(source), '-o', str(exe)], check=True)
         subprocess.run([str(exe)], check=True)
 print('Normal walking START selects one controller; retired requests, non-walking targets and stale state checked')
