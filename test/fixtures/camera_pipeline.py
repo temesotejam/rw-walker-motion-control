@@ -119,13 +119,21 @@ constexpr TickType_t portMAX_DELAY=UINT32_MAX;
 static uint32_t pending_wake=0;
 static void xTaskNotifyGive(TaskHandle_t task){assert(task);++pending_wake;}
 static uint32_t ulTaskNotifyTake(int clear,TickType_t timeout);
-constexpr int MALLOC_CAP_INTERNAL=1,MALLOC_CAP_8BIT=2;
+constexpr int MALLOC_CAP_INTERNAL=1,MALLOC_CAP_8BIT=2,MALLOC_CAP_SPIRAM=4;
 constexpr int PIXFORMAT_GRAYSCALE=1,FRAMESIZE_QVGA=2,LEDC_TIMER_0=0,LEDC_CHANNEL_0=0;
 constexpr int CAMERA_FB_IN_PSRAM=1,CAMERA_GRAB_LATEST=2,CAMERA_GRAB_WHEN_EMPTY=1,I2C_NUM_0=0;
 #define portENTER_CRITICAL(x) ((void)(x))
 #define portEXIT_CRITICAL(x) ((void)(x))
 #define pdMS_TO_TICKS(x) (x)
-static void* heap_caps_malloc(size_t size,int caps){assert(caps==3);return std::malloc(size);}
+static bool block_internal_rows=false,block_external_rows=false;
+static uint32_t internal_row_attempts=0;
+static void* heap_caps_malloc(size_t size,int caps){
+ assert(size==foot_image_rows::kRequiredBytes && (caps==3 || caps==6));
+ if(caps==3){++internal_row_attempts;if(block_internal_rows)return nullptr;}
+ if(caps==6 && block_external_rows)return nullptr;
+ return std::malloc(size);
+}
+static void heap_caps_free(void* block){std::free(block);}
 static SemaphoreHandle_t xSemaphoreCreateMutex(){return reinterpret_cast<void*>(1);}
 static int xSemaphoreTake(SemaphoreHandle_t s,TickType_t){return s?pdTRUE:0;}
 static void xSemaphoreGive(SemaphoreHandle_t s){assert(s);}
@@ -172,6 +180,8 @@ static void cameraTaskPriorityPatchSampleStack(){}
         'void FootObserver::recordControlObservation(', 'void FootObserver::beginRun(',
         'void FootObserver::finishRun()', 'void FootObserver::clearRun()',
         'void FootObserver::setExportQuiet(', 'bool FootObserver::exportParked()',
+        'uint32_t FootObserver::exportRowBytesReleased()',
+        'bool FootObserver::bindRowStorage(', 'void FootObserver::restoreInternalRows(',
         'void FootObserver::loop()'])
     methods += '\n#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24\n' + function(
         observer, 'void FootObserver::prepareUpper(') + '\n#endif\n'
@@ -206,7 +216,7 @@ enum class ParkExit {None,Confirm,Clear,Start};
 struct Plan {
  Image original=image();ControlSnapshot before,after;
  ParkExit park_exit=ParkExit::None;
- bool start_run=false;
+ bool start_run=false,restore_row_heap=false;
  Invalid invalid=Invalid::None;uint32_t wait_us=2000;bool stop=false;
  bool early=true;int64_t early_stamp_delta=0;Image early_image;
 #if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
@@ -226,6 +236,7 @@ static Image buffer;
 static camera_fb_t frame;
 static FootObserver* current=nullptr;
 static unsigned parked_waits=0;
+static bool fragment_on_wake=false;
 static uint32_t ulTaskNotifyTake(int clear,TickType_t timeout){
  assert(clear==pdTRUE && timeout==portMAX_DELAY && pending_wake==0);
  assert(current->exportParked() && !borrowed && !live);
@@ -234,6 +245,8 @@ static uint32_t ulTaskNotifyTake(int clear,TickType_t timeout){
  const auto& p=plans.at(plan_index);
  const auto sealed=current->snapshot();
  assert(!sealed.recording);
+ assert(sealed.row_cache_ready && sealed.row_cache_internal==block_external_rows);
+ assert(current->exportRowBytesReleased()==(block_external_rows ? 0U : foot_image_rows::kRequiredBytes));
  current->setExportQuiet(true); // duplicate range request
  host_clock+=10000000;
  assert(pending_wake==0 && current->snapshot().count==sealed.count);
@@ -245,6 +258,7 @@ static uint32_t ulTaskNotifyTake(int clear,TickType_t timeout){
  }
  current->setExportQuiet(false); // idempotent even before the task wakes
  assert(pending_wake==1);
+ if(fragment_on_wake)block_internal_rows=true;
  pending_wake=0;return 1;
 }
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
@@ -253,6 +267,7 @@ static uint64_t full_stamp=0;
 #endif
 ControlSnapshot RunControlWorker::snapshot()const {
  const auto& p=plans.at(plan_index);const bool before=context_calls++==0;
+ if(before && p.restore_row_heap){block_internal_rows=false;host_clock+=1000000;}
  if(before && p.park_exit!=ParkExit::None){current->finishRun();current->setExportQuiet(true);}
  if(before && p.start_run)current->beginRun(7,500000);
  if(!before && borrowed && p.invalid==Invalid::WrongHeight)frame.height=240;
@@ -532,6 +547,29 @@ static void sealedTransferPause(){
   }
  }
  assert(parked_waits==3 && pending_wake==0);
+ // No PSRAM block: leave both tracking caches bound to their existing internal storage.
+ Plan stopped;stopped.before.state_id=stopped.after.state_id=4;stopped.park_exit=ParkExit::Clear;
+ Plan next;next.start_run=true;
+ block_external_rows=true;
+ auto retained=run({stopped,next},true);
+ assert(retained.history.back().snapshot.row_cache_internal);
+ assert(retained.history.back().snapshot.latest.frame_valid);
+ block_external_rows=false;
+ // Internal RAM is still fragmented on wake. Both actual trackers process
+ // frames using the replacement buffer while allocation retries are throttled.
+ fragment_on_wake=true;
+ const auto attempts=internal_row_attempts;
+ auto fallback=run({stopped,next,Plan{},Plan{}},true);
+ assert(!fallback.history.back().snapshot.row_cache_internal);
+ assert(fallback.history.back().snapshot.latest.frame_valid);
+ assert(internal_row_attempts==attempts+2); // boot and one failed restoration
+ block_internal_rows=false;
+ Plan repair;repair.restore_row_heap=true;
+ auto restored=run({stopped,next,repair},true);
+ assert(restored.history.back().snapshot.row_cache_internal);
+ assert(restored.history.back().snapshot.latest.frame_valid);
+ assert(internal_row_attempts==attempts+5); // a new boot, failed restore, successful retry
+ fragment_on_wake=false;
  std::cout<<"sealed transfer: camera owner sleeps with clock/receiver off, confirm/clear/start restore PASS\n";
 }
 static void manualOneShot(){

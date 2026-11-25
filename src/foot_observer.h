@@ -78,7 +78,7 @@ struct FootSnapshot {
   uint32_t processing_max_us = 0;
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
   uint32_t recognition_max_us=0,row_copy_max_us=0;
-  bool row_cache_ready=false;
+  bool row_cache_ready=false,row_cache_internal=false;
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
   uint32_t upper_attempts=0,upper_hits=0,upper_misses=0;
 #endif
@@ -126,6 +126,7 @@ class FootObserver {
   void clearRun();
   void setExportQuiet(bool enabled);
   bool exportParked() const;
+  uint32_t exportRowBytesReleased() const;
   FootSnapshot snapshot() const;
 #if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
   FootLatencyHistogram latencySnapshot() const;
@@ -155,7 +156,11 @@ class FootObserver {
   uint64_t log_epoch_us_ = 0;
   uint8_t* preview_ = nullptr;
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  bool bindRowStorage(bool internal);
+  void restoreInternalRows(uint32_t now_ms);
   uint8_t* row_storage_=nullptr;
+  bool row_storage_lent_=false;
+  uint32_t row_retry_ms_=0;
   uint8_t* preview_staging_=nullptr;
   foot_image_rows::RowCache row_cache_{nullptr,0};
 #endif

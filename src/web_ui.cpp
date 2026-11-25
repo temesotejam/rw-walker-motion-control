@@ -633,6 +633,7 @@ void WebUi::status() {
   json+=",\"recognition_us\":"+String(f.latest.recognition_us)+",\"recognition_max_us\":"+String(f.recognition_max_us);
   json+=",\"row_copy_us\":"+String(f.latest.row_copy_us)+",\"row_cache_used\":"+String(f.latest.row_cache_used?"true":"false");
   json+=",\"row_cache_ready\":"+String(f.row_cache_ready?"true":"false")+",\"control_poll_ms\":"+String(foot_fast_policy::kControlPollMs);
+  json+=",\"row_cache_internal\":"+String(f.row_cache_internal?"true":"false");
 #endif
   json += ",\"sequence\":" + String(f.latest.sequence);
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
@@ -726,12 +727,12 @@ void WebUi::manifest() {
     recovery_.exportContact(millis());
     updateExportPriority();
   }
-  char body[800];
+  char body[896];
   snprintf(body, sizeof(body),
       "{\"phase\":\"%s\",\"token\":\"%s\",\"bytes\":%lu,\"hashed_bytes\":%lu,\"crc32\":%lu,"
       "\"chunk_bytes\":%u,\"chunks_per_response\":%u,\"stream_chunks\":%u,\"stream_window_chunks\":%u,\"filename\":\"%s\",\"error\":\"%s\",\"boot_id\":%lu,\"run_id\":%u,\"metadata_bytes\":%lu,"
       "\"completion_ack\":true,\"wifi_recovery_count\":%lu,\"export_http_recovery_count\":%lu,\"compression_stack_min_bytes\":%lu,"
-      "\"export_priority_active\":%s,\"export_camera_parked\":%s,"
+      "\"export_priority_active\":%s,\"export_camera_parked\":%s,\"export_camera_released_bytes\":%lu,"
       "\"export_memory\":{\"sampled_ms\":%lu,\"internal_free\":%lu,\"internal_min_free\":%lu,\"internal_largest\":%lu}}",
       phase(s.phase), s.token, static_cast<unsigned long>(s.bytes), static_cast<unsigned long>(s.hashed_bytes),
       static_cast<unsigned long>(s.crc), static_cast<unsigned>(export_protocol::kChunkBytes),
@@ -743,6 +744,7 @@ void WebUi::manifest() {
       static_cast<unsigned long>(s.compression_stack_min_bytes),
       export_priority_active_ ? "true" : "false",
       feet_->exportParked() ? "true" : "false",
+      static_cast<unsigned long>(feet_->exportRowBytesReleased()),
       static_cast<unsigned long>(millis()),
       static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
       static_cast<unsigned long>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)),

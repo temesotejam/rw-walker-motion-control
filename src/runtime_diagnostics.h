@@ -46,7 +46,7 @@
 #if WALKING_TURN_OBSERVER
 #if WALKING_RETURN_HISTORY && WALKING_RIGHT_ARRIVAL && WALKING_SMALL_STEP_AB && SUPPORT_TRANSFER_STALL_V3 && SUPPORT_TRANSFER_ARC_FEEDBACK
 #if WALKING_RECOVERY_V6
-#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-support-transfer-v39-walk6"
+#define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-support-transfer-v39-walk6-logfix1"
 #else
 #define RUNTIME_DIAGNOSTIC_BUILD_ID "walking-support-transfer-v39-walk5-logfix4"
 #endif

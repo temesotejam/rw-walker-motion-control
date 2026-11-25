@@ -34,7 +34,7 @@ def prepare(archive=None, target_free=22000, target_largest=12000):
         data = source.read_bytes()
         if name == "runtime_diagnostics.h":
             suffix = b"-archive-bench" if archive else b"-motorfree-bench"
-            data, count = re.subn(rb'"(walking-support-transfer-v39-walk(?:5-logfix[0-9]+|6))"',
+            data, count = re.subn(rb'"(walking-support-transfer-v39-walk(?:5|6)-logfix[0-9]+)"',
                                   rb'"\1' + suffix + b'"', data)
             if count != 2:
                 raise RuntimeError("Update the fixture revision markers for this production build")

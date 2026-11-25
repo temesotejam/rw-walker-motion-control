@@ -16,6 +16,38 @@
 #include "cad_support.h"
 #endif
 
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+// Only called before task startup or by the camera owner between frames.
+// The HAL producer writes its own mailboxes, and their consumer callbacks
+// borrow these caches synchronously during acquireContinuous().
+bool FootObserver::bindRowStorage(bool internal) {
+  if(row_storage_ && status_.row_cache_internal==internal)return true;
+  const auto caps=MALLOC_CAP_8BIT | (internal ? MALLOC_CAP_INTERNAL : MALLOC_CAP_SPIRAM);
+  auto* next=static_cast<uint8_t*>(heap_caps_malloc(foot_image_rows::kRequiredBytes,caps));
+  if(!next)return false; // Keep the working buffer and both aliases.
+  auto* previous=row_storage_;
+  const bool lent=previous && status_.row_cache_internal && !internal;
+  row_storage_=next;
+  row_cache_=foot_image_rows::RowCache(next,foot_image_rows::kRequiredBytes);
+#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
+  lower_scratch_=foot_image_rows::LowerRowCache(next,foot_image_rows::kRequiredBytes);
+#endif
+  if(previous)heap_caps_free(previous);
+  portENTER_CRITICAL(&mux_);
+  row_storage_lent_=lent;
+  status_.row_cache_ready=true;status_.row_cache_internal=internal;
+  portEXIT_CRITICAL(&mux_);
+  row_retry_ms_=0;
+  return true;
+}
+void FootObserver::restoreInternalRows(uint32_t now_ms) {
+  if(!status_.row_cache_internal && (!row_retry_ms_ || now_ms-row_retry_ms_>=1000u)) {
+    row_retry_ms_=now_ms;
+    bindRowStorage(true);
+  }
+}
+#endif
+
 bool FootObserver::begin(OneShotCamera& camera, RunControlWorker& control) {
   camera_ = &camera; control_ = &control;
   frames_ = static_cast<FootFrame*>(ps_malloc(sizeof(FootFrame) * kCapacity));
@@ -23,13 +55,9 @@ bool FootObserver::begin(OneShotCamera& camera, RunControlWorker& control) {
   preview_ = static_cast<uint8_t*>(ps_malloc(kPreviewBytes));
   preview_mutex_ = xSemaphoreCreateMutex();
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
-  row_storage_=static_cast<uint8_t*>(heap_caps_malloc(foot_image_rows::kRequiredBytes,MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+  if(!bindRowStorage(true) && !bindRowStorage(false))return false;
   preview_staging_=static_cast<uint8_t*>(ps_malloc(kPreviewBytes));
-  if(!row_storage_ || !preview_staging_ || !preview_ || !preview_mutex_)return false;
-  row_cache_=foot_image_rows::RowCache(row_storage_,foot_image_rows::kRequiredBytes);
-#if defined(FOOT_COPY_DELTA_V27) && FOOT_COPY_DELTA_V27
-  lower_scratch_=foot_image_rows::LowerRowCache(row_storage_,foot_image_rows::kRequiredBytes);
-#endif
+  if(!preview_staging_ || !preview_ || !preview_mutex_)return false;
 #endif
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
   upper_storage_=static_cast<uint8_t*>(ps_malloc(foot_image_rows::kUpperBytes));
@@ -40,9 +68,6 @@ bool FootObserver::begin(OneShotCamera& camera, RunControlWorker& control) {
   if(!lower_storage_ || !camera_row_overlap::initializeLower(lower_storage_,foot_image_rows::kLowerBytes,prepareLower,this))return false;
 #endif
   portENTER_CRITICAL(&mux_); status_.available = true;
-#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
-  status_.row_cache_ready=true;
-#endif
   portEXIT_CRITICAL(&mux_);
   constexpr uint32_t stack_bytes=
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
@@ -203,6 +228,16 @@ bool FootObserver::exportParked() const {
   portEXIT_CRITICAL(&mux_);
   return parked;
 }
+uint32_t FootObserver::exportRowBytesReleased() const {
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+  portENTER_CRITICAL(&mux_);
+  const bool released=export_parked_ && row_storage_lent_;
+  portEXIT_CRITICAL(&mux_);
+  return released ? foot_image_rows::kRequiredBytes : 0;
+#else
+  return 0;
+#endif
+}
 void FootObserver::loop() {
   uint32_t seq = 0;
   uint64_t last_valid_us = 0;
@@ -238,13 +273,22 @@ void FootObserver::loop() {
       export_parked_ = park;
       portEXIT_CRITICAL(&mux_);
       if (park) {
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+        bindRowStorage(false);
+#endif
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         portENTER_CRITICAL(&mux_); export_parked_ = false; portEXIT_CRITICAL(&mux_);
       } else {
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+        restoreInternalRows(millis());
+#endif
         vTaskDelay(pdMS_TO_TICKS(20));
       }
       continue;
     }
+#if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
+    restoreInternalRows(millis());
+#endif
     const uint64_t begin = esp_timer_get_time();
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
     upper_frame_us_=0; // A candidate belongs only to this acquisition attempt.

@@ -274,10 +274,12 @@ vm.runInContext(code,context);
   assert.strictEqual(vm.runInContext('singleWalkingBuild(gate)',context), true);
   gate.diagnostic_build_id='walking-support-transfer-v39-walk5-logfix4';
   assert.strictEqual(vm.runInContext('singleWalkingBuild(gate)',context), true);
-  gate.diagnostic_build_id='walking-support-transfer-v39-walk6';
   gate.foot_periodic=footPacket;
-  vm.runInContext('adoptStatus(gate);render(gate)',context);
-  assert.match(element('work-description').textContent,/自動で揺り戻す/);
+  for(const version of ['walk6','walk6-logfix1']) {
+    gate.diagnostic_build_id='walking-support-transfer-v39-'+version;
+    vm.runInContext('adoptStatus(gate);render(gate)',context);
+    assert.match(element('work-description').textContent,/自動で揺り戻す/);
+  }
   assert.doesNotMatch(element('work-description').textContent,/選んで|比較|v14/);
   assert.strictEqual(element('work-start').disabled,true);
   const startRequests=[];

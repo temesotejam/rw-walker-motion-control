@@ -25,6 +25,7 @@ function harness(scenario={}) {
     v.setUint32(12,vm.runInContext('crc32(testPayload)',context),true);bytes.set(payload,16);return bytes;
   };
   context=vm.createContext({document:{getElementById:element,createElement:()=>({click(){saves.push({name:this.download,url:this.href});}})},
+    sessionStorage:scenario.storage,
     setTimeout:(fn,ms)=>{
       if((scenario.steadyNetwork || scenario.streamFault==='drip') && ms>=0 && ms<=4000 && ms!==500)
         return networkDeadline={due:clock+ms,fire:fn};
@@ -362,6 +363,64 @@ function harness(scenario={}) {
   assert.equal(new URL(chunks[0],'http://host').searchParams.get('offset'),'8192');
   assert.equal(h.diagnostic().browser_transfer.cached_bytes,8192);
   assert(Buffer.from(vm.runInContext('completedFile',h.context)).equals(fixture));
+
+  // A status outage must leave only the resume action available. Never send a
+  // prepare or prune the previous packets until the sealed identity responds.
+  const stored = new Map();
+  const storage = {getItem:k=>stored.get(k) ?? null,setItem:(k,v)=>stored.set(k,v),removeItem:k=>stored.delete(k)};
+  const runIdentity = {boot_id:123,run_id:1};
+  const interrupted = harness({chunkDisconnect:true,manifest:{...runIdentity},storage});
+  vm.runInContext('latest.wifi_export_recovery=true',interrupted.context);
+  await interrupted.run();
+  vm.runInContext('lastStatusFailure={message:"Failed to fetch"};controls()',interrupted.context);
+  assert.equal(interrupted.element('download').disabled,false);
+  for(const id of ['clear','start','work-start','preview']) assert.equal(interrupted.element(id).disabled,true);
+  vm.runInContext('offlineMode=true;controls()',interrupted.context);
+  assert.equal(interrupted.element('download').disabled,true);
+  vm.runInContext('offlineMode=false;latest.run_id=2;controls()',interrupted.context);
+  assert.equal(interrupted.element('download').disabled,true);
+  vm.runInContext('latest.run_id=1',interrupted.context);
+  for(const wrong of [{boot_id:456},{run_id:2},{token:'fedcba9876543210'},{bytes:4096},{crc32:0},{phase:'empty'}]) {
+    const start=interrupted.requests.length;
+    interrupted.scenario.manifest={...runIdentity,...wrong}; await interrupted.run();
+    assert.deepEqual(interrupted.requests.slice(start),['/export/manifest']);
+    assert.equal(interrupted.diagnostic().browser_transfer.failed_phase,'resume_probe');
+    assert.equal(interrupted.element('progress').value,8192);
+    assert.equal(vm.runInContext('memoryCache.size',interrupted.context),2);
+  }
+  interrupted.scenario.manifestAbort='always';
+  const startProbe=interrupted.requests.length; await interrupted.run();
+  assert.deepEqual(interrupted.requests.slice(startProbe),['/export/manifest']);
+  assert.equal(interrupted.element('download').disabled,false);
+  assert.match(interrupted.element('transfer').textContent,/8192 bytes/);
+  // A replacement between the probe and the real download manifest cannot
+  // cause any cache pruning, chunk reads or completion on the replacement.
+  const switched=harness({manifest:{...runIdentity},storage});
+  vm.runInContext('lastStatusFailure={}',switched.context);
+  const fetchBeforeSwitch=switched.context.fetch;
+  switched.context.fetch=(path,opts)=>{
+    if(path==='/export/manifest' && switched.manifestCount===1)
+      switched.scenario.manifest.token='fedcba9876543210';
+    return fetchBeforeSwitch(path,opts);
+  };
+  await switched.run();
+  assert.equal(switched.diagnostic().browser_transfer.source_lost,true);
+  assert.equal(switched.requests.length,3); assert.equal(spansOf(switched).length,0);
+  assert.equal(stored.size,1);
+  // Reload the tab before any status response. Cache reads are backed by the
+  // verified packets from the previous page, as they are with IndexedDB.
+  const reloaded=harness({manifest:{...runIdentity},storage});
+  reloaded.context.priorCache=vm.runInContext('memoryCache',interrupted.context);
+  vm.runInContext('latest=null;cacheGet=async key=>priorCache.get(key);controls()',reloaded.context);
+  assert.equal(reloaded.element('download').disabled,false);
+  assert.equal(reloaded.element('clear').disabled,true);
+  await reloaded.run();
+  assert.deepEqual(reloaded.requests.slice(0,3).map(p=>p.split('?')[0]),['/export/manifest','/export/prepare','/export/manifest']);
+  assert(reloaded.requests[1].includes('client='));
+  assert.equal(spansOf(reloaded)[0].get('offset'),'8192');
+  assert.equal(reloaded.diagnostic().browser_transfer.cached_bytes,8192);
+  assert(Buffer.from(vm.runInContext('completedFile',reloaded.context)).equals(fixture));
+  assert.equal(stored.size,0);
 
   for(const scenario of [{prepareStatus:409},{prepareStatus:400}]){
     h=harness(scenario);await h.run();assert.equal(h.prepareCount,1);

@@ -107,7 +107,7 @@ function supportTransferTrial(s) {
   return /^walking-support-transfer-v39(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
 function singleWalkingBuild(s = latest) {
-  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3', 'walking-support-transfer-v39-walk4', 'walking-support-transfer-v39-walk5', 'walking-support-transfer-v39-walk5-logfix1', 'walking-support-transfer-v39-walk5-logfix2', 'walking-support-transfer-v39-walk5-logfix3', 'walking-support-transfer-v39-walk5-logfix4', 'walking-support-transfer-v39-walk6'].includes(s?.diagnostic_build_id);
+  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3', 'walking-support-transfer-v39-walk4', 'walking-support-transfer-v39-walk5', 'walking-support-transfer-v39-walk5-logfix1', 'walking-support-transfer-v39-walk5-logfix2', 'walking-support-transfer-v39-walk5-logfix3', 'walking-support-transfer-v39-walk5-logfix4', 'walking-support-transfer-v39-walk6', 'walking-support-transfer-v39-walk6-logfix1'].includes(s?.diagnostic_build_id);
 }
 function foreAftStopText(reason) {
   return ({
@@ -147,8 +147,11 @@ function footStartBlockReason(s) {
   if (f.right_in_range === false && f.right_control_range_ok !== true) return messages.right_out_of_range;
   return '足の検出以外に、ゼロ点・校正範囲・画像時刻・鮮度の開始条件を確認しています。';
 }
+function statusFresh() {
+  return !offlineMode && !lastStatusFailure && latest && Date.now() - lastSeen < 3500;
+}
 function controls() {
-  const fresh = !offlineMode && !lastStatusFailure && latest && Date.now() - lastSeen < 3500;
+  const fresh = statusFresh();
   const showStartPose = (singleWalkingBuild() || latest?.diagnostic_build_id === 'walking-support-transfer-v39-left-transfer-carry1') && !offlineMode && !latest.running &&
     latest.state === 'READY_TO_MEASURE' && latest.export_phase === 'empty';
   $('walking-start-pose').hidden = !showStartPose;
@@ -191,7 +194,7 @@ function controls() {
   $('brake-max').disabled = $('start').disabled || ['bridge','bridge_inverse'].includes($('energy-model').value);
   $('peak-adaptation').disabled = $('start').disabled || dedicatedSelected;
   $('clear').disabled = !fresh || busy || transferRunning || building || latest.running || !['FINISHED', 'ESTOP'].includes(latest.state);
-  $('download').disabled = !fresh || busy || transferRunning || !latest.downloadable || latest.running;
+  $('download').disabled = busy || transferRunning || (fresh ? !latest.downloadable || latest.running : !resumableExport());
   $('cancel').disabled = !transferRunning;
   $('csv').disabled = !completedFoot;
   $('preview').disabled = !fresh || busy || transferRunning || building || latest.running || !latest.foot?.preview_available;
@@ -351,7 +354,7 @@ function render(s) {
   renderGaitTurn(s.gait_turn);
   if (singleWalkingBuild(s)) {
     $('work-title').textContent = '歩行のエネルギー制御';
-    $('work-description').textContent = s.diagnostic_build_id === 'walking-support-transfer-v39-walk6'
+    $('work-description').textContent = ['walking-support-transfer-v39-walk6','walking-support-transfer-v39-walk6-logfix1'].includes(s.diagnostic_build_id)
       ? '足角度と胴体の減速から左足に支持が移るための入力を選びます。30秒の測定中、片側に傾いて静止すると、自動で揺り戻す場合があります。'
       : '足角度と胴体の減速を使い、左足に支持が移った後に必要な仕事を見積もって、戻りを補助します。';
   } else if (walkingAdmissionTrial(s)) {
@@ -738,6 +741,35 @@ function referenceResultMessage(result) {
 // reload/reconnect resume; every cached chunk is revalidated before reuse.
 let cachePromise;
 const memoryCache = new Map();
+// Persist only the identity and a progress hint. Each packet still has to be
+// read from the cache and revalidated against the device's current manifest.
+const resumeKey = 'freefoot-interrupted-export-v1';
+let interruptedExport = null;
+try {
+  const entry = JSON.parse(sessionStorage.getItem(resumeKey));
+  if (entry && Number.isInteger(entry.boot_id) && Number.isInteger(entry.run_id) &&
+      /^[a-f0-9]{16}$/.test(entry.token) && Number.isInteger(entry.crc32) &&
+      Number.isInteger(entry.bytes) && entry.bytes <= 9 * 1024 * 1024 &&
+      Number.isInteger(entry.prefix) && entry.prefix > 0 && entry.prefix <= entry.bytes)
+    interruptedExport = entry;
+} catch (_) {}
+function saveInterruptedExport(entry) {
+  interruptedExport = entry;
+  try {
+    if (entry) sessionStorage.setItem(resumeKey, JSON.stringify(entry));
+    else sessionStorage.removeItem(resumeKey);
+  } catch (_) {}
+}
+function resumableExport() {
+  return interruptedExport && !offlineMode && (!latest ||
+    (!latest.running && latest.downloadable && latest.boot_id === interruptedExport.boot_id &&
+      latest.run_id === interruptedExport.run_id)) ? interruptedExport : null;
+}
+function sameExport(m, entry) {
+  return m?.phase === 'ready' && m.boot_id === entry.boot_id && m.run_id === entry.run_id &&
+    m.token === entry.token && m.bytes === entry.bytes && m.crc32 === entry.crc32 &&
+    m.chunk_bytes === 4096;
+}
 function openCache() {
   if (!cachePromise) cachePromise = new Promise(resolve => {
     try {
@@ -986,29 +1018,46 @@ async function exportRequest(path, options, label, validate = value => value, tr
 }
 async function download() {
   if (transferRunning || diagnosticInFlight || commandInFlight || previewRunning || poseRunning) return;
+  const resume = !statusFresh() && resumableExport();
   transferRunning = true; cancelTransfer = false; controls();
   transferAbort = new AbortController();
-  const session = latest?.wifi_export_recovery === true && Number.isInteger(latest.boot_id) && Number.isInteger(latest.run_id)
-    ? {client:Math.floor(Math.random() * 0xffffffff) + 1, boot_id:latest.boot_id, run_id:latest.run_id} : null;
+  const source = resume || latest;
+  const session = source?.wifi_export_recovery === true && Number.isInteger(source.boot_id) && Number.isInteger(source.run_id)
+    ? {client:Math.floor(Math.random() * 0xffffffff) + 1, boot_id:source.boot_id, run_id:source.run_id} : null;
+  let prepareSent = false;
   transferDiagnostic = {revision:'resumable_export_stream_v5', phase:'prepare',
-    started_at:new Date().toISOString(), boot_id:latest?.boot_id ?? null, run_id:latest?.run_id ?? null,
+    started_at:new Date().toISOString(), boot_id:source?.boot_id ?? null, run_id:source?.run_id ?? null,
     confirmed_bytes:0, cached_bytes:0, received_bytes:0, retries:0, chunk_requests:0,
     stream_responses:0, stream_gzip_responses:0, stream_length_advertised_responses:0, stream_advertised_wire_bytes:0,
     stream_encoding_reasons:{},
     manifest:null, last_failure:null};
   try {
-    $('progress').value = 0;
-    $('transfer').textContent = 'ログを確定中…';
+    if (resume) {
+      transferNote({phase:'resume_probe', retained_prefix_bytes:resume.prefix});
+      $('progress').max = resume.bytes;
+      $('progress').value = resume.prefix;
+      $('transfer').textContent = '通信を再確認しています。取得済みのログと本体のログを照合中…';
+    } else {
+      $('progress').value = 0;
+      $('transfer').textContent = 'ログを確定中…';
+    }
     // A poll may already hold the device's single HTTP client when clicked.
     if (refreshInFlight) await refreshInFlight;
     transferCheck();
-    if ((transferDiagnostic.boot_id != null && latest?.boot_id !== transferDiagnostic.boot_id) ||
-        (transferDiagnostic.run_id != null && latest?.run_id !== transferDiagnostic.run_id)) {
+    if ((!resume || latest) && ((transferDiagnostic.boot_id != null && latest?.boot_id !== transferDiagnostic.boot_id) ||
+        (transferDiagnostic.run_id != null && latest?.run_id !== transferDiagnostic.run_id))) {
       transferNote({source_lost:true});
       throw new Error('選択した測定から本体または測定番号が変わりました。');
     }
+    if (resume) {
+      const observed = await exportRequest('/export/manifest', {timeout:4000}, '取得元を再確認', undefined, true);
+      if (!sameExport(observed, resume))
+        throw new Error('以前のログと一致する本体の確定済みログを確認できません。');
+      transferNote({phase:'prepare'});
+    }
     if (session) pendingExportPause = null;
     const preparePath = session ? `/export/prepare?client=${session.client}` : '/export/prepare';
+    prepareSent = true;
     await exportRequest(preparePath, {method:'POST', kind:'text'}, 'ログ確定の開始');
     transferNote({phase:'manifest'});
     const waitStarted = Date.now();
@@ -1021,7 +1070,7 @@ async function download() {
       transferNote({manifest:m});
       if ((m.boot_id != null && transferDiagnostic.boot_id != null && m.boot_id !== transferDiagnostic.boot_id) ||
           (m.run_id != null && transferDiagnostic.run_id != null && m.run_id !== transferDiagnostic.run_id) ||
-          m.phase === 'empty') {
+          m.phase === 'empty' || (resume && !sameExport(m, resume))) {
         transferNote({source_lost:true, observed_boot_id:m.boot_id ?? null, observed_run_id:m.run_id ?? null});
         throw new Error('取得元のログが一致しません。本体の再起動・接続先や測定番号の変更・ログ消去の可能性があります。診断JSONを保存してください。');
       }
@@ -1035,6 +1084,7 @@ async function download() {
     if (!/^[a-f0-9]{16}$/.test(m.token) || !Number.isInteger(m.bytes) || m.bytes < 114 || m.bytes > 9 * 1024 * 1024 || m.chunk_bytes !== 4096)
       throw new Error('ログ仕様が一致しません。ページを更新してください。');
     transferCheck();
+    if (interruptedExport && !sameExport(m, interruptedExport)) saveInterruptedExport(null);
     await pruneCache(m.token);
     transferNote({phase:'chunks'});
     const file = new Uint8Array(m.bytes); $('progress').max = m.bytes; $('progress').value = 0;
@@ -1145,6 +1195,7 @@ async function download() {
     const metadata = JSON.parse(new TextDecoder().decode(file.subarray(headerSize, headerSize + metadataLength)));
     completedFoot = expandFootTable(metadata.foot_frames ?? null, metadata.foot_control_observations ?? null); completedFile = file; completedName = m.filename;
     saveBlob(new Blob([file], {type: 'application/octet-stream'}), m.filename);
+    saveInterruptedExport(null);
     transferNote({phase:'complete', filename:m.filename});
     $('transfer').textContent = `CRC検証完了 · ${m.bytes} bytes · 足角度 ${completedFoot?.length ?? 0}行`;
     if (m.completion_ack === true) {
@@ -1165,7 +1216,17 @@ async function download() {
       chunks:`ログデータの取得（${retained} bytesから）`, verifying:'取得データの検証'}[failedPhase];
     const progress = retained ? `今回の取得・再開で検証済み${retained} bytes。` : '';
     const manifest = transferDiagnostic.manifest;
-    if (transferDiagnostic.source_lost) {
+    if (failedPhase === 'chunks' && retained && manifest?.phase === 'ready' &&
+        Number.isInteger(manifest.boot_id) && Number.isInteger(manifest.run_id) &&
+        manifest.boot_id === source?.boot_id && manifest.run_id === source.run_id) {
+      const {boot_id,run_id,token,bytes,crc32} = manifest;
+      saveInterruptedExport({boot_id,run_id,token,bytes,crc32, prefix:Math.max(retained,
+        interruptedExport && sameExport(manifest, interruptedExport) ? interruptedExport.prefix : 0),
+        wifi_export_recovery:source.wifi_export_recovery === true});
+    }
+    if (failedPhase === 'resume_probe') {
+      $('transfer').textContent = `再開前の照合 · ${error.message} 同じ機体のWi-Fiに接続し「RWLOGを取得・再開」を押してください。前回は ${resume.prefix} bytes まで検証済みです。端末に残っている部分から再開します。`;
+    } else if (transferDiagnostic.source_lost) {
       $('transfer').textContent = `${error.message}（端末に取得済みの部分は保持しますが、失われた本体ログの続きは取得できません。）`;
     } else if (failedPhase === 'manifest' && manifest?.phase === 'error') {
       const bytes = manifest.metadata_bytes;
@@ -1178,7 +1239,7 @@ async function download() {
     } else {
       $('transfer').textContent = `${stage} · ${error.message}（${progress}取得済みの部分は再開に利用します。）`;
     }
-    if (session && !transferDiagnostic.source_lost) {
+    if (prepareSent && session && !transferDiagnostic.source_lost) {
       pendingExportPause = session;
       await sendExportPause(session);
     }
