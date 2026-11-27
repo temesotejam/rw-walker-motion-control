@@ -21,6 +21,7 @@ python -B analysis/simulator/replay_walk7.py --after-first --event-allocation $t
 |---|---|
 | 動画で次の足が着く前と旧支持足が離れた後の胴体角速度 | [撮影とLED同期の手順](../docs/SUPPORT_TRANSFER_V39.md#動画とrwlogで支持が移る前後の角速度を測る)、[左右別の測定](measurement/measure_transfer_speeds.py) |
 | 撮影済みの動画から見える形状と左右足の動き | [MASt3Rの実行環境](mast3r/)、[実測角でCADを動かす手順](#動画に合わせたcad再生) |
+| 足縁が交代した後に残る胴体角速度を、入口の姿勢から予測できるか | [左右の移行候補の速度式を評価する](#左右の移行候補の速度式を評価する) |
 | 支持移行に向けた通電の開始・幅と、実測された到達点 | [予測器の再生](support/replay_support_transfer.py)、[実測の採点](support/score_observed_transfers.py)、[操作手順](../docs/SUPPORT_TRANSFER_V39.md) |
 | 足の出方・戻り方と半周期の不足仕事 | [イベントごとのエネルギー再生](support/replay_event_foot_energy.py) |
 | 画像取得、足角度の計算・発行、制御への到着 | [歩行中の足角度計測](measurement/audit_walking_foot_measurements.py)、[時刻の内訳](measurement/analyze_foot_latency.py) |
@@ -93,7 +94,7 @@ python -B analysis/simulator/replay_walk7.py --after-first --event-allocation $t
 </details>
 
 <details>
-<summary>足角・計測の分析（6件）</summary>
+<summary>足角・計測の分析（7件）</summary>
 
 | ファイル | 役割 |
 | --- | --- |
@@ -103,6 +104,7 @@ python -B analysis/simulator/replay_walk7.py --after-first --event-allocation $t
 | [measurement/replay_periodic_foot.py](measurement/replay_periodic_foot.py) | 過去の足角が制御側に届いた時刻に合わせて定周期推定器を再生する。 |
 | [measurement/measure_transfer_speeds.py](measurement/measure_transfer_speeds.py) | 動画のLEDとRWLOGを同期し、観察した接地・離地の区間前後で胴体角速度、進入時の左右足角、通電状況を取り出す。 |
 | [measurement/replay_video_pose.py](measurement/replay_video_pose.py) | 動画と同じ時刻の左右足角・胴体姿勢を使って機体のCADを正面から再生する。 |
+| [measurement/fit_transfer_proxy.py](measurement/fit_transfer_proxy.py) | 動画で足縁が交代する前の観測から交代後の速度を予測し、後半と別試行で誤差を検証する。 |
 
 </details>
 
@@ -130,3 +132,20 @@ python analysis/measurement/replay_video_pose.py --video clip.mp4 --decoded anal
 複数のLED時刻から時計のずれを求めた場合は `--video-zero-s` の代わりに `--clock clock.json` を渡す。形式は `[有効区間開始ms, 有効区間終了ms, [[傾き, 切片ms], ...]]`。計測時刻は「傾き × 動画時刻 + 切片」で求める。CADでは機体中心を固定し、胴体の左右・前後傾斜と脚の振りを再生する。足裏高さは水平な床とCADの円弧から計算する。撮影時刻で足角を補間できないフレームは欠測として表示する。床上移動・ヨー・鉛直荷重の推定には別途測定が必要。
 
 [MASt3Rの解析フォルダー](mast3r/)には環境作成、動画ペアの推論、依存リスト、実行案内の4ファイルがある。
+
+## 左右の移行候補の速度式を評価する
+
+この解析では、足縁の左右交代を動画だけで特定し、どちらの足が低く見えるようになったかを記録する。力学的な荷重移行時刻は未観測。次の例は、72996579の前半で係数を決め、その後半と別試行64352791で同じ係数を検証する。
+
+```powershell
+$trial = "analysis/local/72996579"
+$other = "analysis/local/64352791"
+$data = "$trial/speed-estimate"
+python -B analysis/measurement/fit_transfer_proxy.py "$trial/decoded" "$data/optical-events.csv" "$trial/anchors.csv" --split-s 6 --external "$other/decoded" "$data/other-events.csv" "$other/anchors.csv" --out "$data"
+```
+
+動画のラベルCSVに `run_start_us,apparent_lower_side_after,frame_lo,video_lo_ms,video_hi_ms` を入れる。左右は機体基準でL/R、時刻は左右の足縁下の帯幅差が符号を変える最後の旧側・最初の新側の画像時刻。左右とも十分な差が連続2コマ見えることを求めた。72996579の差のしきい値は3画素と投影足幅の3.5%の大きい方。LEDの対応表 `anchors.csv` は [動画とRWLOGの測定手順](../docs/SUPPORT_TRANSFER_V39.md#動画とrwlogで支持が移る前後の角速度を測る) に従う。
+
+各イベント区間の中央を基準とし、50 ms前に制御側へ届いていた足角とジャイロ、約33 ms後の最初の新しいジャイロ標本を使う。足角の鮮度上限は75 ms、角速度は移行候補側へ向かう向きを正とする。左右別切片を持ち、進入速度・受け足角・反対足角の傾きは左右共通。学習データ内の各側の平均を引いて尺度を揃え、リッジ係数1で進入速度の傾きは1、足角の傾きは0に向けて正則化する。将来決まった通電は説明変数に加えず、実際の指令の重複と電流の大きさを各行に残す。
+
+`fit.json` に係数、左右別誤差、学習時の観測範囲、LED時計の許容端点と画像区間の両端・中央を組み合わせた感度を保存する。感度は同じ係数・共通に採点できるイベント間で比較し、統計的な信頼区間とは区別する。`predictions.csv` に個々の実測と予測を出す。時計を画像で与えた条件での予測であり、機体が荷重移行を事前に検出できるかは別途検証する。
