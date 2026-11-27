@@ -2,7 +2,7 @@
 
 リアクションホイールで左右に揺動し、受動脚を交互に振り出す歩行器です。現在の通常歩行版は **`walking-support-transfer-v39-walk7-logfix1`** です。
 
-通常歩行の制御則は `src/walking/` の5ファイルにあります。[5つの計算と入出力](src/README.md#walking-control) · [通信・認識など本体120ファイルの内訳](src/README.md#ファイル別の役割) · [全277ファイルの案内](#ファイル別の役割)
+通常歩行の制御則は `src/walking/` の5ファイルにあります。[5つの計算と入出力](src/README.md#walking-control) · [通信・認識など本体120ファイルの内訳](src/README.md#ファイル別の役割) · [全283ファイルの案内](#ファイル別の役割)
 
 ## 歩行実験で使うもの
 
@@ -33,7 +33,7 @@ python tools/prepare_foot_periodic40_flasher.py
 | 場所 | 使う場面 |
 | --- | --- |
 | [test/](test/README.md) | 変更後の回帰試験。PCから `python -B test/run.py` を実行します。無駆動の実機通信試験には専用ファームを使います。 |
-| [analysis/](analysis/README.md) | 実測ログの解析、支持移行・失速の再生、過去の試行との比較。 |
+| [analysis/](analysis/README.md) | 実測ログの解析、支持移行・失速の再生、過去の試行との比較。[動画からの3D復元](analysis/mast3r/) |
 | [docs/](docs/SUPPORT_TRANSFER_V39.md) | 歩行制御モデル、入力の判断根拠、実測との照合方法。 |
 
 ## 旧版・実験データの保管先
@@ -44,7 +44,7 @@ python tools/prepare_foot_periodic40_flasher.py
 
 ## ファイル別の役割
 
-一覧は通常歩行版 `walk7-logfix1` の現行ソースに対応します。全277件を、ファイル名から実装や試験に直接移動できるようにまとめました。ビルド生成物と各自の測定データは集計の対象外です。
+一覧は通常歩行版 `walk7-logfix1` の現行ソースに対応します。全283件を、ファイル名から実装や試験に直接移動できるようにまとめました。ビルド生成物と各自の測定データは集計の対象外です。
 
 | 場所 | 件数 | どこで使うか |
 | --- | ---: | --- |
@@ -54,7 +54,8 @@ python tools/prepare_foot_periodic40_flasher.py
 | third_party/ | 6 | カメラ用の外部ドライバー、出典、ライセンス。 |
 | [tools/](tools/README.md#ファイル別の役割) | 12 | PCでのログ取得・変換、書き込み準備、ビルド時の処理。 |
 | [test/](test/README.md#ファイル別の役割) | 75 | 回帰試験、模擬機器、無駆動の実機通信試験。 |
-| [analysis/](analysis/README.md#ファイル別の役割) | 41 | 測定後の研究、シミュレータ、CADによる形状検証。 |
+| [analysis/](analysis/README.md#ファイル別の役割) | 46 | 測定後の研究、シミュレータ、CAD・動画による姿勢の再構成。 |
+| [.github/workflows/mast3r.yml](.github/workflows/mast3r.yml) | 1 | GitHubで合成映像から3D復元環境を検証する。 |
 | docs/ | 3 | 支持移行とエネルギー制御の仕様・仮定。 |
 | ルート直下 | 8 | 設定、起動コマンド、引き継ぎ、ライセンス等。 |
 

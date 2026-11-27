@@ -1,0 +1,72 @@
+name: MASt3R video reconstruction
+
+on:
+  workflow_dispatch:
+    inputs:
+      inference:
+        description: Download the research checkpoint and run CPU inference on a synthetic pair
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  reconstruction:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Create isolated environment and two-frame input
+        shell: bash
+        run: |
+          python -m venv analysis/local/mast3r/venv
+          echo "$PWD/analysis/local/mast3r/venv/bin" >> "$GITHUB_PATH"
+          analysis/local/mast3r/venv/bin/python -m pip install 'numpy==1.26.4' 'opencv-python-headless==4.10.0.84'
+          analysis/local/mast3r/venv/bin/python - <<'PY'
+          import cv2
+          import numpy as np
+          rng = np.random.default_rng(41)
+          frame = rng.integers(25, 180, (360, 640, 3), dtype=np.uint8)
+          for x in range(60, 620, 70):
+              cv2.circle(frame, (x, 170 + x % 43), 24, (230, 180, 70), 4)
+          clip = cv2.VideoWriter("analysis/local/test.avi", cv2.VideoWriter_fourcc(*"MJPG"), 10, (640, 360))
+          assert clip.isOpened()
+          for shift in range(10):
+              clip.write(np.roll(frame, shift, axis=1))
+          clip.release()
+          PY
+      - name: Check frame extraction
+        run: python analysis/mast3r/reconstruct_video.py --video analysis/local/test.avi --output analysis/local/prepared --times 0.1 0.6 --prepare-only
+      - name: Install pinned model and dependencies
+        if: inputs.inference
+        run: python analysis/mast3r/install.py --device cpu
+      - name: Run pairwise inference
+        if: inputs.inference
+        run: python analysis/mast3r/reconstruct_video.py --video analysis/local/test.avi --output analysis/local/inferred --times 0.1 0.6 --device cpu
+      - name: Check point cloud and matching outputs
+        if: inputs.inference
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          files = list(Path("analysis/local/inferred").rglob("*.ply"))
+          assert files, "No point cloud produced"
+          counts = []
+          for path in files:
+              with path.open("rb") as stream:
+                  assert stream.readline().strip() == b"ply"
+                  for line in stream:
+                      if line.startswith(b"element vertex "):
+                          counts.append(int(line.split()[2]))
+                          break
+          assert counts and max(counts) > 10, counts
+          print("Point counts:", counts)
+          PY

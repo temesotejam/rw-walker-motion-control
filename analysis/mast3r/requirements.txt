@@ -1,0 +1,10 @@
+# Runtime imports for pair inference. PyTorch and torchvision use the device index in install.py.
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+Pillow==10.4.0
+scipy==1.13.1
+einops==0.8.1
+tqdm==4.67.1
+huggingface-hub==0.30.2
+safetensors==0.5.3
+packaging==24.2
