@@ -10,6 +10,22 @@
 
 extern "C" const uint8_t replay_blob_start[], replay_blob_end[];
 
+static bool readBlock(const uint8_t*& cursor, const uint8_t* end, tinfl_decompressor* codec,
+                      uint8_t* out, size_t& decoded) {
+  if (end - cursor < 4) return false;
+  const size_t stored = cursor[0] | (cursor[1] << 8);
+  decoded = cursor[2] | (cursor[3] << 8);
+  if (!stored || !decoded || decoded > replay_layout::kBlockBytes || stored > size_t(end - cursor - 4))
+    return false;
+  size_t input = stored, output = decoded + 1;
+  tinfl_init(codec);
+  const auto result = tinfl_decompress(codec, cursor + 4, &input, out, out, &output,
+                                       TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+  if (result != TINFL_STATUS_DONE || output != decoded || input != stored) return false;
+  cursor += 4 + stored;
+  return true;
+}
+
 template<class Consume>
 static bool unpack(uint32_t start, uint32_t end, size_t expected, uint32_t crc, Consume consume) {
   using Allocation = std::unique_ptr<void, decltype(&free)>;
@@ -20,25 +36,68 @@ static bool unpack(uint32_t start, uint32_t end, size_t expected, uint32_t crc, 
   auto* out = static_cast<uint8_t*>(block.get());
   uint32_t checked = 0;
   size_t total = 0;
-  for (uint32_t at = start; at < end;) {
-    if (end - at < 4) return false;
-    const auto* p = replay_blob_start + at;
-    const unsigned stored = p[0] | (p[1] << 8), decoded = p[2] | (p[3] << 8);
-    if (!stored || !decoded || decoded > replay_layout::kBlockBytes || stored > end - at - 4)
+  const uint8_t* cursor = replay_blob_start + start;
+  while (cursor < replay_blob_start + end) {
+    size_t decoded = 0;
+    if (!readBlock(cursor, replay_blob_start + end, codec, out, decoded) || !consume(out, decoded))
       return false;
-    size_t input = stored, output = decoded + 1;
-    tinfl_init(codec);
-    const auto result = tinfl_decompress(codec, p + 4, &input, out, out, &output,
-                                         TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
-    if (result != TINFL_STATUS_DONE || output != decoded || input != stored ||
-        !consume(out, decoded)) return false;
     checked = export_protocol::crc32(checked, out, decoded);
     total += decoded;
-    at += 4 + stored;
     delay(1);
   }
   return total == expected && checked == crc;
 }
+
+#if MOTORFREE_MEASURE
+// Only the simulated controller task writes this state or appends logger rows.
+// Allocate one block and decoder for the whole series, independent of the log length.
+static uint8_t* rowBlock;
+static tinfl_decompressor* rowCodec;
+static const uint8_t* rowCursor;
+static size_t rowAt, rowEnd;
+static uint32_t rowEpoch, rowCrc;
+static RwLogFileHeader expectedHeader;
+
+bool beginMeasuredReplay(PsramLogger& logger, uint16_t runId) {
+  if (!rowBlock) rowBlock = static_cast<uint8_t*>(ps_malloc(replay_layout::kBlockBytes + 1));
+  if (!rowCodec) rowCodec = static_cast<tinfl_decompressor*>(ps_malloc(sizeof(tinfl_decompressor)));
+  memcpy(&expectedHeader, replay_layout::kHeader, sizeof(expectedHeader));
+  if (!rowBlock || !rowCodec || expectedHeader.log_sample_size != sizeof(LogSample) ||
+      expectedHeader.sample_count > logger.sampleCapacity()) return false;
+  expectedHeader.run_id = runId;
+  rowCursor = replay_blob_start + replay_layout::kSampleBlockOffset;
+  rowAt = rowEnd = rowCrc = 0;
+  logger.startRun(runId, expectedHeader.run_start_us, 0, 0, 0, false, 0, 0, 0, false,
+                  NAN, false, 0, false, true);
+  rowEpoch = micros();
+  return true;
+}
+
+bool advanceMeasuredReplay(PsramLogger& logger, uint32_t& elapsedMs, bool& finished) {
+  const uint32_t elapsedUs = micros() - rowEpoch;
+  for (;;) {
+    if (rowAt == rowEnd) {
+      if (rowCursor == replay_blob_end) {
+        logger.seal();
+        const auto generated = logger.buildHeader(expectedHeader.metadata_json_size);
+        finished = true;
+        return logger.rwlogDownloadable() && rowCrc == replay_layout::kSamplesCrc &&
+               !memcmp(&expectedHeader, &generated, sizeof(generated));
+      }
+      if (!readBlock(rowCursor, replay_blob_end, rowCodec, rowBlock, rowEnd) || rowEnd % sizeof(LogSample))
+        return false;
+      rowAt = 0;
+      rowCrc = export_protocol::crc32(rowCrc, rowBlock, rowEnd);
+    }
+    LogSample row;
+    memcpy(&row, rowBlock + rowAt, sizeof(row));
+    if (row.time_us > elapsedUs) return true;
+    if (!logger.addSample(row)) return false;
+    elapsedMs = row.t_test_ms;
+    rowAt += sizeof(row);
+  }
+}
+#endif
 
 bool replayArchiveMetadata(PsramString& json) {
   json.clear();

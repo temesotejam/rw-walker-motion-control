@@ -3,6 +3,9 @@
 From the project root run "python -B test/hardware/prepare_motorfree.py", then
 "pio run -c .pio/motorfree-fixture/platformio.ini". Neither command uploads.
 Pass --archive PATH to stage a byte-exact replay under .pio/motorfree-replay.
+Add --measure to stage .pio/motorfree-measure. POST /bench/replay on this
+image to append archived rows at their recorded times. Export normally, then
+POST /clear for another measurement. Only the run ID and CRC vary across runs.
 """
 import argparse
 from pathlib import Path
@@ -20,8 +23,14 @@ def write_changed(path, data):
         path.write_bytes(data)
 
 
-def prepare(archive=None, target_free=22000, target_largest=12000):
-    out = ROOT / ".pio" / "motorfree-replay" if archive else OUT
+def prepare(archive=None, target_free=22000, target_largest=12000, measure=False):
+    if measure and not archive:
+        raise ValueError("--measure needs a recorded --archive")
+    out = OUT
+    suffix = b"-motorfree-bench"
+    if archive:
+        out = ROOT / ".pio" / ("motorfree-measure" if measure else "motorfree-replay")
+        suffix = b"-measure-bench" if measure else b"-archive-bench"
     files = {p.name for p in (ROOT / "src").iterdir() if p.is_file()} - SKIP
     out_src = out / "src"
     unexpected = {p.name for p in out_src.glob("*") if p.is_file()} - files - {"main.cpp"}
@@ -33,8 +42,7 @@ def prepare(archive=None, target_free=22000, target_largest=12000):
         source = ROOT / "src" / name
         data = source.read_bytes()
         if name == "runtime_diagnostics.h":
-            suffix = b"-archive-bench" if archive else b"-motorfree-bench"
-            data, count = re.subn(rb'"(walking-support-transfer-v39-walk(?:5|6)-logfix[0-9]+)"',
+            data, count = re.subn(rb'"(walking-support-transfer-v39-walk[0-9]+(?:-logfix[0-9]+)?)"',
                                   rb'"\1' + suffix + b'"', data)
             if count != 2:
                 raise RuntimeError("Update the fixture revision markers for this production build")
@@ -43,7 +51,24 @@ def prepare(archive=None, target_free=22000, target_largest=12000):
                           b's.on("/stop", HTTP_POST, [this]() {'):
                 if data.count(route) != 1:
                     raise RuntimeError(f"Unrecognized motion endpoint: {route.decode()}")
-                data = data.replace(route, route + b'\n    server_->send(403, "text/plain", "motor_free_transport_bench"); return;')
+                guard = b'if (cmd != RunControlWorker::Command::Clear) ' if measure and route.startswith(b"void") else b""
+                data = data.replace(route, route + b"\n    " + guard +
+                                    b'{ server_->send(403, "text/plain", "motor_free_transport_bench"); return; }')
+            if measure:
+                # The ordinary walking session calls prepareCompletedExport() at finish.
+                # The bench has its own start route; issue the same handoff on the HTTP owner.
+                update = b"void WebUi::update() {"
+                if data.count(update) != 1:
+                    raise RuntimeError("Web update injection point changed")
+                data = data.replace(update, update + b"""
+  static uint32_t lastBenchFinishCheck;
+  const uint32_t benchNow = millis();
+  if (benchNow - lastBenchFinishCheck >= 50) {
+    lastBenchFinishCheck = benchNow;
+    if (export_->status().phase == ImmutableExport::Phase::Empty &&
+        control_->commandsSettled() && control_->snapshot().downloadable)
+      prepareCompletedExport();
+  }""")
         if archive and name == "psram_logger.cpp":
             signature = b"bool PsramLogger::buildMetadataJson(PsramString& json) const {"
             if data.count(signature) != 1:
@@ -67,7 +92,8 @@ def prepare(archive=None, target_free=22000, target_largest=12000):
     config = config.replace("[platformio]", f"[platformio]\nsrc_dir = {relative}/src\n"
                             f"build_dir = {relative}/build\nlibdeps_dir = .pio/libdeps")
     if archive:
-        config = config.replace("build_flags =\n", "build_flags =\n  -DMOTORFREE_ARCHIVE=1\n", 1)
+        flags = "  -DMOTORFREE_ARCHIVE=1\n" + ("  -DMOTORFREE_MEASURE=1\n" if measure else "")
+        config = config.replace("build_flags =\n", "build_flags =\n" + flags, 1)
     write_changed(out / "platformio.ini", config.encode())
     print("Prepared", out / "platformio.ini")
 
@@ -75,7 +101,8 @@ def prepare(archive=None, target_free=22000, target_largest=12000):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, help="existing local RWLOG to replay")
+    parser.add_argument("--measure", action="store_true", help="repeat acquisition at recorded row times on one boot")
     parser.add_argument("--target-free", type=int, default=22000, help="internal RAM headroom in bytes during replay")
     parser.add_argument("--target-largest", type=int, default=12000, help="largest internal allocation headroom in bytes")
     args = parser.parse_args()
-    prepare(args.archive, args.target_free, args.target_largest)
+    prepare(args.archive, args.target_free, args.target_largest, args.measure)
