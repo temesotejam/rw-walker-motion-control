@@ -1,9 +1,9 @@
 #pragma once
 #include <stdint.h>
 
-// Track one outage observed while READY. A further failed response does not
+// Track one observed HTTP outage. A further failed response does not
 // postpone the grace period or grant another attempt after a repair.
-class ReadyHttpStallRecovery {
+class HttpStallRecovery {
  public:
   void clear() { state_ = State::Clear; }
   void stalled(uint32_t now) {

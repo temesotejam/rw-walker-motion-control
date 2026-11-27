@@ -6,7 +6,7 @@
 #include "camera_frame_ready.h"
 #endif
 #include "config.h"
-#include "runtime_web.h"
+#include <freefoot_runtime_web.h>
 #include "runtime_page_encoding.h"
 #include "runtime_diagnostics.h"
 #include "foot_range_diagnostics.h"
@@ -16,7 +16,7 @@
 #include <esp_timer.h>
 #include <esp_system.h>
 #include "export_gzip.h"
-#include <algorithm>
+#include <cmath>
 #include <memory>
 #include <new>
 #include <errno.h>
@@ -85,7 +85,12 @@ void WebUi::begin(BoundedWriteWebServer& s, RunControlWorker& control, FootObser
       server_->send_P(200, "text/html; charset=utf-8", RUNTIME_HTML, sizeof(RUNTIME_HTML) - 1);
     } else {
       server_->send(406, "text/plain", "");
+      return;
     }
+    // A sealed run can still be unreachable after its quiet-period repair.
+    // Only a sustained stall while serving the actual page arms another check.
+    if (server_->lastResponse() == BoundedWriteWebServer::Response::Stalled &&
+        recovery_.sealedAfterRadioRepair()) http_stall_.stalled(millis());
   });
   s.on("/status.json", HTTP_GET, [this]() { status(); });
 #if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
@@ -155,7 +160,7 @@ void WebUi::update() {
     return;
   }
   if (offline_.busy()) {
-    ready_http_stall_.clear();
+    http_stall_.clear();
 #if FOOT_PERIODIC_V38
     if (server_) server_->handleClient();
 #else
@@ -174,10 +179,10 @@ void WebUi::update() {
   const uint32_t now = millis();
   const auto response = server_ ? server_->lastResponse() : BoundedWriteWebServer::Response::None;
   if (response != BoundedWriteWebServer::Response::None) recovery_.onRequest(now);
-  if (response == BoundedWriteWebServer::Response::Complete) ready_http_stall_.clear();
+  if (response == BoundedWriteWebServer::Response::Complete) http_stall_.clear();
   if (response == BoundedWriteWebServer::Response::Stalled && !offline_.busy() &&
-      !strcmp(control_->snapshot().state_name, "READY_TO_MEASURE")) ready_http_stall_.stalled(now);
-  if ((recovery_.awaitingDownload() || ready_http_stall_.due(now)) && now - recovery_poll_ms_ >= 100) {
+      !strcmp(control_->snapshot().state_name, "READY_TO_MEASURE")) http_stall_.stalled(now);
+  if ((recovery_.awaitingDownload() || http_stall_.due(now)) && now - recovery_poll_ms_ >= 100) {
     recovery_poll_ms_ = now;
     const auto s = export_->status();
     recovery_.buildProgress(now, s.metadata_bytes + s.hashed_bytes);
@@ -211,11 +216,14 @@ bool WebUi::requestWifiRecovery(bool manual) {
   const auto s = control_->snapshot();
   const uint32_t now = millis();
   const bool ready = !strcmp(s.state_name, "READY_TO_MEASURE");
-  const bool ready_stall = ready && ready_http_stall_.due(now);
-  const bool stopped = controlStopped(s) && (terminalRun(s) || ((manual || ready_stall) && ready));
-  // A confirmed READY stall has its own one-shot budget; share the full stop
-  // checks and cooldown with the USB command and post-run transport repairs.
-  const auto repair = recovery_.requestRepair(now, stopped, manual || ready_stall);
+  bool confirmed_stall = http_stall_.due(now);
+  if (confirmed_stall && !ready &&
+      !(terminalRun(s) && recovery_.sealedAfterRadioRepair() && WiFi.softAPgetStationNum() > 0)) {
+    http_stall_.clear(); // Client departed, export began, or the run changed.
+    confirmed_stall = false;
+  }
+  const bool stopped = controlStopped(s) && (terminalRun(s) || ((manual || confirmed_stall) && ready));
+  const auto repair = recovery_.requestRepair(now, stopped, manual || confirmed_stall);
   if (repair == ExportTransportRecovery::Repair::None) return false;
   if (repair == ExportTransportRecovery::Repair::HttpListener) {
     closeHttpTransport();
@@ -224,7 +232,7 @@ bool WebUi::requestWifiRecovery(bool manual) {
     return true;
   }
   listener_rebind_pending_ = false;
-  ready_http_stall_.repairIssued();
+  http_stall_.repairIssued();
   wifi_restart_.request();
   return true;
 }
@@ -297,6 +305,9 @@ bool WebUi::quietResponse() {
 }
 void WebUi::command(RunControlWorker::Command cmd) {
   if (offline_.busy()) { server_->send(409, "text/plain", "run_preparing"); return; }
+  if (cmd == RunControlWorker::Command::Clear && recovery_.priorityRequested(millis())) {
+    server_->send(409, "text/plain", "export_in_progress"); return;
+  }
   RuntimeDiag::Scope diagnostic(RuntimeDiag::Lane::Http, RuntimeDiag::Phase::HttpCommand);
   if (server_->hasArg("timing_ms")) {
     server_->send(400, "text/plain", "fixed_3ms_reload_page"); return;
@@ -411,6 +422,7 @@ void WebUi::command(RunControlWorker::Command cmd) {
     // Only this HTTP owner can start an export, and Building was excluded
     // above. A refused Clear must leave the download token usable.
     if (ok && cmd == RunControlWorker::Command::Clear) {
+      http_stall_.clear();
       export_->reset();
       recovery_.startRun();
       updateExportPriority();
@@ -634,6 +646,9 @@ void WebUi::status() {
   json+=",\"row_copy_us\":"+String(f.latest.row_copy_us)+",\"row_cache_used\":"+String(f.latest.row_cache_used?"true":"false");
   json+=",\"row_cache_ready\":"+String(f.row_cache_ready?"true":"false")+",\"control_poll_ms\":"+String(foot_fast_policy::kControlPollMs);
   json+=",\"row_cache_internal\":"+String(f.row_cache_internal?"true":"false");
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+  json+=",\"hot_scratch_internal\":"+String(f.hot_scratch_internal?"true":"false");
+#endif
 #endif
   json += ",\"sequence\":" + String(f.latest.sequence);
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
@@ -821,11 +836,8 @@ bool WebUi::sendCompressedWindow(const char* token, uint32_t offset, uint32_t le
   server_->sendHeader("Content-Encoding", "gzip");
   server_->setContentLength(used);
   server_->send(200, "application/octet-stream", "");
-  for (size_t at = 0; at < used && server_->lastResponse() == BoundedWriteWebServer::Response::Complete;) {
-    const size_t n = std::min<size_t>(export_protocol::kChunkBytes, used - at);
-    server_->sendContent(reinterpret_cast<const char*>(encoded + at), n);
-    at += n;
-  }
+  if (server_->lastResponse() == BoundedWriteWebServer::Response::Complete)
+    server_->sendContent(reinterpret_cast<const char*>(encoded), used);
   return true; // the HTTP response has already started
 }
 

@@ -26,6 +26,7 @@ class ExportTransportRecovery {
     return (state_ == State::Sealed && !radio_used_) ||
            (state_ == State::Downloading && (!listener_attempted_ || !radio_used_));
   }
+  bool sealedAfterRadioRepair() const { return state_ == State::Sealed && radio_used_; }
   uint32_t listenerRecoveryCount() const { return listener_recoveries_; }
   // Only an export client requests transfer priority. Ordinary status polls,
   // metadata building and radio recovery cannot extend a departed client's lease.

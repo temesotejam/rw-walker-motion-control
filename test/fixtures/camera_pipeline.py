@@ -54,6 +54,7 @@ def fixture():
     constants = '\n'.join(re.findall(r'^constexpr (?:int|uint32_t) (?:PIN_CAM_\w+|k\w+) = [^;]+;', camera, re.M))
     preamble = r'''
 #include "Arduino.h"
+#include <algorithm>
 #include <cassert>
 #include <iostream>
 #include <stdexcept>
@@ -126,14 +127,29 @@ constexpr int CAMERA_FB_IN_PSRAM=1,CAMERA_GRAB_LATEST=2,CAMERA_GRAB_WHEN_EMPTY=1
 #define portEXIT_CRITICAL(x) ((void)(x))
 #define pdMS_TO_TICKS(x) (x)
 static bool block_internal_rows=false,block_external_rows=false;
-static uint32_t internal_row_attempts=0;
+static uint32_t internal_row_attempts=0,external_row_attempts=0,row_frees=0;
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+static constexpr size_t expected_scratch_bytes=std::max(foot_image_rows::kUpperBytes,foot_image_rows::kLowerBytes);
+static_assert(expected_scratch_bytes==12800 && foot_image_rows::kRequiredBytes==21120);
+static size_t largest_internal_row_block=20468; // largest free block observed before a transfer
+#else
+static constexpr size_t expected_scratch_bytes=foot_image_rows::kRequiredBytes;
+static constexpr size_t largest_internal_row_block=expected_scratch_bytes;
+#endif
 static void* heap_caps_malloc(size_t size,int caps){
- assert(size==foot_image_rows::kRequiredBytes && (caps==3 || caps==6));
- if(caps==3){++internal_row_attempts;if(block_internal_rows)return nullptr;}
- if(caps==6 && block_external_rows)return nullptr;
+ assert(caps==3 || caps==6);
+ if(caps==3){
+  ++internal_row_attempts;
+  if(block_internal_rows || size>largest_internal_row_block)return nullptr;
+  assert(size==expected_scratch_bytes);
+ }else{
+  ++external_row_attempts;
+  assert(size==foot_image_rows::kRequiredBytes);
+  if(block_external_rows)return nullptr;
+ }
  return std::malloc(size);
 }
-static void heap_caps_free(void* block){std::free(block);}
+static void heap_caps_free(void* block){++row_frees;std::free(block);}
 static SemaphoreHandle_t xSemaphoreCreateMutex(){return reinterpret_cast<void*>(1);}
 static int xSemaphoreTake(SemaphoreHandle_t s,TickType_t){return s?pdTRUE:0;}
 static void xSemaphoreGive(SemaphoreHandle_t s){assert(s);}
@@ -181,7 +197,7 @@ static void cameraTaskPriorityPatchSampleStack(){}
         'void FootObserver::finishRun()', 'void FootObserver::clearRun()',
         'void FootObserver::setExportQuiet(', 'bool FootObserver::exportParked()',
         'uint32_t FootObserver::exportRowBytesReleased()',
-        'bool FootObserver::bindRowStorage(', 'void FootObserver::restoreInternalRows(',
+        'bool FootObserver::bindRowStorage(', 'void FootObserver::preferRowStorage(',
         'void FootObserver::loop()'])
     methods += '\n#if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24\n' + function(
         observer, 'void FootObserver::prepareUpper(') + '\n#endif\n'
@@ -216,10 +232,11 @@ enum class ParkExit {None,Confirm,Clear,Start};
 struct Plan {
  Image original=image();ControlSnapshot before,after;
  ParkExit park_exit=ParkExit::None;
- bool start_run=false,restore_row_heap=false;
+ bool start_run=false,finish_run=false,restore_row_heap=false,deny_external_rows=false;
  Invalid invalid=Invalid::None;uint32_t wait_us=2000;bool stop=false;
  bool early=true;int64_t early_stamp_delta=0;Image early_image;
 #if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+ bool fragment_row_heap=false;
  bool lower=true,lower_abandoned_first=false,lower_invalid_view=false;
  int64_t lower_stamp_delta=0;Image lower_image;
  std::vector<int> lower_stages{174,190,206,222};
@@ -227,10 +244,12 @@ struct Plan {
  uint64_t force_delivered_us=0; // Focused boundary cases; zero keeps ordinary clocks.
 };
 struct Iteration {FootSnapshot snapshot;FootPreviewInfo info;Image preview;bool preview_ok=false;
- uint64_t time=0;uint32_t delay=0;foot_image_rows::ReadCounts reads;};
+ uint32_t row_alloc_attempts=0,row_free_count=0;
+ uint64_t time=0;uint32_t delay=0,released=0;foot_image_rows::ReadCounts reads;};
 static std::vector<Plan> plans;
 static std::vector<Iteration> iterations;
 static size_t plan_index=0;static unsigned context_calls=0,takes=0,gives=0,flush_takes=0,starts=0,stops=0;
+static unsigned takes_at_reset=0;
 static bool live=true,borrowed=false,poison=false,enforce_rows=true;
 static Image buffer;
 static camera_fb_t frame;
@@ -245,15 +264,20 @@ static uint32_t ulTaskNotifyTake(int clear,TickType_t timeout){
  const auto& p=plans.at(plan_index);
  const auto sealed=current->snapshot();
  assert(!sealed.recording);
- assert(sealed.row_cache_ready && sealed.row_cache_internal==block_external_rows);
- assert(current->exportRowBytesReleased()==(block_external_rows ? 0U : foot_image_rows::kRequiredBytes));
+ assert(sealed.row_cache_ready);
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+ assert(!sealed.row_cache_internal && !sealed.hot_scratch_internal && current->row_storage_==current->full_rows_);
+#else
+ assert(sealed.row_cache_internal==block_external_rows && sealed.hot_scratch_internal==sealed.row_cache_internal);
+ assert(current->exportRowBytesReleased()==(block_external_rows ? 0U : expected_scratch_bytes));
+#endif
  current->setExportQuiet(true); // duplicate range request
  host_clock+=10000000;
  assert(pending_wake==0 && current->snapshot().count==sealed.count);
  switch(p.park_exit){
   case ParkExit::Confirm:current->setExportQuiet(false);break;
-  case ParkExit::Clear:current->clearRun();break;
-  case ParkExit::Start:current->beginRun(7,500000);break;
+  case ParkExit::Clear:current->clearRun();takes_at_reset=takes;break;
+  case ParkExit::Start:current->beginRun(7,500000);takes_at_reset=takes;break;
   default:assert(false);
  }
  current->setExportQuiet(false); // idempotent even before the task wakes
@@ -267,9 +291,15 @@ static uint64_t full_stamp=0;
 #endif
 ControlSnapshot RunControlWorker::snapshot()const {
  const auto& p=plans.at(plan_index);const bool before=context_calls++==0;
+ if(before && p.deny_external_rows)block_external_rows=true;
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+ if(before && p.fragment_row_heap)largest_internal_row_block=12788;
+ if(before && p.restore_row_heap)largest_internal_row_block=20468;
+#endif
  if(before && p.restore_row_heap){block_internal_rows=false;host_clock+=1000000;}
- if(before && p.park_exit!=ParkExit::None){current->finishRun();current->setExportQuiet(true);}
- if(before && p.start_run)current->beginRun(7,500000);
+ if(before && (p.finish_run || p.park_exit!=ParkExit::None))current->finishRun();
+ if(before && p.park_exit!=ParkExit::None)current->setExportQuiet(true);
+ if(before && p.start_run){current->beginRun(7,500000);takes_at_reset=takes;}
  if(!before && borrowed && p.invalid==Invalid::WrongHeight)frame.height=240;
  if(!before && p.force_delivered_us)host_clock=p.force_delivered_us-1;
  return before?p.before:p.after;
@@ -352,6 +382,11 @@ static void cam_stop(){if(enforce_rows)assert(!borrowed);live=false;++stops;}
 static void vTaskDelay(TickType_t ticks){
  assert(!borrowed);
  Iteration it;it.snapshot=current->snapshot();it.preview.resize(FootObserver::kPreviewBytes);
+ it.released=current->exportRowBytesReleased();
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+ assert(current->full_rows_ && it.snapshot.hot_scratch_internal==(current->row_storage_!=current->full_rows_));
+#endif
+ it.row_alloc_attempts=external_row_attempts+internal_row_attempts;it.row_free_count=row_frees;
  it.preview_ok=current->copyPreview(it.preview.data(),it.info);
  it.time=host_clock;it.delay=static_cast<uint32_t>(ticks);it.reads=foot_image_rows::readCounts();
  iterations.push_back(it);host_clock+=ticks*1000;context_calls=0;
@@ -393,12 +428,18 @@ static Image thumbnail(const Image& source){
 struct Result {std::vector<Iteration> history;unsigned take=0,give=0,flush=0,stop=0;};
 static Result run(std::vector<Plan> input,bool poison_image,bool archive_full=false){
  plans=std::move(input);iterations.clear();plan_index=0;context_calls=0;
- takes=gives=flush_takes=starts=stops=0;live=true;borrowed=false;poison=poison_image;enforce_rows=true;
+ takes_at_reset=takes=gives=flush_takes=starts=stops=0;live=true;borrowed=false;poison=poison_image;enforce_rows=true;
  host_clock=1000000;foot_image_rows::readCounts()={};
  OneShotCamera camera;camera.snapshot_.camera_ok=true;camera.snapshot_.sensor_powered=true;
  camera.snapshot_.camera_driver_active=true;camera.snapshot_.receiver_active=true;camera.snapshot_.xclk_active=true;
  RunControlWorker control;FootObserver observer;current=&observer;
  assert(observer.begin(camera,control));assert(observer.snapshot().row_cache_ready);
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+ assert(!observer.snapshot().row_cache_internal && observer.full_rows_);
+ assert(observer.snapshot().hot_scratch_internal==(observer.row_storage_!=observer.full_rows_));
+#else
+ assert(observer.snapshot().hot_scratch_internal==observer.snapshot().row_cache_internal);
+#endif
  assert(created_foot_core==FootObserver::kTaskCore && created_foot_priority==FootObserver::kTaskPriority);
  observer.beginRun(7,500000);
  FootFrame canary;canary.sequence=0xdeadbeef;
@@ -414,7 +455,7 @@ static Result run(std::vector<Plan> input,bool poison_image,bool archive_full=fa
   assert(observer.frames_[FootObserver::kCapacity-1].sequence==canary.sequence);
   assert(observer.frames_[FootObserver::kCapacity].sequence==canary.sequence);}
  else {
-  assert(status.count==takes);
+  assert(status.count==takes-takes_at_reset);
   if(status.count && status.recording){
    auto& last=observer.frames_[status.count-1];
    observer.recordControlObservation(7,last.sequence,last.ready_us+1000);
@@ -431,6 +472,9 @@ static Result run(std::vector<Plan> input,bool poison_image,bool archive_full=fa
  observer.finishRun();assert(!observer.snapshot().recording);
  observer.clearRun();assert(observer.snapshot().count==0 && !observer.snapshot().overflow);
  Result out{iterations,takes,gives,flush_takes,stops};
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+ if(observer.full_rows_!=observer.row_storage_)std::free(observer.full_rows_);
+#endif
  std::free(observer.frames_);std::free(observer.preview_);std::free(observer.row_storage_);std::free(observer.preview_staging_);
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
  std::free(observer.upper_storage_);
@@ -532,6 +576,40 @@ static void edgeCases(){
 }
 static void sealedTransferPause(){
  parked_waits=0;
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+ // Never launch tracking without the complete raw-to-logical fallback cache.
+ OneShotCamera camera;camera.snapshot_.camera_ok=true;
+ RunControlWorker ctl;FootObserver missing;
+ block_external_rows=true;
+ const auto rejected=external_row_attempts, noScratch=internal_row_attempts;
+ assert(!missing.begin(camera,ctl) && !missing.snapshot().row_cache_ready && !missing.task_);
+ assert(external_row_attempts==rejected+1 && internal_row_attempts==noScratch);
+ std::free(missing.frames_);std::free(missing.preview_);
+ block_external_rows=false;
+#endif
+ // A new browser must be able to fetch the page before it requests a download.
+ for(uint8_t state:{4,5}){
+  Plan recording;recording.before.state_id=recording.after.state_id=state;
+  Plan running=recording;running.finish_run=true;running.before.running=true;
+  Plan finished=recording;finished.finish_run=true;
+  Plan next;next.start_run=true;
+  auto r=run({recording,running,finished,finished,next},true);
+  assert(r.history[0].released==0 && r.history[1].released==0 && parked_waits==0);
+  assert(r.history[2].released==expected_scratch_bytes && r.history[3].released==r.history[2].released);
+  assert(!r.history[2].snapshot.hot_scratch_internal && r.history[4].snapshot.hot_scratch_internal);
+  assert(r.history[4].released==0 && r.history[4].snapshot.latest.frame_valid);
+  finished.deny_external_rows=true;
+  const auto attempts=external_row_attempts;
+  auto denied=run({finished,finished,finished,next},true);
+  assert(external_row_attempts==attempts+1);
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+  assert(denied.history[2].released==expected_scratch_bytes && !denied.history[3].snapshot.row_cache_internal);
+#else
+  assert(denied.history[2].released==0 && denied.history[3].snapshot.row_cache_internal);
+#endif
+  assert(denied.history[3].snapshot.hot_scratch_internal && denied.history[3].snapshot.latest.frame_valid);
+  block_external_rows=false;
+ }
  for(auto action:{ParkExit::Confirm,ParkExit::Clear,ParkExit::Start}){
   Plan terminal;terminal.before.state_id=terminal.after.state_id=action==ParkExit::Clear?5:4;
   terminal.park_exit=action;
@@ -547,29 +625,64 @@ static void sealedTransferPause(){
   }
  }
  assert(parked_waits==3 && pending_wake==0);
- // No PSRAM block: leave both tracking caches bound to their existing internal storage.
+ // PSRAM allocation fails after boot. Both variants must still capture after transfer.
  Plan stopped;stopped.before.state_id=stopped.after.state_id=4;stopped.park_exit=ParkExit::Clear;
  Plan next;next.start_run=true;
- block_external_rows=true;
+ stopped.deny_external_rows=true;
  auto retained=run({stopped,next},true);
- assert(retained.history.back().snapshot.row_cache_internal);
+ assert(retained.history.back().snapshot.hot_scratch_internal);
  assert(retained.history.back().snapshot.latest.frame_valid);
+ stopped.deny_external_rows=false;
  block_external_rows=false;
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+ // Replay identical frames/timing while Wi-Fi has fragmented internal RAM.
+ // Include a missed lower prefix so the full image-row fallback also executes.
+ Plan missing_lower;missing_lower.lower=false;missing_lower.original=image(14,27);
+ Plan repair;repair.restore_row_heap=true;
+ std::vector<Plan> samples={Plan{},stopped,next,missing_lower,Plan{},repair,stopped,next};
+ const auto normal=run(samples,true);
+ samples[1].fragment_row_heap=true;
+ const auto external=external_row_attempts,frees=row_frees;
+ const auto fragmented=run(samples,true);
+ assert(external_row_attempts==external+1 && row_frees==frees+2); // one PSRAM cache; one loan per stop
+ assert(fragmented.take==6 && fragmented.give==6 && fragmented.stop==2);
+ const auto& h=fragmented.history;
+ for(size_t i:{1,2,3,4,6})assert(h[i].released==expected_scratch_bytes && !h[i].snapshot.hot_scratch_internal);
+ for(size_t i:{0,5,7})assert(h[i].released==0 && h[i].snapshot.hot_scratch_internal);
+ assert(h[2].row_alloc_attempts==h[1].row_alloc_attempts+1); // 12,788 B cannot fit 12,800 B
+ assert(h[4].row_alloc_attempts==h[2].row_alloc_attempts && h[5].row_alloc_attempts==h[4].row_alloc_attempts+1);
+ assert(h[1].row_free_count==frees+1 && h[6].row_free_count==frees+2);
+ for(size_t i:{0,2,3,4,5,7}){
+  const auto& a=normal.history[i];const auto& b=h[i];
+  assert(a.snapshot.hot_scratch_internal && b.snapshot.latest.frame_valid);
+  detectionEqual(a.snapshot.latest,b.snapshot.latest);
+  assert(a.snapshot.latest.row_cache_used==b.snapshot.latest.row_cache_used && a.preview==b.preview);
+ }
+ assert(h[3].snapshot.latest.row_cache_used && h[7].snapshot.recording && h[7].snapshot.count==1);
+ // A cold boot without an internal block has nothing to lend to the first transfer.
+ largest_internal_row_block=12788;
+ const auto cold=run({stopped,next,repair},true);
+ assert(cold.history[0].released==0 && cold.history[1].released==0 && !cold.history[1].snapshot.hot_scratch_internal);
+ assert(cold.history[1].snapshot.latest.frame_valid && cold.history[2].snapshot.hot_scratch_internal);
+ largest_internal_row_block=20468;
+ std::cout<<"native scratch: 12,800 B loan, 12,788 B fragmented heap, PSRAM tracking matches internal, retry and next transfer PASS\n";
+#else
  // Internal RAM is still fragmented on wake. Both actual trackers process
  // frames using the replacement buffer while allocation retries are throttled.
  fragment_on_wake=true;
  const auto attempts=internal_row_attempts;
  auto fallback=run({stopped,next,Plan{},Plan{}},true);
- assert(!fallback.history.back().snapshot.row_cache_internal);
+ assert(!fallback.history.back().snapshot.hot_scratch_internal);
  assert(fallback.history.back().snapshot.latest.frame_valid);
  assert(internal_row_attempts==attempts+2); // boot and one failed restoration
  block_internal_rows=false;
  Plan repair;repair.restore_row_heap=true;
  auto restored=run({stopped,next,repair},true);
- assert(restored.history.back().snapshot.row_cache_internal);
+ assert(restored.history.back().snapshot.hot_scratch_internal);
  assert(restored.history.back().snapshot.latest.frame_valid);
  assert(internal_row_attempts==attempts+5); // a new boot, failed restore, successful retry
  fragment_on_wake=false;
+#endif
  std::cout<<"sealed transfer: camera owner sleeps with clock/receiver off, confirm/clear/start restore PASS\n";
 }
 static void manualOneShot(){
@@ -708,8 +821,18 @@ static void lowerOverlapAdmission(){
  auto ordinary=samples;
  for(auto& p:ordinary){p.lower=false;p.early=false;}
  const auto baseline=run(ordinary,true),streamed=run(samples,true);
+ block_internal_rows=true;
+ const auto externalOnly=run(samples,true);
+ block_internal_rows=false;
  for(unsigned i=0;i<samples.size();++i){
   const auto& a=baseline.history[i];const auto& b=streamed.history[i];
+  const auto& c=externalOnly.history[i];
+  assert(!a.snapshot.row_cache_internal && a.snapshot.hot_scratch_internal);
+  assert(!c.snapshot.row_cache_internal && !c.snapshot.hot_scratch_internal);
+  detectionEqual(b.snapshot.latest,c.snapshot.latest);
+  assert(b.snapshot.lower_overlap_used==c.snapshot.lower_overlap_used);
+  assert(b.snapshot.latest.row_cache_used==c.snapshot.latest.row_cache_used);
+  assert(b.preview_ok==c.preview_ok && b.preview==c.preview);
   detectionEqual(a.snapshot.latest,b.snapshot.latest,false);
   assert(a.preview_ok==b.preview_ok && a.preview==b.preview);
   if(a.preview_ok){assert(a.info.left.success_count==b.info.left.success_count);

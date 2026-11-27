@@ -60,7 +60,7 @@ class WebUi {
   OfflineRunSession offline_;
   ExportTransportRecovery recovery_;
   bool export_priority_active_ = false;
-  ReadyHttpStallRecovery ready_http_stall_;
+  HttpStallRecovery http_stall_;
   WifiTransportRestart wifi_restart_;
   uint32_t recovery_poll_ms_ = 0;
   bool listener_rebind_pending_ = false;

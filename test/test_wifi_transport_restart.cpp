@@ -12,7 +12,7 @@ struct Host {
 
 int main() {
   {
-    ReadyHttpStallRecovery stall;
+    HttpStallRecovery stall;
     const uint32_t at = UINT32_MAX - 10000;
     assert(!stall.due(at));
     stall.stalled(at);

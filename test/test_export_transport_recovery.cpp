@@ -1,4 +1,5 @@
 #include "export_transport_recovery.h"
+#include "wifi_transport_restart.h"
 #include <cassert>
 #include <cstdio>
 #include <initializer_list>
@@ -21,6 +22,45 @@ int main() {
   assert(policy.requestRepair(now + quiet + 1, true, true) == Repair::None);  // manual / auto deduplication
   policy.sealed(now + quiet + 2);
   assert(policy.requestRepair(now + quiet * 3, true, false) == Repair::None);  // closed tab: one attempt
+
+  // A page may genuinely stall after a sealed run already used its quiet-period
+  // repair. A closed tab, a successful retry, and an active/resumed transfer
+  // must not acquire a second automatic radio repair.
+  {
+    ExportTransportRecovery link;
+    HttpStallRecovery page;
+    const uint32_t start = UINT32_MAX - quiet;
+    assert(!link.sealedAfterRadioRepair());
+    link.sealed(start);
+    assert(!link.sealedAfterRadioRepair());
+    assert(link.requestRepair(start + quiet, true, false) == Repair::WifiRadio);
+    assert(link.sealedAfterRadioRepair());
+    uint32_t t = start + quiet + 1;
+    assert(!page.due(t + quiet) && !link.awaitingDownload()); // page simply left closed
+    page.stalled(t);
+    page.clear(); // another request succeeded after an isolated stalled page
+    assert(!page.due(t + quiet));
+    page.stalled(t);
+    assert(!page.due(t + quiet - 1));
+    assert(page.due(t + quiet));
+    assert(link.requestRepair(t + quiet, false, true) == Repair::None); // final stop guard
+    assert(link.requestRepair(t + quiet, true, true) == Repair::WifiRadio);
+    page.repairIssued();
+    t += quiet;
+    page.stalled(t);
+    assert(!page.due(t + quiet)); // one recovery per observed outage
+    assert(link.requestRepair(t + quiet - 1, true, true) == Repair::None); // shared cooldown
+    link.downloadRequested(t, 17);
+    assert(!link.sealedAfterRadioRepair());
+    assert(link.pauseDownload(17) && !link.sealedAfterRadioRepair());
+    link.downloadRequested(t + 1, 18);
+    assert(!link.sealedAfterRadioRepair());
+    link.downloadComplete();
+    assert(!link.sealedAfterRadioRepair());
+    link.startRun();
+    link.sealed(t + 2);
+    assert(!link.sealedAfterRadioRepair());
+  }
 
   // A new run may remain active for a long time. Its full grace period starts at seal.
   now += quiet * 5;

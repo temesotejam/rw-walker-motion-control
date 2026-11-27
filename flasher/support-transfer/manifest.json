@@ -1,25 +1,25 @@
 {
   "name": "RW Walker",
-  "version": "walking-support-transfer-v39-walk7",
+  "version": "walking-support-transfer-v39-walk7-logfix1",
   "new_install_improv_wait_time": 0,
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
         {
-          "path": "firmware/bootloader.bin?v=walking-support-transfer-v39-walk7",
+          "path": "firmware/bootloader.bin?v=walking-support-transfer-v39-walk7-logfix1",
           "offset": 0
         },
         {
-          "path": "firmware/partitions.bin?v=walking-support-transfer-v39-walk7",
+          "path": "firmware/partitions.bin?v=walking-support-transfer-v39-walk7-logfix1",
           "offset": 32768
         },
         {
-          "path": "firmware/boot_app0.bin?v=walking-support-transfer-v39-walk7",
+          "path": "firmware/boot_app0.bin?v=walking-support-transfer-v39-walk7-logfix1",
           "offset": 57344
         },
         {
-          "path": "firmware/firmware.bin?v=walking-support-transfer-v39-walk7",
+          "path": "firmware/firmware.bin?v=walking-support-transfer-v39-walk7-logfix1",
           "offset": 65536
         }
       ]

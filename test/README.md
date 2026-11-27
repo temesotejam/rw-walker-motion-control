@@ -37,3 +37,16 @@ python -B tools/probe_http_stability.py --source 192.168.4.2 --seconds 180 --min
 約2秒ごとに状態とモータ指令を読み、同じ起動番号であることを確認しながら、測定ページと停止中のカメラ画像を取得します。画像はRWLOGと同じ4 KiB単位の送信処理を通り、各ブロックと画像全体のCRCが一致した分だけを転送量に数えます。`--heap` は5秒ごとに内部RAMの残量を記録します。結果には最初と最後の状態取得時刻、成功回数、失敗した処理と時刻が含まれます。歩行終了後のログ確定から実ファイルの保存までは、別途歩行試行で確認します。
 
 `--frozen` を付けると、最初に取得した1枚を同じトークンで繰り返し読みます。転送中に失敗した場合は、その位置から読み直します。各失敗は結果に残るため、初回ですべて通った試行と、再試行して完了した試行を区別できます。
+
+測定終了からRWLOGの保存、カメラ再開まで繰り返すには、モータドライバーを含まない通信試験版を使います。次の例は実測RWLOGを元の時間間隔で再生し、通常3回、別画面を開いたまま1回、通信中断1回、ページ再読み込み1回を比較します。各回の保存内容を全バイト照合します。
+
+```powershell
+python -B test/hardware/prepare_motorfree.py --measure --archive .\recording.rwlog --target-free 19588 --target-largest 11252
+pio run -c .pio/motorfree-measure/platformio.ini
+```
+
+USB給電でこの試験版を書き込み、PCを機体のWi-Fiに接続してから実行します。保存先には新しいディレクトリ名を指定します。PCにEdgeとPlaywrightが必要です。歩行時は通常版に書き戻します。
+
+```powershell
+node test/hardware/replay_transfer.cjs .\recording.rwlog .\transfer-results 3 --observer --interrupt --reload
+```

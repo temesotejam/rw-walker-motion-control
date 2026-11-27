@@ -2,6 +2,9 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#if defined(ARDUINO_ARCH_ESP32)
+#include <esp_rom_crc.h>
+#endif
 
 namespace export_protocol {
 constexpr uint32_t kChunkBytes = 4096;
@@ -11,12 +14,16 @@ constexpr uint32_t kPreferredStreamChunks = 4;
 static_assert(kPreferredStreamChunks <= kStreamChunks, "Preferred window must fit the stream protocol");
 constexpr uint32_t kChunkMagic = 0x31484346; // FCH1, little endian
 inline uint32_t crc32(uint32_t crc, const uint8_t* data, size_t length) {
+#if defined(ARDUINO_ARCH_ESP32)
+  return esp_rom_crc32_le(crc, data, length);
+#else
   crc = ~crc;
   while (length--) {
     crc ^= *data++;
     for (uint8_t bit = 0; bit < 8; ++bit) crc = (crc >> 1) ^ (0xEDB88320U & (0U - (crc & 1U)));
   }
   return ~crc;
+#endif
 }
 inline size_t packetBytes(size_t length) {
   return length + 16 * ((length + kChunkBytes - 1) / kChunkBytes);

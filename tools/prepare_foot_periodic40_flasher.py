@@ -16,7 +16,7 @@ import webbrowser
 
 ROOT = Path(__file__).resolve().parents[1]
 ENVIRONMENT = "atoms3cam-foot-periodic40"
-BUILD_ID = "walking-support-transfer-v39-walk7"
+BUILD_ID = "walking-support-transfer-v39-walk7-logfix1"
 PAGE = "support-transfer"
 VERSION_QUERY = f"?v={BUILD_ID}"
 URL = f"http://127.0.0.1:8767/{PAGE}/{VERSION_QUERY}"

@@ -186,6 +186,24 @@ function harness(scenario={}) {
   const same=harness({manifest:{boot_id:123,metadata_bytes:12345}});await same.run();
   assert.equal(same.diagnostic().browser_transfer.phase,'complete');
   assert(!same.requests.some(path=>path.startsWith('/export/complete')));
+  const closedStore=harness({manifest:{...streamManifest,boot_id:123,run_id:1,completion_ack:true}});
+  let closedStoreScans=0, failedWrites=0;
+  closedStore.context.closedStore={transaction(){
+    if(closedStoreScans){++failedWrites;throw new DOMException('IndexedDB connection closed','InvalidStateError');}
+    const tx={objectStore:()=>({openCursor(){
+      ++closedStoreScans;
+      const cursor={result:null};
+      queueMicrotask(()=>{cursor.onsuccess();tx.oncomplete();});
+      return cursor;
+    }})};
+    return tx;
+  }};
+  vm.runInContext('cachePromise=Promise.resolve(closedStore)',closedStore.context);
+  await closedStore.run();
+  assert.equal(closedStoreScans,1);assert.equal(failedWrites,1);
+  assert.equal(closedStore.diagnostic().browser_transfer.completion_ack,true);
+  assert.equal(closedStore.saves.length,1);
+  assert(Buffer.from(vm.runInContext('completedFile',closedStore.context)).equals(fixture));
   // Production walks use one HTTP connection per response. Each batched response
   // keeps the existing packet layout and the unaligned final packet with its own CRC.
   const grouped=harness({manifest:{chunks_per_response:4}});await grouped.run();
@@ -328,6 +346,19 @@ function harness(scenario={}) {
     assert.equal(trial.requests.filter(path=>path.startsWith('/export/complete')).length,1);
     assert(Buffer.from(vm.runInContext('completedFile',trial.context)).equals(fixture));
   }
+  const csvFailure=harness({manifest:{boot_id:123,run_id:1,completion_ack:true}});
+  vm.runInContext("expandFootTable=()=>{throw Error('bad foot table')}",csvFailure.context);
+  await csvFailure.run();
+  assert.equal(csvFailure.saves.length,1);
+  assert.equal(csvFailure.diagnostic().browser_transfer.completion_ack,true);
+  assert.equal(csvFailure.diagnostic().browser_transfer.foot_csv_error,'bad foot table');
+  assert.equal(csvFailure.element('csv').disabled,true);
+  assert(Buffer.from(vm.runInContext('completedFile',csvFailure.context)).equals(fixture));
+  const peer=harness();
+  vm.runInContext("latest.export_phase='ready';latest.export_priority_active=true;controls()",peer.context);
+  assert.equal(peer.element('clear').disabled,true);
+  vm.runInContext('latest.export_priority_active=false;controls()',peer.context);
+  assert.equal(peer.element('clear').disabled,false);
   // Both formerly-unretried phases fail once. A timed-out POST may already have
   // queued export; retry the idempotent endpoint, then wait through building.
   let h=harness({prepareAbort:true,manifestAbort:1,building:true});await h.run();
@@ -410,8 +441,29 @@ function harness(scenario={}) {
   // Reload the tab before any status response. Cache reads are backed by the
   // verified packets from the previous page, as they are with IndexedDB.
   const reloaded=harness({manifest:{...runIdentity},storage});
-  reloaded.context.priorCache=vm.runInContext('memoryCache',interrupted.context);
-  vm.runInContext('latest=null;cacheGet=async key=>priorCache.get(key);controls()',reloaded.context);
+  const disk = new Map(vm.runInContext('memoryCache',interrupted.context));
+  disk.set('old-token:0',new Uint8Array(8));
+  let scans=0;
+  reloaded.context.db={transaction:()=>{
+    const tx={objectStore:()=>({
+      openCursor(){
+        ++scans;
+        const request={}, entries=[...disk.entries()];
+        function advance(){
+          const entry=entries.shift();
+          request.result=entry ? {key:entry[0],value:entry[1],delete:()=>disk.delete(entry[0]),
+            continue:()=>queueMicrotask(advance)} : null;
+          request.onsuccess();
+          if(!entry)tx.oncomplete();
+        }
+        queueMicrotask(advance);
+        return request;
+      },
+      put(value,key){disk.set(key,value);queueMicrotask(()=>tx.oncomplete());}
+    })};
+    return tx;
+  }};
+  vm.runInContext('latest=null;openCache=async()=>db;controls()',reloaded.context);
   assert.equal(reloaded.element('download').disabled,false);
   assert.equal(reloaded.element('clear').disabled,true);
   await reloaded.run();
@@ -419,6 +471,8 @@ function harness(scenario={}) {
   assert(reloaded.requests[1].includes('client='));
   assert.equal(spansOf(reloaded)[0].get('offset'),'8192');
   assert.equal(reloaded.diagnostic().browser_transfer.cached_bytes,8192);
+  assert.equal(scans,1);
+  assert(!disk.has('old-token:0'));
   assert(Buffer.from(vm.runInContext('completedFile',reloaded.context)).equals(fixture));
   assert.equal(stored.size,0);
 

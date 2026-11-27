@@ -1,6 +1,6 @@
 # 実機ファームウェアの読み方
 
-現在の歩行版 v39-walk6 は、戻り補助の通電が終わるたびに実測の角速度と足姿勢を使い、残りの時間で補う仕事を選びます。通常の±8°開始は `walking_trial::forRun()` が選びます。測定中に揺れが止まると静止復帰の検出器が働き、観測済みの中心通過速度と電流モデルから通電幅を求めます。実機では `main.cpp` の `controlStep()` が歩行制御を更新し、Arduinoの `loop()` はWebとUSB診断を処理します。[戻りの再判定](return_observation_policy.h) · [半周期の通電予算](half_cycle_energy_budget.h) · [静止後の復帰条件](settled_walking_restart.h) · [復帰入力と記録](settled_walking_restart_runner.inc)
+現在の歩行版 v39-walk7-logfix1 は、戻り補助の通電が終わるたびに実測の角速度と足姿勢を使い、残りの時間で補う仕事を選びます。通常の±8°開始は `walking_trial::forRun()` が選びます。測定中に揺れが止まると静止復帰の検出器が働き、観測済みの中心通過速度と電流モデルから通電幅を求めます。実機では `main.cpp` の `controlStep()` が歩行制御を更新し、Arduinoの `loop()` はWebとUSB診断を処理します。[戻りの再判定](return_observation_policy.h) · [半周期の通電予算](half_cycle_energy_budget.h) · [静止後の復帰条件](settled_walking_restart.h) · [復帰入力と記録](settled_walking_restart_runner.inc)
 
 | 確認したいこと | 読む場所 | 処理の役割 |
 |---|---|---|
@@ -10,6 +10,8 @@
 | 入力の開始時点 | [experiment_runner.cpp](experiment_runner.cpp) の `updateEnergyControlAutonomousMotion()` と [walking_energy_runner.inc](walking_energy_runner.inc) の `tryWalkingEnergyFoot()` | ZEROクロス、前倒し主入力、戻り補助の候補を判定する。戻り補助は [return_observation_policy.h](return_observation_policy.h) が実測足角と胴体の減速から判断する |
 | 通電時間と実際の出力 | [walking_energy_runner.inc](walking_energy_runner.inc) の `tryWalkingEnergy()`、[half_cycle_energy_budget.h](half_cycle_energy_budget.h) | 必要な仕事から候補幅を選び、前後姿勢・ホイール速度・半周期の残り時間などを照合する。採用時は `ExperimentRunner` から [roller485_manager.cpp](roller485_manager.cpp) に電流指令を渡す |
 | 記録・取得 | [psram_logger.cpp](psram_logger.cpp)、[immutable_export.cpp](immutable_export.cpp)、[web_ui.cpp](web_ui.cpp) | 実測と制御判断を蓄積し、終了した測定をRWLOGとしてWebから取得できるようにする |
+
+測定とログ転送の境界は [カメラの停止と再開](foot_observer.cpp)、[HTTPと転送の優先処理](web_ui.cpp)、[転送の再開・復旧条件](export_transport_recovery.h) で確認できます。上下のマーカー検出は12,800バイトを共用し、終了時に内部RAMを通信に返します。次の撮影で連続領域が足りなければ、確保済みの外部PSRAMを使います。機体の状態JSONの `foot.hot_scratch_internal` が実際の配置、`foot.captured_frames` が撮影枚数です。
 
 ### 次の荷重移行制御との関係
 

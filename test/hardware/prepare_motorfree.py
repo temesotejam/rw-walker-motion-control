@@ -8,6 +8,7 @@ image to append archived rows at their recorded times. Export normally, then
 POST /clear for another measurement. Only the run ID and CRC vary across runs.
 """
 import argparse
+import hashlib
 from pathlib import Path
 import re
 
@@ -15,6 +16,8 @@ import re
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / ".pio" / "motorfree-fixture"
 SKIP = {"main.cpp", "roller485_manager.cpp", "experiment_runner.cpp", "imu_manager.cpp"}
+RETIRED = {"runtime_web.h", "rwlog_download_diag.cpp", "rwlog_download_diag.h",
+           "tcp_transport_debug.cpp", "tcp_transport_debug.h", "camera_serial_debug.cpp", "camera_serial_debug.h"}
 
 
 def write_changed(path, data):
@@ -31,8 +34,14 @@ def prepare(archive=None, target_free=22000, target_largest=12000, measure=False
     if archive:
         out = ROOT / ".pio" / ("motorfree-measure" if measure else "motorfree-replay")
         suffix = b"-measure-bench" if measure else b"-archive-bench"
-    files = {p.name for p in (ROOT / "src").iterdir() if p.is_file()} - SKIP
+    files = {p.name for p in (ROOT / "src").iterdir() if p.is_file()} - SKIP - RETIRED
     out_src = out / "src"
+    for name in RETIRED:
+        prior = out_src / name
+        if prior.is_file():
+            backup = out / "retired-src" / hashlib.sha256(prior.read_bytes()).hexdigest() / name
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            prior.replace(backup)
     unexpected = {p.name for p in out_src.glob("*") if p.is_file()} - files - {"main.cpp"}
     if archive:
         unexpected -= {"archive_layout.h", "archive_blob.S", "motorfree_archive.cpp"}

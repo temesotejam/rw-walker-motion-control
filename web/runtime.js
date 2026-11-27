@@ -106,8 +106,12 @@ function walkingFootFastTrial(s = latest) {
 function supportTransferTrial(s) {
   return /^walking-support-transfer-v39(?:-|$)/.test(s?.diagnostic_build_id || '');
 }
+function walkingRelease(s) {
+  const match = /^walking-support-transfer-v39-walk([1-7])(?:-logfix[1-9][0-9]*)?$/.exec(s?.diagnostic_build_id || '');
+  return match ? Number(match[1]) : 0;
+}
 function singleWalkingBuild(s = latest) {
-  return ['walking-support-transfer-v39-walk1', 'walking-support-transfer-v39-walk2', 'walking-support-transfer-v39-walk3', 'walking-support-transfer-v39-walk4', 'walking-support-transfer-v39-walk5', 'walking-support-transfer-v39-walk5-logfix1', 'walking-support-transfer-v39-walk5-logfix2', 'walking-support-transfer-v39-walk5-logfix3', 'walking-support-transfer-v39-walk5-logfix4', 'walking-support-transfer-v39-walk6', 'walking-support-transfer-v39-walk6-logfix1', 'walking-support-transfer-v39-walk7'].includes(s?.diagnostic_build_id);
+  return walkingRelease(s) > 0;
 }
 function foreAftStopText(reason) {
   return ({
@@ -193,7 +197,8 @@ function controls() {
   $('energy-model').disabled = $('start').disabled;
   $('brake-max').disabled = $('start').disabled || ['bridge','bridge_inverse'].includes($('energy-model').value);
   $('peak-adaptation').disabled = $('start').disabled || dedicatedSelected;
-  $('clear').disabled = !fresh || busy || transferRunning || building || latest.running || !['FINISHED', 'ESTOP'].includes(latest.state);
+  $('clear').disabled = !fresh || busy || transferRunning || building || latest.export_priority_active ||
+    latest.running || !['FINISHED', 'ESTOP'].includes(latest.state);
   $('download').disabled = busy || transferRunning || (fresh ? !latest.downloadable || latest.running : !resumableExport());
   $('cancel').disabled = !transferRunning;
   $('csv').disabled = !completedFoot;
@@ -354,7 +359,7 @@ function render(s) {
   renderGaitTurn(s.gait_turn);
   if (singleWalkingBuild(s)) {
     $('work-title').textContent = '歩行のエネルギー制御';
-    $('work-description').textContent = ['walking-support-transfer-v39-walk6','walking-support-transfer-v39-walk6-logfix1','walking-support-transfer-v39-walk7'].includes(s.diagnostic_build_id)
+    $('work-description').textContent = walkingRelease(s) >= 6
       ? '足角度と胴体の減速から左足に支持が移るための入力を選びます。30秒の測定中、片側に傾いて静止すると、自動で揺り戻す場合があります。'
       : '足角度と胴体の減速を使い、左足に支持が移った後に必要な仕事を見積もって、戻りを補助します。';
   } else if (walkingAdmissionTrial(s)) {
@@ -782,25 +787,21 @@ function openCache() {
   });
   return cachePromise;
 }
-async function cacheGet(key) {
-  if (memoryCache.has(key)) return memoryCache.get(key);
-  const db = await openCache();
-  if (!db) return;
-  return new Promise(resolve => {
-    const tx = db.transaction('chunks', 'readonly'), r = tx.objectStore('chunks').get(key);
-    r.onsuccess = () => resolve(r.result); r.onerror = () => resolve(undefined);
-  });
-}
 async function cachePut(key, value) {
   memoryCache.set(key, value);
   const db = await openCache(); if (!db) return;
   await new Promise(resolve => {
-    const tx = db.transaction('chunks', 'readwrite');
-    tx.objectStore('chunks').put(value, key);
-    tx.oncomplete = resolve; tx.onabort = resolve; tx.onerror = resolve;
+    try {
+      const tx = db.transaction('chunks', 'readwrite');
+      tx.objectStore('chunks').put(value, key);
+      tx.oncomplete = resolve; tx.onabort = resolve; tx.onerror = resolve;
+    } catch {
+      cachePromise = Promise.resolve(null);
+      resolve();
+    }
   });
 }
-async function pruneCache(token) {
+async function restoreCache(token) {
   const prefix = token + ':';
   for (const key of memoryCache.keys()) if (!key.startsWith(prefix)) memoryCache.delete(key);
   const db = await openCache(); if (!db) return;
@@ -809,10 +810,13 @@ async function pruneCache(token) {
       const tx = db.transaction('chunks', 'readwrite'), r = tx.objectStore('chunks').openCursor();
       r.onsuccess = () => {
         const cursor = r.result;
-        if (cursor) { if (!String(cursor.key).startsWith(prefix)) cursor.delete(); cursor.continue(); }
+        if (!cursor) return;
+        if (!String(cursor.key).startsWith(prefix)) cursor.delete();
+        else if (!memoryCache.has(cursor.key)) memoryCache.set(cursor.key, cursor.value);
+        cursor.continue();
       };
       tx.oncomplete = resolve; tx.onabort = resolve; tx.onerror = resolve;
-    } catch { resolve(); }
+    } catch { cachePromise = Promise.resolve(null); resolve(); }
   });
 }
 function validateChunk(bytes, offset, length) {
@@ -1087,7 +1091,7 @@ async function download() {
       throw new Error('ログ仕様が一致しません。ページを更新してください。');
     transferCheck();
     if (interruptedExport && !sameExport(m, interruptedExport)) saveInterruptedExport(null);
-    await pruneCache(m.token);
+    await restoreCache(m.token);
     transferNote({phase:'chunks'});
     const file = new Uint8Array(m.bytes); $('progress').max = m.bytes; $('progress').value = 0;
     let group = m.chunks_per_response === 4 ? 4 : 1;
@@ -1115,7 +1119,7 @@ async function download() {
     while (offset < m.bytes) {
       transferCheck();
       const length = Math.min(m.chunk_bytes, m.bytes - offset), key = `${m.token}:${offset}`;
-      let cached = await cacheGet(key);
+      let cached = memoryCache.get(key);
       if (cached) { try { validateChunk(cached, offset, length); } catch { cached = null; } }
       if (cached) {
         await commit(cached, true);
@@ -1123,14 +1127,9 @@ async function download() {
         // End a batch before an already retained packet, including after a page reload.
         let requested = length;
         const count = streamEnabled ? streamWindow : (!singleRemaining && failedBatches < 2 ? group : 1);
-        // Queue the disk lookups together. Resume may already have retained disjoint ranges.
-        const pending = [];
-        for (let next = offset + length; next < m.bytes && pending.length < count-1; next += m.chunk_bytes)
-          pending.push(cacheGet(`${m.token}:${next}`));
-        for (const saved of await Promise.all(pending)) {
-          if (saved) break;
+        while (requested < count * m.chunk_bytes && offset + requested < m.bytes &&
+               !memoryCache.has(`${m.token}:${offset + requested}`))
           requested += Math.min(m.chunk_bytes, m.bytes - offset - requested);
-        }
         const batched = requested > m.chunk_bytes;
         const path = `/export/chunk?token=${m.token}&offset=${offset}&length=${requested}` +
           (streamEnabled ? '&stream=1' : batched ? '&batch=1' : '');
@@ -1194,12 +1193,12 @@ async function download() {
     if (crc !== m.crc32 || crc !== v.getUint32(file.length - 4, true)) throw new Error('ファイル全体のCRCが一致しません');
     const headerSize = v.getUint16(10, true), metadataLength = v.getUint32(24, true);
     if (headerSize !== 110 || metadataLength > file.length - headerSize - 4) throw new Error('RWLOGヘッダー不一致');
-    const metadata = JSON.parse(new TextDecoder().decode(file.subarray(headerSize, headerSize + metadataLength)));
-    completedFoot = expandFootTable(metadata.foot_frames ?? null, metadata.foot_control_observations ?? null); completedFile = file; completedName = m.filename;
+    completedFoot = null; completedFile = file; completedName = m.filename;
     saveBlob(new Blob([file], {type: 'application/octet-stream'}), m.filename);
     saveInterruptedExport(null);
     transferNote({phase:'complete', filename:m.filename});
-    $('transfer').textContent = `CRC検証完了 · ${m.bytes} bytes · 足角度 ${completedFoot?.length ?? 0}行`;
+    const savedMessage = `CRC検証完了 · ${m.bytes} bytes`;
+    $('transfer').textContent = savedMessage;
     if (m.completion_ack === true) {
       // Only the browser can confirm the complete file, including cached chunks.
       // An acknowledgement lost after saving must leave the completed file available.
@@ -1208,6 +1207,14 @@ async function download() {
           {method:'POST', kind:'text', timeout:2500});
         transferNote({completion_ack:true});
       } catch (_) { transferNote({completion_ack:false}); }
+    }
+    try {
+      const metadata = JSON.parse(new TextDecoder().decode(file.subarray(headerSize, headerSize + metadataLength)));
+      completedFoot = expandFootTable(metadata.foot_frames ?? null, metadata.foot_control_observations ?? null);
+      $('transfer').textContent = `${savedMessage} · 足角度 ${completedFoot?.length ?? 0}行`;
+    } catch (error) {
+      transferNote({foot_csv_error:error.message});
+      $('transfer').textContent = `${savedMessage} · 足角度CSVを作成できませんでした。`;
     }
     calculateWheelWork();
   } catch (error) {

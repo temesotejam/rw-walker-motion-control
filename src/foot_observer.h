@@ -78,7 +78,7 @@ struct FootSnapshot {
   uint32_t processing_max_us = 0;
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
   uint32_t recognition_max_us=0,row_copy_max_us=0;
-  bool row_cache_ready=false,row_cache_internal=false;
+  bool row_cache_ready=false,row_cache_internal=false,hot_scratch_internal=false;
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
   uint32_t upper_attempts=0,upper_hits=0,upper_misses=0;
 #endif
@@ -109,6 +109,13 @@ class FootObserver {
   static constexpr int kTaskCore=0,kTaskPriority=1;
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
   static constexpr uint32_t kCapacity = foot_fast_policy::kArchiveCapacity;
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+  static constexpr size_t kRowScratchBytes = foot_image_rows::kUpperBytes > foot_image_rows::kLowerBytes
+      ? foot_image_rows::kUpperBytes : foot_image_rows::kLowerBytes;
+  static_assert(kRowScratchBytes <= foot_image_rows::kRequiredBytes, "Full row buffer must also hold lane scratch");
+#else
+  static constexpr size_t kRowScratchBytes = foot_image_rows::kRequiredBytes;
+#endif
 #else
   static constexpr uint32_t kCapacity = 768; // 40 s * 15 Hz, with margin
 #endif
@@ -157,8 +164,11 @@ class FootObserver {
   uint8_t* preview_ = nullptr;
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
   bool bindRowStorage(bool internal);
-  void restoreInternalRows(uint32_t now_ms);
+  void preferRowStorage(bool internal, uint32_t now_ms);
   uint8_t* row_storage_=nullptr;
+#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
+  uint8_t* full_rows_=nullptr; // Permanent full-frame row fallback in PSRAM.
+#endif
   bool row_storage_lent_=false;
   uint32_t row_retry_ms_=0;
   uint8_t* preview_staging_=nullptr;

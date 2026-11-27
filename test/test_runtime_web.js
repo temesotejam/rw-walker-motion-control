@@ -5,7 +5,8 @@ function canvasContext() {return new Proxy({}, {get:(_target,name)=>name==='crea
   ? (w,h)=>({data:new Uint8Array(w*h*4)}) : ()=>{}});}
 function element(id) {if(!elements.has(id)) elements.set(id, {textContent:'',style:{},width:640,height:480,getContext:canvasContext}); return elements.get(id);}
 const code=fs.readFileSync('web/pose_comparison.js','utf8')+'\n'+fs.readFileSync('web/runtime.js','utf8').replace(/poll\(\);\s*$/, '');
-const header=fs.readFileSync('src/runtime_web.h','utf8');
+const python=process.env.PYTHON || (process.platform==='win32' ? 'python' : 'python3');
+const header=require('node:child_process').execFileSync(python,['-B','tools/embed_runtime_web.py','--stdout'],{encoding:'utf8'});
 const embedded=header.split('R"FREEFOOT(')[1].split(')FREEFOOT";')[0];
 const expected=fs.readFileSync('web/index.html','utf8').replace('/*POSE_SCRIPT*/',fs.readFileSync('web/pose_comparison.js','utf8'))
   .replace('/*WHEEL_WORK_SCRIPT*/',fs.readFileSync('web/wheel_work.js','utf8')).replace('/*RUNTIME_SCRIPT*/',fs.readFileSync('web/runtime.js','utf8'));
@@ -264,18 +265,14 @@ vm.runInContext(code,context);
   vm.runInContext('latest=null;lastSeen=0;controls()',context);
   assert.strictEqual(element('work-start').disabled,true);
   assert.match(element('work-start-status').textContent,/通信/);
-  gate.diagnostic_build_id='walking-support-transfer-v39-walk5';
-  assert.strictEqual(vm.runInContext('singleWalkingBuild(gate)',context), true);
-  gate.diagnostic_build_id='walking-support-transfer-v39-walk5-logfix1';
-  assert.strictEqual(vm.runInContext('singleWalkingBuild(gate)',context), true);
-  gate.diagnostic_build_id='walking-support-transfer-v39-walk5-logfix2';
-  assert.strictEqual(vm.runInContext('singleWalkingBuild(gate)',context), true);
-  gate.diagnostic_build_id='walking-support-transfer-v39-walk5-logfix3';
-  assert.strictEqual(vm.runInContext('singleWalkingBuild(gate)',context), true);
-  gate.diagnostic_build_id='walking-support-transfer-v39-walk5-logfix4';
-  assert.strictEqual(vm.runInContext('singleWalkingBuild(gate)',context), true);
+  for (const name of ['walk5','walk5-logfix1','walk5-logfix2','walk5-logfix3','walk5-logfix4']) {
+    gate.diagnostic_build_id='walking-support-transfer-v39-'+name;
+    assert.strictEqual(vm.runInContext('singleWalkingBuild(gate)',context), true);
+  }
+  gate.diagnostic_build_id='walking-support-transfer-v39-walk7-logfix1-measure-bench';
+  assert.strictEqual(vm.runInContext('singleWalkingBuild(gate)',context), false);
   gate.foot_periodic=footPacket;
-  for(const version of ['walk6','walk6-logfix1','walk7']) {
+  for(const version of ['walk6','walk6-logfix1','walk7','walk7-logfix1']) {
     gate.diagnostic_build_id='walking-support-transfer-v39-'+version;
     vm.runInContext('adoptStatus(gate);render(gate)',context);
     assert.match(element('work-description').textContent,/自動で揺り戻す/);
