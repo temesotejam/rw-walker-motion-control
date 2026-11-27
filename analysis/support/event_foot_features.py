@@ -44,6 +44,13 @@ def _angle(row, side):
     return None
 
 
+def _received_frame_clock(row, epoch_us, receipt_us):
+    capture = row.get("frame_us") or 0
+    ready = row.get("ready_us")
+    return (row.get("timestamp_valid") and epoch_us <= capture <= receipt_us
+            and (not ready or capture <= ready <= receipt_us))
+
+
 def _direction(first, last):
     delta = last[1] - first[1]
     if abs(delta) < MOVE_DELTA_DEG or abs(delta) * 1e6 < MOVE_RATE_DPS * (last[0] - first[0]):
@@ -95,7 +102,7 @@ class CausalFootFeatures:
         if any(a >= b for a, b in zip(self.receipts, self.receipts[1:])):
             raise ValueError("First control receipts must be strictly increasing")
         self.crossings = defaultdict(list)
-        for row in meta["energy_control_autonomous_zero_cross_events"]:
+        for row in meta.get("energy_control_autonomous_zero_cross_events", []):
             if row.get("work_control_branch") == 24:
                 key = (row["event_kind"], row["previous_peak_time_ms"], row["physical_next_peak_side"])
                 self.crossings[key].append(row)
@@ -124,9 +131,9 @@ class CausalFootFeatures:
         for pos in range(index, max(index - 5, -1), -1):
             row = self.frames[pos]
             angle = _angle(row, side)
-            when = row["frame_us"]
-            if angle is None or when < self.epoch_us or when > self.receipts[pos]:
+            if angle is None or not _received_frame_clock(row, self.epoch_us, self.receipts[pos]):
                 break
+            when = row["frame_us"]
             if history:
                 next_us, next_deg = history[-1]
                 if (row["sequence"] + 1 != self.frames[pos + 1]["sequence"]
@@ -137,19 +144,10 @@ class CausalFootFeatures:
             history.append((when, angle))
         return history[::-1]
 
-    def at(self, event):
-        cutoff = self._cutoff(event)
-        # tryWalkingEnergy() copies the owner's guard result *before* solving.
-        # Its allowed flag includes the 10 ms IMU sample-age limit. Numeric
-        # angle/rate are measured motion proxies, not a contact or fall proof.
-        has_posture = (event.get("fore_aft_allowed") is True and event.get("fore_aft_reason") in (0, 1)
-                       and _finite(event.get("fore_aft_angle_deg")) and _finite(event.get("fore_aft_rate_dps")))
+    def foot_at_us(self, cutoff):
+        """Query frames actually received by the control owner by the absolute timestamp."""
         out = {"decision_capture_us": cutoff, "foot_frame_us": None, "foot_receipt_us": None,
-               "foot_sequence": None, "foot_age_ms": None,
-               "fore_aft_angle_deg": event["fore_aft_angle_deg"] if has_posture else None,
-               "fore_aft_rate_dps": event["fore_aft_rate_dps"] if has_posture else None,
-               "fore_aft_source": "pre_solve_owner_guard" if has_posture else "unavailable",
-               "fore_aft_age_bound_ms": 10 if has_posture else None}
+               "foot_sequence": None, "foot_age_ms": None}
         for side in ("left", "right"):
             out.update({side + "_valid": False, side + "_deg": None, side + "_phase": "unknown",
                         side + "_rate_dps": None, side + "_history_count": 0})
@@ -159,11 +157,11 @@ class CausalFootFeatures:
         if index < 0:
             return out
         row = self.frames[index]
-        age = cutoff - row["frame_us"]
-        out.update(foot_sequence=row["sequence"], foot_frame_us=row["frame_us"],
+        out.update(foot_sequence=row["sequence"], foot_frame_us=row.get("frame_us"),
                    foot_receipt_us=self.receipts[index])
-        if not row.get("timestamp_valid") or not self.epoch_us <= row["frame_us"] <= self.receipts[index]:
+        if not _received_frame_clock(row, self.epoch_us, self.receipts[index]):
             return out
+        age = cutoff - row["frame_us"]
         out["foot_age_ms"] = age / 1000
         if age > MAX_FRAME_AGE_US:
             return out
@@ -174,4 +172,16 @@ class CausalFootFeatures:
                 out.update({side + "_deg": history[-1][1], side + "_valid": True,
                             side + "_phase": phase, side + "_rate_dps": rate,
                             side + "_history_count": len(history)})
+        return out
+
+    def at(self, event):
+        out = self.foot_at_us(self._cutoff(event))
+        # tryWalkingEnergy() copies the owner's guard result *before* solving.
+        # Its allowed flag includes the 10 ms IMU sample-age limit.
+        has_posture = (event.get("fore_aft_allowed") is True and event.get("fore_aft_reason") in (0, 1)
+                       and _finite(event.get("fore_aft_angle_deg")) and _finite(event.get("fore_aft_rate_dps")))
+        out.update(fore_aft_angle_deg=event["fore_aft_angle_deg"] if has_posture else None,
+                   fore_aft_rate_dps=event["fore_aft_rate_dps"] if has_posture else None,
+                   fore_aft_source="pre_solve_owner_guard" if has_posture else "unavailable",
+                   fore_aft_age_bound_ms=10 if has_posture else None)
         return out

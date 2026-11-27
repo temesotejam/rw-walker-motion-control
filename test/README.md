@@ -37,7 +37,7 @@ PC上の回帰試験は [run.py](run.py) から実行します。無駆動の実
 | [test_http_client_queue.py](test_http_client_queue.py) | 待機中のHTTP接続があるときのサーバーの受付と処理順を試す。 |
 | [test_live_status_web.js](test_live_status_web.js) | 状態の定期読出し、足角などの表示更新、接続失敗・再起動時の扱いを試す。 |
 | [test_mekf_host.cpp](test_mekf_host.cpp) | IMUから機体座標への変換とMEKF姿勢推定を既知の静止・回転入力で検査する。 |
-| [test_observed_transfers.py](test_observed_transfers.py) | 支持移行予測の採点で、予測完了時刻、欠測、独立した観測点を扱えるか検査する。 |
+| [test_observed_transfers.py](test_observed_transfers.py) | 支持移行予測の採点と、動画のLED同期・接地や離地の区間前後の実測・左右の符号・欠測を検査する。 |
 | [test_offline_run_export.cpp](test_offline_run_export.cpp) | 測定終了、途中停止、ログ確定、再接続・次の測定への遷移を試す。 |
 | [test_periodic_foot.cpp](test_periodic_foot.cpp) | 定周期足角推定器に観測を与え、時刻・失効・推定出力を検査する。 |
 | [test_return_history.cpp](test_return_history.cpp) | 左向きの戻り判断に過去の成功履歴を採用できる条件を検査する。 |

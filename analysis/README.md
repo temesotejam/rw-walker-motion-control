@@ -19,6 +19,7 @@ python -B analysis/simulator/replay_walk7.py --after-first --event-allocation $t
 
 | 見たいもの | 入口 |
 |---|---|
+| 動画で次の足が着く前と旧支持足が離れた後の胴体角速度 | [撮影とLED同期の手順](../docs/SUPPORT_TRANSFER_V39.md#動画とrwlogで支持が移る前後の角速度を測る)、[左右別の測定](measurement/measure_transfer_speeds.py) |
 | 支持移行に向けた通電の開始・幅と、実測された到達点 | [予測器の再生](support/replay_support_transfer.py)、[実測の採点](support/score_observed_transfers.py)、[操作手順](../docs/SUPPORT_TRANSFER_V39.md) |
 | 足の出方・戻り方と半周期の不足仕事 | [イベントごとのエネルギー再生](support/replay_event_foot_energy.py) |
 | 画像取得、足角度の計算・発行、制御への到着 | [歩行中の足角度計測](measurement/audit_walking_foot_measurements.py)、[時刻の内訳](measurement/analyze_foot_latency.py) |
@@ -91,7 +92,7 @@ python -B analysis/simulator/replay_walk7.py --after-first --event-allocation $t
 </details>
 
 <details>
-<summary>足角・計測の分析（4件）</summary>
+<summary>足角・計測の分析（5件）</summary>
 
 | ファイル | 役割 |
 | --- | --- |
@@ -99,6 +100,7 @@ python -B analysis/simulator/replay_walk7.py --after-first --event-allocation $t
 | [measurement/analyze_foot_latency.py](measurement/analyze_foot_latency.py) | ログにあるカメラの取得・処理・制御受領の時刻から各段階の遅れを集計する。 |
 | [measurement/audit_walking_foot_measurements.py](measurement/audit_walking_foot_measurements.py) | 歩行中の足角の有効率、欠測間隔や観測時刻を実測ログで調べる。 |
 | [measurement/replay_periodic_foot.py](measurement/replay_periodic_foot.py) | 過去の足角が制御側に届いた時刻に合わせて定周期推定器を再生する。 |
+| [measurement/measure_transfer_speeds.py](measurement/measure_transfer_speeds.py) | 動画のLEDとRWLOGを同期し、観察した接地・離地の区間前後で胴体角速度、進入時の左右足角、通電状況を取り出す。 |
 
 </details>
 

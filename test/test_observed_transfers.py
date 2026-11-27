@@ -2,6 +2,7 @@ import unittest
 
 import _project
 from score_observed_transfers import score, score_terminals
+from measure_transfer_speeds import align_video_labels, command_archive, input_evidence, led_edges, measure, video_clock
 
 
 class ObservedTransfers(unittest.TestCase):
@@ -114,6 +115,77 @@ class ObservedTransfers(unittest.TestCase):
         self.assertEqual(self.terminal([])["status"], "missing_initial_observation")
         self.metadata["energy_control_autonomous_peak_events"][1]["peak_time_ms"] = 472
         self.assertEqual(self.terminal(points)["status"], "next_peak")
+
+
+class TransferMeasurements(unittest.TestCase):
+    def setUp(self):
+        self.header = dict(run_start_us=1_000_000, run_id=4)
+        self.meta = dict(mekf_gyro_y_scale=.8, energy_control_autonomous_zero_cross_events=[],
+                         foot_frames=[dict(run_id=4, state_id=3, frame_us=1_200_000,
+                                          timestamp_valid=True, measurement_time_us=100_000)],
+                         walking_energy=dict(archive_available=True, truncated=False, total=0, records=[]),
+                         energy_control_autonomous_event_overflow=False,
+                         energy_control_autonomous_zero_cross_event_total_count=0,
+                         walking_restart=dict(columns=["start_ms", "queued", "elapsed_ms"], rows=[]))
+        self.rows = [dict(state_id=3, t_test_ms=t, gy_dps=str(t-102), mekf_bias_y_dps=1,
+                          pitch_mekf_detector_relative_deg=0, body_rate_sample_time_us=1_100_000+t*1000)
+                     for t in (96, 100, 104, 104, 108, 112, 116)]
+        self.label = dict(run_start_us=1_000_000, start_ms=100, end_ms=112,
+                          receiving_foot="L", body_direction=-1, source="video_proxy", event_kind="old_foot_liftoff")
+
+    def test_samples_strictly_outside_both_edges_and_reversal_keeps_sign(self):
+        left, right = measure(self.header, self.meta, self.rows,
+                              [self.label, dict(self.label, receiving_foot="R", body_direction=1)])
+        self.assertEqual((left["pre_ms"], left["post_ms"]), (96, 116))
+        self.assertEqual((left["imu_status"], left["foot_status"]), ("ok", "no_received_frame"))
+        self.assertAlmostEqual(left["pre_directional_dps"], 5.6)
+        self.assertAlmostEqual(left["post_directional_dps"], -10.4)
+        self.assertEqual(right["post_directional_dps"], -left["post_directional_dps"])
+        self.assertEqual(left["command_overlap"], "no_recorded_command")
+        self.assertEqual(left["current_samples"], 0)
+        self.assertNotIn("max_abs_measured_current_ma", left)
+
+    def test_missing_data_and_wrong_run(self):
+        gap = measure(self.header, self.meta, self.rows[:1]+self.rows[-1:], [self.label])[0]
+        self.assertEqual(gap["imu_status"], "imu_gap")
+        self.assertNotIn("delta_directional_dps", gap)
+        with self.assertRaises(ValueError):
+            measure(self.header, self.meta, [], [dict(self.label, run_start_us=123)])
+        self.rows[2]["motor_cmd_mA"] = 50
+        self.assertEqual(measure(self.header, self.meta, self.rows, [self.label])[0]["command_overlap"], "overlap")
+
+    def test_video_brackets_include_drift_and_sync_width(self):
+        samples = [dict(log_time_s=t/1000, led_state=s) for t,s in
+                   ((10,0), (14,1), (111,1), (115,0), (212,0), (216,1))]
+        samples.insert(2, dict(log_time_s=0, led_state=0, state_id=3, sync_event_id=2))
+        edges = led_edges(self.header, self.meta, samples)
+        self.assertEqual([e["state"] for e in edges], [1,0,1])
+        self.assertAlmostEqual(edges[0]["log_lo_ms"], -90)
+        anchors = [dict(run_start_us=1_000_000, edge=i+1, state=e["state"],
+                        video_lo_ms=1000+100*i, video_hi_ms=1004+100*i) for i,e in enumerate(edges)]
+        clock = video_clock(1_000_000, edges, anchors)
+        label = dict(self.label, video_lo_ms=1150, video_hi_ms=1155)
+        row = next(align_video_labels([label], clock))
+        # One feasible rate/offset maps 1000 video ms to -90 measurement ms.
+        self.assertLessEqual(row["start_ms"], -90+150*1.01)
+        self.assertGreaterEqual(row["end_ms"], -90+155*1.01)
+        self.assertGreater(row["end_ms"]-row["start_ms"], 5)
+        with self.assertRaises(ValueError):
+            list(align_video_labels([dict(label,video_hi_ms=1205)], clock))
+        with self.assertRaises(ValueError):
+            video_clock(1_000_000, edges, [anchors[0], dict(anchors[1], video_lo_ms=1120, video_hi_ms=1124), anchors[2]])
+        with self.assertRaises(ValueError):
+            video_clock(1_000_000, edges, [anchors[0], dict(anchors[1], state=1), anchors[2]])
+
+    def test_launch_before_rounded_zero_and_repeated_nonzero_commands(self):
+        ticks = [dict(state_id=3, t_test_ms=t, roller_applied_command_time_us=1_100_000+us,
+                      roller_applied_current_mA=cmd) for t,us,cmd in
+                 ((0,-19,300), (25,24_999,300), (100,99_766,0))]
+        self.meta["energy_control_autonomous_zero_cross_events"] = [
+            dict(event_kind="strong_start_kick", output_executed=True, pulse_start_ms=0, pulse_end_ms=100)]
+        _, _, applied = input_evidence(ticks, 1_100_000)
+        self.assertAlmostEqual(command_archive(self.meta, applied)["records"][0]["output_end_ms"], 99.766)
+        self.assertEqual(command_archive(self.meta, applied[:-1])["records"][0]["output_end_ms"], 0)
 
 
 if __name__ == "__main__":
