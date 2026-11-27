@@ -38,7 +38,7 @@ def production_sections():
     start = logger.index('    if(walking_energy_mode){')
     end = logger.index('    }else{', start)
     work_metadata = logger[start + len('    if(walking_energy_mode){'):end]
-    source = (ROOT / 'src/walking/walking_energy_runner.inc').read_text(encoding='utf8')
+    source = (ROOT / 'src/experiment_runner.cpp').read_text(encoding='utf8')
     start = source.index('void ExperimentRunner::appendWalkingEnergyMetadata(')
     end = source.index('\n}\n', start) + 3
     serializer = source[start:end]

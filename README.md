@@ -2,7 +2,7 @@
 
 リアクションホイールで左右に揺動し、受動脚を交互に振り出す歩行器です。現在の通常歩行版は **`walking-support-transfer-v39-walk7-logfix1`** です。
 
-通信・制御・認識などの担当から探す場合は、[本体129ファイルの内訳](src/README.md#ファイル別の役割)または[全285ファイルの案内](#ファイル別の役割)を開いてください。
+通常歩行の制御則は `src/walking/` の5ファイルにあります。[5つの計算と入出力](src/README.md#walking-control) · [通信・認識など本体120ファイルの内訳](src/README.md#ファイル別の役割) · [全276ファイルの案内](#ファイル別の役割)
 
 ## 歩行実験で使うもの
 
@@ -15,7 +15,7 @@
 
 | 変えたい動作 | 最初に読むファイル |
 | --- | --- |
-| 足と胴体の状態からホイールへの入力を決める | [歩行時の入力処理](src/walking/walking_energy_runner.inc) |
+| 足と胴体の状態からホイールへの入力を決める | [歩行の5つの計算](src/README.md#walking-control) |
 | カメラ画像から左右の足角を求める | [足角観測](src/foot_observer.cpp) |
 | ブラウザーの表示・RWLOGの取得を変える | [測定画面の処理](web/runtime.js) |
 
@@ -26,7 +26,7 @@ pio run
 python tools/prepare_foot_periodic40_flasher.py
 ```
 
-歩行入力の変更は上表の1ファイルから追えます。設定に応じた試験・共通のエネルギーモデルとの分担、定周期の足角発行、モータに指令を渡す経路は[本体ソースの案内](src/README.md)にまとめています。Web画面のHTML・JavaScriptは [web/](web/) からビルド時に取り込みます。
+各半周期で歩行の計算を呼び、選んだ通電を開始・終了する処理は [experiment_runner.cpp](src/experiment_runner.cpp) にあります。Web画面のHTML・JavaScriptは [web/](web/) からビルド時に取り込みます。
 
 ## 検証と研究
 
@@ -38,15 +38,17 @@ python tools/prepare_foot_periodic40_flasher.py
 
 ## 旧版・実験データの保管先
 
+歩行制御を5ファイルにまとめる直前のソース、実測、ビルド生成物、Git履歴はこちらに保管しています。[5ファイル化直前の全体コピー](C:/Users/arika/Desktop/walker-backups/rw-walker-motion-control_20261127_before_five_functions_5cfefcd/project)
+
 整理直前の作業フォルダー全体を、このPCに同じ階層で保存しました。実測データ、生成済みの通常版・試験版、Git履歴も含みます。過去の解析を当時のプログラムと照合するときは、このコピーかGitHubの固定版を開いてください。[PCの全体コピー](C:/Users/arika/Desktop/walker-backups/rw-walker-motion-control_20261127_before_project_cleanup_481a221/project) · [GitHubの整理直前の版](https://github.com/temesotejam/rw-walker-motion-control/tree/481a221e22352d8744a6accf8d1ce4670b6e9bcc)
 
 ## ファイル別の役割
 
-一覧は通常歩行版 `walk7-logfix1` の構成に対応します。全285件を、ファイル名から実装や試験に直接移動できるようにまとめました。ビルド生成物と各自の測定データは集計の対象外です。
+一覧は通常歩行版 `walk7-logfix1` の現行ソースに対応します。全276件を、ファイル名から実装や試験に直接移動できるようにまとめました。ビルド生成物と各自の測定データは集計の対象外です。
 
 | 場所 | 件数 | どこで使うか |
 | --- | ---: | --- |
-| [src/](src/README.md#ファイル別の役割) | 130 | 本体ビルドが参照する自作コード129件と案内1件。歩行制御・足角認識・通信などに分けた内訳があります。 |
+| [src/](src/README.md#ファイル別の役割) | 121 | 本体ビルドが参照する自作コード120件と案内1件。歩行制御・足角認識・通信などに分けた内訳があります。 |
 | web/ | 4 | 機体が配信し、PCやスマートフォンのブラウザーで動く測定画面。 |
 | flasher/ | 7 | PCで開く書き込みページと配布設定。 |
 | third_party/ | 6 | カメラ用の外部ドライバー、出典、ライセンス。 |

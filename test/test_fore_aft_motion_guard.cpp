@@ -1,4 +1,4 @@
-#include "walking/fore_aft_motion_guard.h"
+#include "walking/wheel_input.h"
 #include <cassert>
 #include <iostream>
 #include <iomanip>

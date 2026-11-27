@@ -20,7 +20,9 @@ def method(name, result):
 
 def production_sections():
     header = (ROOT / 'src/experiment_runner.h').read_text(encoding='utf8')
-    energy = (ROOT / 'src/walking/walking_energy_runner.inc').read_text(encoding='utf8')
+    first_energy_method = runner.index('bool ExperimentRunner::walkingForeAftAllowsOutput(')
+    energy_start = runner.rindex('#if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY', 0, first_energy_method)
+    energy_end = runner.index('void ExperimentRunner::appendWalkingEnergyMetadata(', first_energy_method)
     # The foot members live in one feature block with nested feature guards.
     start = header.index('  foot_phase_prediction::Projection foot_pose_;')
     foot_members = []
@@ -60,7 +62,7 @@ def production_sections():
         'CROSSING_GUARD': runner[guard:guard_end],
         'RESIDUAL_CURRENT': runner[residual:residual_end].replace('event.', 'e.').replace('t_test_ms', 't'),
         'CROSSING_ROUTER': crossing_router,
-        'ENERGY_METHODS': energy[:energy.index('void ExperimentRunner::appendWalkingEnergyMetadata')] + '\n#endif\n',
+        'ENERGY_METHODS': runner[energy_start:energy_end] + '\n#endif\n',
     }
     for name, result in [('restoreUnsentStallRescue', 'void'), ('dispatchTiltPriority', 'bool'),
                          ('acceptOptionalEarlyMotion', 'void'), ('tryFootSupportCandidate', 'void'),

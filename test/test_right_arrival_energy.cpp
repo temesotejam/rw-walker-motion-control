@@ -1,6 +1,6 @@
 #include <cassert>
 #include <cmath>
-#include "walking/support/right_arrival_energy.h"
+#include "walking/transfer_speed.h"
 
 int main() {
   using namespace right_arrival_energy;

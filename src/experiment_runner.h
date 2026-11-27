@@ -1,22 +1,12 @@
 #pragma once
-#if WALKING_RIGHT_ARRIVAL
-#include "walking/support/right_arrival_energy.h"
-#endif
 #if WALKING_TURN_OBSERVER
 #include "gait_turn_run.h"
-#include "walking/support/gait_turn_energy.h"
 #endif
 #if FOOT_PERIODIC_V38
 #include "periodic_foot_state.h"
 #endif
 #if SUPPORT_TRANSFER_V39
 #include "support_transfer_audit.h"
-#if SUPPORT_TRANSFER_CARRY2
-#include "walking/support/receiving_arc_aid.h"
-#if WALKING_RETURN_HISTORY
-#include "walking/support/return_crossing_work.h"
-#endif
-#endif
 #endif
 
 #include <Adafruit_AHRS.h>
@@ -30,31 +20,14 @@
 #include "control_setup/run_settings.h"
 #include "models/lateral_energy_control.h"
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
-#include "walking/walking_energy_policy.h"
 #if defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
 #include "psram_archive.h"
-#endif
-#if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
-#if WALKING_RECOVERY_V6
-#include "walking/recovery/settled_walking_restart.h"
-#endif
-#include "walking/support/walking_return_energy.h"
-#if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
-#include "walking/support/return_observation_policy.h"
-#if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
-#include "walking/fore_aft_motion_guard.h"
-#endif
-#endif
-#endif
-#if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
-#include "walking/pulse.h"
 #endif
 #endif
 #include "models/wheel_work_energy_control.h"
 #include "models/walking_energy_loss.h"
 #include "models/low_peak_energy.h"
-#include "walking/pulse.h"
-#include "walking/start.h"
+#include "walking/wheel_input.h"
 #include "control_trials/foot_balance_adaptive.h"
 #include "control_trials/foot_energy_balance.h"
 #include "foot_phase_observer.h"
@@ -74,11 +47,9 @@
 #include "psram_logger.h"
 #include "roller485_manager.h"
 #include "realtime_code.h"
-#include "walking/fore_aft_motion_guard.h"
 
 #include "experiment_status.h"
 #include "control_trials/gyro_steering.h"
-#include "walking/support/return_motion.h"
 #ifndef FOOT_EARLY_TRIAL
 #define FOOT_EARLY_TRIAL 0
 #endif
@@ -91,7 +62,6 @@
 #include "control_trials/negative_cap_recovery.h"
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
 #include "foot_motion_prediction.h"
-#include "walking/support/return_motion.h"
 #endif
 
 class ExperimentRunner {

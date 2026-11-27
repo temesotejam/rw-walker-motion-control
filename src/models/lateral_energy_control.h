@@ -2,13 +2,12 @@
 #include <cmath>
 #include <cstdint>
 #include <initializer_list>
-#include "realtime_code.h"
+#include "walking/contact_geometry.h"
 
 // The quadratic model converts logged Q (mA*s) to A*s and rate to rad/s.
 // The historical angle bridge below uses logged Q in mA*s and rate in deg/s.
 // Both coefficient sets are empirical, not measured inertia/torque constants.
 namespace lateral_energy {
-constexpr float kRadPerDeg = 0.01745329251994329577f;
 constexpr uint16_t kMaxMs = 100;
 // Reverse-current response has not been identified on this mechanism yet.
 // Limit the first braking trials to half of the excitation time budget.
@@ -16,43 +15,6 @@ constexpr uint16_t kBrakeMaxMs = 50; // Absolute limit; trial choices are 0/20/5
 constexpr float kIntegralGain = .10f;
 constexpr char kRevision[] = "lateral_energy_angle_bridge_v8_20261015";
 constexpr char kQuadraticRevision[] = "lateral_energy_saved_upright_v7_20261014";
-struct Geometry {
-  float mass_g, height, radius, inner_x, center, inner_angle, outer_angle;
-  Geometry(float m=.1997f, float gravity=9.80665f, float h=.120f,
-           float r=.150f, float x=.005f, float outer=.045f)
-      : mass_g(m*gravity),height(h),radius(r),inner_x(x),
-        center(std::sqrt(r*r-x*x)),inner_angle(std::asin(x/r)),
-        outer_angle(std::asin(outer/r)) {}
-};
-// Stable height differences; shape-only constants are prepared once.
-static inline RW_SPEED_CODE float potential(const Geometry& g, float degrees) {
-  const float raw=std::fabs(degrees)*kRadPerDeg;
-  if (!std::isfinite(raw) || raw>g.outer_angle+1e-6f || !(g.mass_g>0)) return NAN;
-  const float a=std::fmin(raw,g.outer_angle);
-  const float half_sine=std::sin(.5f*a);
-  const float dh=a<=g.inner_angle
-      ? -2.f*g.height*half_sine*half_sine+g.inner_x*std::sin(a)
-      : (g.radius-g.center)+2.f*(g.center-g.height)*half_sine*half_sine;
-  return g.mass_g*dh;
-}
-static inline RW_SPEED_CODE float angle(const Geometry& g, float energy) {
-  if (!std::isfinite(energy) || energy<0 || !(g.mass_g>0)) return NAN;
-  if (energy==0) return 0;
-  const float boundary=potential(g,g.inner_angle/kRadPerDeg);
-  const float y=energy/g.mass_g;
-  float a;
-  if (energy<=boundary) {
-    const float disc=g.inner_x*g.inner_x-(2.f*g.height+y)*y;
-    if (disc<0) return NAN;
-    const float t=y/(g.inner_x+std::sqrt(disc));
-    a=2.f*std::atan(t);
-  } else {
-    const float term=(y-(g.radius-g.center))/(2.f*(g.center-g.height));
-    if (!(term>=0 && term<=1)) return NAN;
-    a=2.f*std::asin(std::sqrt(term));
-  }
-  return a<=g.outer_angle+1e-6f ? a/kRadPerDeg : NAN;
-}
 struct Coefficients {
   float free_offset_j, free_omega2, work_omega_q, work_q2;
   float rate_min_dps, rate_max_dps, charge_max_mAs;

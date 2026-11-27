@@ -1,8 +1,6 @@
 // Host adapter for the production left-return history, work inverse and wheel guard.
-#include "walking/support/walking_return_energy.h"
-#include "walking/support/receiving_arc_aid.h"
-#include "walking/support/return_crossing_work.h"
-#include "walking/pulse.h"
+#include "walking/wheel_input.h"
+#include "walking/required_work.h"
 #include <algorithm>
 #include <iomanip>
 #include <iostream>

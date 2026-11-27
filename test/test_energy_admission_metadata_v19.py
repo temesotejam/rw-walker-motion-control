@@ -17,10 +17,10 @@ from fixtures.energy.metadata import build_metadata_fixture, logger, parse
 from fixtures.runtime_rwlog import write_fixture
 
 fixture = build_metadata_fixture()
-fixture = '#include "walking/fore_aft_motion_guard.h"\n#include "walking/support/receiving_arc_aid.h"\n#if WALKING_RETURN_HISTORY\n#include "walking/support/return_crossing_work.h"\n#endif\n#if WALKING_RIGHT_ARRIVAL\n#include "walking/support/right_arrival_energy.h"\n#endif\n' + fixture
+fixture = '#include "walking/required_work.h"\n#if WALKING_RIGHT_ARRIVAL\n#include "walking/transfer_speed.h"\n#endif\n' + fixture
 fixture = fixture.replace('for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u})',
                           'for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u,24u})')
-fixture = '#include "export_protocol.h"\n#include "foot_fast_policy.h"\n#if WALKING_RETURN_HISTORY\n#include "walking/support/return_observation_policy.h"\n#endif\n' + fixture
+fixture = '#include "export_protocol.h"\n#include "foot_fast_policy.h"\n#if WALKING_RETURN_HISTORY\n#include "walking/coast_motion.h"\n#endif\n' + fixture
 marker = 'class ExperimentRunner {public:\n'
 assert fixture.count(marker) == 1
 fixture = fixture.replace(marker, marker + r'''
@@ -193,7 +193,7 @@ fixture = fixture.replace(marker, r'''
 ''' + marker)
 
 flags = ['-DEARLY_ENERGY_MAIN=1', '-DPULSE_LIFECYCLE_FIX=1', '-DWALKING_RETURN_ENERGY=1', '-DWALKING_TRANSFER_V18=1']
-fixture = '#include "walking/start.h"\n' + fixture
+fixture = '#include "control_setup/run_settings.h"\n' + fixture
 fixture = fixture.replace('const bool small_step=false;', '''
 #if WALKING_SMALL_STEP_AB
   runner.baseline=argc>1 && std::string(argv[1])=="small-step";

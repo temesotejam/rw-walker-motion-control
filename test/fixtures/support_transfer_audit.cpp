@@ -36,8 +36,7 @@ uint32_t testMicros() {
 uint64_t esp_timer_get_time() { return host_us; }
 #include <support_transfer_audit.cpp>
 #include "periodic_foot_state.h"
-#include "walking/support/walking_return_energy.h"
-#include "walking/pulse.h"
+#include "walking/wheel_input.h"
 #include "models/control_math_cache.h"
 namespace Config {
 constexpr int MOTOR_DRIVER_POLARITY=-1, ENERGY_CONTROL_AUTONOMOUS_NORMAL_OUTPUT_SIGN=-1;

@@ -19,7 +19,6 @@ fixture = '''
 #include <cstring>
 #include <string>
 #include "config.h"
-#include "walking/start.h"
 #include "control_setup/run_settings.h"
 #include "models/work_target_policy.h"
 #include "models/lateral_cg_energy.h"

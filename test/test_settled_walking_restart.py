@@ -21,9 +21,8 @@ PREFIX = r'''
 #define PULSE_LIFECYCLE_FIX 1
 #define EARLY_ENERGY_MAIN 1
 #define WALKING_ADMISSION_V19 1
-#include "walking/recovery/settled_walking_restart.h"
+#include "walking/wheel_input.h"
 #include "periodic_foot_state.h"
-#include "walking/pulse.h"
 #include "control_setup/run_settings.h"
 #include "models/peak_error_adaptation.h"
 #include <cstdio>
@@ -155,8 +154,7 @@ source = PREFIX + method("bool ExperimentRunner::beginEnergyControlAutonomousPul
 source += method("void ExperimentRunner::updateEnergyControlAutonomousPulse(", "#if defined(FOOT_SUPPORT_ASSIST)")
 source += method("void ExperimentRunner::stopActivePulse(", "float ExperimentRunner::predictedChargeMaS")
 source += method("void ExperimentRunner::stopMotor()", "void ExperimentRunner::setSyncLed")
-source += (ROOT / "src/walking/recovery/settled_walking_restart_runner.inc").read_text(encoding="utf-8").split(
-    "void ExperimentRunner::appendWalkingRestartMetadata")[0] + TEST
+source += method("bool ExperimentRunner::serviceWalkingRestart(", "void ExperimentRunner::appendWalkingRestartMetadata(") + TEST
 with tempfile.TemporaryDirectory() as tmp:
     test = Path(tmp) / "restart.cpp"
     test.write_text(source, encoding="utf-8")
@@ -166,11 +164,11 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # Compile the production writer so a renamed or reordered column cannot
     # silently put the wrong physical event in the exported CSV.
-    writer = (ROOT / "src/walking/recovery/settled_walking_restart_runner.inc").read_text(encoding="utf8")
-    writer = writer[writer.index("void ExperimentRunner::appendWalkingRestartMetadata"):]
+    start = runner.index("void ExperimentRunner::appendWalkingRestartMetadata(")
+    writer = runner[start:runner.index("\n}\n", start) + 3]
     test.write_text('''
 #include "psram_string.h"
-#include "walking/recovery/settled_walking_restart.h"
+#include "walking/wheel_input.h"
 #include <cstdio>
 class ExperimentRunner {
 public:

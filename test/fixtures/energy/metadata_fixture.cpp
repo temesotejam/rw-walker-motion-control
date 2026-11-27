@@ -1,7 +1,5 @@
-#include "walking/support/walking_return_energy.h"
-#include "walking/pulse.h"
+#include "walking/wheel_input.h"
 
-#include "walking/walking_energy_policy.h"
 #include "models/walking_energy_loss.h"
 #include "control_trials/fixed_foot/one_peak_energy_inverse.h"
 #include <Arduino.h>

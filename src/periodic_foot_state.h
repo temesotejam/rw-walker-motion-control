@@ -8,7 +8,7 @@ constexpr uint32_t maximum_age_us = 75000;  // provisional, three control period
 
 struct Side {
   float measured = NAN, estimated = NAN;
-#if SUPPORT_TRANSFER_V39
+#if SUPPORT_TRANSFER_V39 || SUPPORT_TRANSFER_CARRY2
   float rate_dps = NAN;  // signed slope used by the existing bounded extrapolator
 #endif
   uint64_t image_us = 0;
@@ -19,7 +19,7 @@ struct Packet {
   uint64_t epoch_us = 0, scheduled_us = 0, published_us = 0;
   uint32_t count = 0, missed = 0, both_valid = 0, max_late_us = 0;
 };
-#if SUPPORT_TRANSFER_CARRY2
+#if SUPPORT_TRANSFER_CARRY2 || SUPPORT_TRANSFER_STALL_V3
 inline bool matchesPair(const Packet& p,uint64_t now,uint32_t sequence,uint64_t image) {
   return p.count && p.epoch_us && image>=p.epoch_us && now>=p.published_us &&
       now-p.published_us<=period_us && p.published_us>=image && now-image<=maximum_age_us &&
@@ -39,7 +39,7 @@ class Track {
     rate_ = adjacent && slope * previous_slope_ > 0 && std::fabs(slope) <= 80.f
             && std::fabs(previous_slope_) <= 80.f
         ? std::copysign(std::fmin(std::fabs(slope), std::fabs(previous_slope_)), slope) : 0.f;
-#if SUPPORT_TRANSFER_V39
+#if SUPPORT_TRANSFER_V39 || SUPPORT_TRANSFER_CARRY2
     const bool usable = adjacent && std::fabs(slope) <= 80.f;
     last_.rate_dps = usable && previous_usable_ ? rate_ : NAN;
     previous_usable_ = usable;
@@ -60,7 +60,7 @@ class Track {
  private:
   Side last_;
   float previous_slope_ = 0, rate_ = 0;
-#if SUPPORT_TRANSFER_V39
+#if SUPPORT_TRANSFER_V39 || SUPPORT_TRANSFER_CARRY2
   bool previous_usable_ = false;
 #endif
 };

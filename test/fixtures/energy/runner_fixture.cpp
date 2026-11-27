@@ -1,11 +1,8 @@
-#include "walking/support/walking_return_energy.h"
-#include "walking/support/return_observation_policy.h"
+#include "walking/wheel_input.h"
+#include "walking/coast_motion.h"
 #include <cstring>
-#include "walking/pulse.h"
-#include "walking/walking_energy_policy.h"
 #include "control_setup/run_settings.h"
 #include "foot_motion_prediction.h"
-#include "walking/support/return_motion.h"
 #define FOOT_TREND_CYCLES 2
 #define ANGLE_EARLY_TRIAL 1
 #define WALK_SMOOTH_TRIAL 1

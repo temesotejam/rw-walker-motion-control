@@ -2,8 +2,8 @@
 #define SUPPORT_TRANSFER_CARRY2 1
 #define SUPPORT_TRANSFER_STALL_V3 1
 #define WALKING_RETURN_HISTORY 1
-#include "walking/support/return_observation_policy.h"
-#include "walking/support/walking_return_energy.h"
+#include "walking/coast_motion.h"
+#include "walking/wheel_input.h"
 #include <cassert>
 
 using namespace return_observation_policy;

@@ -13,7 +13,6 @@ from _project import ROOT
 from fixtures.energy.runner import build_runner_fixture, runner
 
 fixture = build_runner_fixture()
-fixture = '#include "walking/fore_aft_motion_guard.h"\n#if WALKING_RIGHT_ARRIVAL\n#include "walking/support/right_arrival_energy.h"\n#endif\n' + fixture
 # Preserve the production emergency-stop pulse path while omitting unrelated
 # LEDs, capture and logger status I/O from this host double.
 fixture = re.sub(r'(enum class ExperimentState\s*\{)([^}]*)(\};)',
@@ -28,18 +27,19 @@ fixture = fixture.replace('float predictCurrentGoalMa(int,float)const{return 329
                           'float simulated_goal_ma=345.005126953f;'
                           ' float predictCurrentGoalMa(int,float)const{return simulated_goal_ma;}')
 fixture = r'''
+#if WALKING_RIGHT_ARRIVAL
+#include "walking/transfer_speed.h"
+#endif
+#if WALKING_TURN_OBSERVER || SUPPORT_TRANSFER_CARRY2
+#include "walking/required_work.h"
+#endif
 #if WALKING_TURN_OBSERVER
-#include "walking/support/gait_turn_energy.h"
 struct GaitStateFixture {
  gait_turn::Status value;
  const gait_turn::Status& status() const {return value;}
 };
 #endif
 #if SUPPORT_TRANSFER_CARRY2
-#include "walking/support/receiving_arc_aid.h"
-#if WALKING_RETURN_HISTORY
-#include "walking/support/return_crossing_work.h"
-#endif
 #include "periodic_foot_state.h"
 #define esp_timer_get_time micros
 struct StreamDouble {

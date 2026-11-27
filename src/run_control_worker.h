@@ -1,5 +1,4 @@
 #pragma once
-#include "walking/start.h"
 
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>

@@ -4,54 +4,37 @@
 
 | 変更したいこと | 最初に開くファイル | 現行版の処理 |
 |---|---|---|
-| 歩行入力のタイミングと強さ | [walking_energy_runner.inc](walking/walking_energy_runner.inc) | `tryWalkingEnergyFoot()` が揺れと足姿勢を調べ、`tryWalkingEnergy()` が必要な仕事と半周期で使える時間から通電を判断します。静止後の再始動は [settled_walking_restart_runner.inc](walking/recovery/settled_walking_restart_runner.inc) にあります。 |
+| 歩行入力のタイミングと強さ | [通常歩行の5つの計算](#walking-control) | 足裏形状と胴体の運動から不足仕事を求め、ホイールの通電を決めます。 |
 | 足角の認識と発行 | [foot_observer.cpp](foot_observer.cpp) | 画像から左右の実測角・有効性・時刻を取得します。[periodic_foot_stream.cpp](periodic_foot_stream.cpp) が観測に基づく足角を25 ms周期で発行します。 |
 | 測定データの記録と確定 | [psram_logger.cpp](psram_logger.cpp) | 測定中にPSRAMへ記録します。[immutable_export.cpp](immutable_export.cpp) が確定後のログを転送用に保持します。 |
 | 測定ページとダウンロード | [web_ui.cpp](web_ui.cpp) | 本体で状態照会とログ取得のHTTP要求を受け付けます。取得・再開を行うブラウザ側の処理は [runtime.js](../web/runtime.js) にあります。 |
 
 胴体の角度は [imu_manager.cpp](imu_manager.cpp) で取得したIMUデータから [MEKF](mekf6.cpp) が推定します。歩行制御が採用した電流指令は [roller485_manager.cpp](roller485_manager.cpp) を通ってホイールへ渡ります。
 
-## 歩行制御を追う順番
-
-±8°歩行の開始条件とモードは [start.h](walking/start.h)、その半周期に補助・主入力・惰行を選ぶ処理は [walking_energy_runner.inc](walking/walking_energy_runner.inc)、通電の開始・終了は [experiment_runner.cpp](experiment_runner.cpp) にあります。
-
-旧版を「歩行入力・エネルギー制御」と広く分類した73ファイルは、前回の整理で48件、今回は41件になりました。内訳は歩行14件、モデル10件、開始設定2件、試験・補正12件、統括と設定保存3件です。通常歩行でも進む向きと戻りの減速を見て補助を選び、静止時には再始動を評価します。共通の出力制限は前後傾斜やホイールの回転に応じて働きます。
-
-`models/` は物理量や入力候補を計算する場所です。固定脚の実測で同定し、固定脚制御の通電選択に使うホイール仕事モデルもここにあります。`control_trials/` は本体の機能・設定で有効になる試験や補正をまとめています。12°固定脚の試験はその一例です。PC側で行う検証は [test/](../test/README.md) にあります。
-
-## 支持移行の予測が使われる場所
-
-- **実際の通電**では、[return_observation_policy.h](walking/support/return_observation_policy.h) が戻り途中の実測足角と胴体の減速を判定し、[return_crossing_work.h](walking/support/return_crossing_work.h) と [receiving_arc_aid.h](walking/support/receiving_arc_aid.h) が支持移行を越えるために加える仕事を計算します。
-- **通常測定中の比較記録**では、[support_transfer_plan.h](support_transfer_plan.h) の `select()` が開始時刻と幅の候補を評価し、[support_transfer_audit.cpp](support_transfer_audit.cpp) が結果を記録します。同じヘッダーの `supportGap()` と `arcEntryDeg()` は実通電の仕事計算でも使います。RWLOGには比較候補と実行した入力の両方が残ります。[制御と評価の詳細](../docs/SUPPORT_TRANSFER_V39.md)
-- **CADによる形状検証**は [analysis/cad-shadow](../analysis/cad-shadow/) にあります。専用ビルドで `CAD_SUPPORT_SHADOW` を有効にすると、CAD形状から求めた接地候補を比較できます。足裏形状・座標の出典は[支持移行の仕様](../docs/SUPPORT_TRANSFER_V39.md)にあります。
-
 ## ファイル別の役割
 
-通常ビルドが参照する本体コード129件を主な役割で1回ずつ数えました。内訳はヘッダー98件、C/C++の実装29件、歩行処理を取り込む `.inc` 2件です。設定・分岐・入力によって実行される経路は変わります。
+通常ビルドが参照する本体コード120件を主な役割で1回ずつ数えています。ヘッダー91件とC/C++の実装29件です。
 
-カメラから制御には、画像の時刻・有効性を伴う足角の実測と、それを使って25 ms周期で発行する推定値の両方が届きます。通電を決めた後は機体内のI²CでRoller485へ電流を指令します。PCとの測定操作・ログ転送はWi-Fi上のHTTPが担当します。[制御ループ](main.cpp) · [ホイールへの入出力](roller485_manager.cpp) · [HTTP要求の受付](web_ui.cpp)
+<a id="walking-control"></a>
 
-<details>
-<summary>通常歩行の入力・支持移行・再始動（14件）</summary>
+<details open>
+<summary>通常歩行の5つの計算（5件）</summary>
 
-| ファイル | 役割 |
+| ファイル | 入力から求めるもの |
 | --- | --- |
-| [walking/fore_aft_motion_guard.h](walking/fore_aft_motion_guard.h) | 胴体の前後傾斜・運動から通電を許容できる範囲を判定し、絶対傾斜の停止条件も扱う。 |
-| [walking/pulse.h](walking/pulse.h) | 励振方向からモータ指令の符号を求め、ホイールの回転偏りによる幅制限と実通電時間に基づく終了処理を扱う。 |
-| [walking/recovery/settled_walking_restart.h](walking/recovery/settled_walking_restart.h) | 足角・胴体の履歴から揺れが片側に収束した条件を検出し、再始動入力の候補を計算する。 |
-| [walking/recovery/settled_walking_restart_runner.inc](walking/recovery/settled_walking_restart_runner.inc) | 停止検出と再始動計画を歩行制御に接続し、再始動入力の実行・結果確認を扱う。 |
-| [walking/start.h](walking/start.h) | ±8°歩行で使う制御を選び、開始時の目標角の立上げと最初の運動の確認条件を定める。 |
-| [walking/support/gait_turn_energy.h](walking/support/gait_turn_energy.h) | 右足の振れと旋回傾向を観測した条件で、エネルギー目標や通電幅の微調整候補を計算する。 |
-| [walking/support/receiving_arc_aid.h](walking/support/receiving_arc_aid.h) | 既に採用された戻り補助について、次の支持側の足裏円弧へ届くための延長と主入力の余地を評価する。 |
-| [walking/support/return_crossing_work.h](walking/support/return_crossing_work.h) | 過去に支持側へ到達した半周期と現在の速度を比べ、中心通過の前後へ配分する仕事を計算する。 |
-| [walking/support/return_motion.h](walking/support/return_motion.h) | 戻り途中の胴体の減速や失速を検出し、足の前振れ・観測の有効性と合わせて早めの補助入力を判定する。 |
-| [walking/support/return_observation_policy.h](walking/support/return_observation_policy.h) | 胴体の減速・足の観測時刻と姿勢から、戻り中に不足が出る区間と補助の必要性を判定する。 |
-| [walking/support/right_arrival_energy.h](walking/support/right_arrival_energy.h) | 右に向かうゼロ通過で、実測範囲内の到達エネルギーに基づき入力の維持・縮小・惰行を評価する。 |
-| [walking/support/walking_return_energy.h](walking/support/walking_return_energy.h) | 戻りの半周期で目標に不足する仕事を予測し、補助と主入力に使える通電時間・エネルギーを管理する。 |
-| [walking/walking_energy_policy.h](walking/walking_energy_policy.h) | 足裏の位置エネルギー、角速度、通電で増える推定仕事から候補を評価し、補助通電の成立条件を判定する。 |
-| [walking/walking_energy_runner.inc](walking/walking_energy_runner.inc) | 現在の足・胴体・ホイール状態を使い、前倒し補助・ゼロ通過時の主入力・惰行の実行を決める。 |
+| [walking/contact_geometry.h](walking/contact_geometry.h) | ① 接地幾何。左右の足角・胴体姿勢から `supportGap()` で足裏の高さ差、`arcEntryDeg()` で受け側円弧の入口を求める。`potential()` は名目円弧上の傾きを位置エネルギーに換算する。 |
+| [walking/coast_motion.h](walking/coast_motion.h) | ② 接地までの運動。`Observer::observe()` が足姿勢と戻り途中の胴体角・角速度から減速を検出し、`stoppingDistanceDeg()` が停止までに進める角度を求める。 |
+| [walking/transfer_speed.h](walking/transfer_speed.h) | ③ 支持移行時の速度。`MainPassages::observe()` が左へ中心を通った速度とその後の到達実績を保持する。右への中心通過では `right_arrival_energy::predictedJ()` が次ピークの到達エネルギーを予測する。 |
+| [walking/required_work.h](walking/required_work.h) | ④ 不足仕事。`computePeakWork()` が目標ピークのエネルギーと惰行到達分の差を求める。戻り補助では `energyShortfall()` が受け側までの角度・減速・残したい速度を局所的な必要仕事に換算する。 |
+| [walking/wheel_input.h](walking/wheel_input.h) | ⑤ 通電。`widthForWork()` が要求仕事と電流応答から通電幅を逆算する。`applyPassage()` は通過履歴、ホイール回転、半周期の残り時間から中心通過前後の配分を選ぶ。 |
 
 </details>
+
+**実機での呼び出し**　[測定開始の設定](control_setup/run_settings.h)から歩行モードを選び、[experiment_runner.cpp](experiment_runner.cpp) が足・胴体の観測ごとに判断し、ホイールの通電を開始・終了します。停止後の再始動もこの測定ループ内で扱います。
+
+**③の適用範囲**　支持点が切り替わった直後の運動には幾何モデルによる比較用の予測があります。両方向について「足姿勢と進入速度から、実際の荷重移行直後に残る速度を出す」回帰式は未同定です。検証には動画で判読した支持移行とIMU角速度、次の受動脚の振り、床上の前進を照合します。[歩行制御と検証方法](../docs/SUPPORT_TRANSFER_V39.md)
+
+通常版が実際に出した電流と、[予測器](support_transfer_plan.h)が比較した開始時点・幅の候補は、[歩行ログ](support_transfer_audit.cpp)で照合できます。固定脚試験などの計算は [control_trials/](control_trials/)、CADを用いる検証は [analysis/cad-shadow/](../analysis/cad-shadow/) にあります。
 
 <details>
 <summary>エネルギー・予測の計算（10件）</summary>
@@ -62,7 +45,7 @@
 | [models/direct_q_solver.h](models/direct_q_solver.h) | 次のピークに必要な電流の時間積分をモデルから逆算し、通電時間の候補に変換する。 |
 | [models/free_peak_prediction.h](models/free_peak_prediction.h) | ゼロ通過時の角速度と直前のピーク・揺動方向から、自由揺動で届くピークの予測を補正する。 |
 | [models/lateral_cg_energy.h](models/lateral_cg_energy.h) | 等価的な左右重心ずれを含む位置エネルギーと到達角を計算し、左右差の補正量を扱う。 |
-| [models/lateral_energy_control.h](models/lateral_energy_control.h) | 足裏円弧の幾何・角速度・電流の時間積分から左右のエネルギーや必要入力を計算する。 |
+| [models/lateral_energy_control.h](models/lateral_energy_control.h) | 角速度と電流の時間積分から、左右のモデル仕事と必要な入力を計算する。 |
 | [models/low_peak_energy.h](models/low_peak_energy.h) | ±8°試験の正側ピークで到達エネルギーの予測誤差を追い、対象条件の通電幅を微調整する。 |
 | [models/peak_error_adaptation.h](models/peak_error_adaptation.h) | 同じ側・指令条件・ホイール速度域の観測から、次ピークのエネルギー予測誤差を補正する。 |
 | [models/walking_energy_loss.h](models/walking_energy_loss.h) | 自由脚で惰行した実測から、通電しない半周期に減る有効エネルギーやモデル適用範囲を見積もる。 |
@@ -77,7 +60,7 @@
 | ファイル | 役割 |
 | --- | --- |
 | [control_setup/foot_support_start.h](control_setup/foot_support_start.h) | 足ゼロ点・観測の有効性など、足角を必要とする測定の開始条件を画面と本体で共用する。 |
-| [control_setup/run_settings.h](control_setup/run_settings.h) | 開始要求から目標揺動角・電流・入力割合・制動時間を読み取り、設定範囲を確認する。 |
+| [control_setup/run_settings.h](control_setup/run_settings.h) | 測定要求の許容値と通常歩行モードを決定し、立ち上げ時の目標角と運動の確認条件を定める。 |
 
 </details>
 
@@ -106,7 +89,7 @@
 
 | ファイル | 役割 |
 | --- | --- |
-| [experiment_runner.cpp](experiment_runner.cpp) | 測定・制御の状態を進め、IMUの更新、ピーク・ゼロ通過の検出、通電の開始・終了を取りまとめる。 |
+| [experiment_runner.cpp](experiment_runner.cpp) | 測定を進め、ピーク・ゼロ通過・足姿勢を歩行制御に渡し、通電の開始・終了と停止後の再始動を扱う。 |
 | [experiment_runner.h](experiment_runner.h) | 測定状態、半周期ごとの制御状態、推定器・記録器と各制御処理の接続を定義する。 |
 | [lateral_cg_store.cpp](lateral_cg_store.cpp) | 左右重心ずれの設定を本体の不揮発メモリへ保存・復元する。 |
 
@@ -201,7 +184,7 @@
 | [gyro_heading_diagnostic.cpp](gyro_heading_diagnostic.cpp) | ジャイロのバイアスと軸向きを補正し、独立した胴体方位の診断値を更新する。 |
 | [support_transfer_audit.cpp](support_transfer_audit.cpp) | 制御状態を別タスクで読み、支持移行の入力候補と結果を比較用に計算・記録する。 |
 | [support_transfer_audit.h](support_transfer_audit.h) | 比較用の支持移行計算へ渡す状態と、実際のモータ指令から独立した記録処理を定義する。 |
-| [support_transfer_plan.h](support_transfer_plan.h) | 足裏形状と運動状態から通電開始・幅の候補を比較する。支持側の高さの差や円弧の入口を求める幾何計算は、実際の補助入力の判定でも使う。 |
+| [support_transfer_plan.h](support_transfer_plan.h) | 共通の接地幾何と支持移行モデルを使い、開始時点と通電幅の候補を比較・記録するための予測器。 |
 
 </details>
 

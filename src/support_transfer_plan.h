@@ -1,6 +1,6 @@
 #pragma once
 
-#include "walking/walking_energy_policy.h"
+#include "walking/transfer_speed.h"
 
 // Research model. Positive lateral motion is towards the CAD right foot.
 // Camera-positive -> CAD-positive, absolute foot zeros and body alignment
@@ -9,24 +9,6 @@ namespace support_transfer_plan {
 enum class Reason : uint8_t { Invalid, OutsideApproach, Coast, Wait, Drive, Insufficient, Complete };
 enum class Phase : uint8_t { None, Approach, Receiving, Complete };
 enum class Anchor : uint8_t { None, Bracketed, FirstReceiving };
-constexpr float kRad = lateral_energy::kRadPerDeg;
-constexpr float kMassKg = .1997f;
-constexpr float kGravity = 9.80665f;
-constexpr float kCgAboveHingeMm = 37.174236f;
-constexpr float kExitDeg = 1.f;  // Travel into the receiving sole after equality.
-constexpr float kCarryDps = 5.f;  // Trial residual forward-speed target at that event.
-constexpr uint16_t kForecastLimitMs = 150;  // Validity of local motion extrapolation.
-constexpr uint16_t kReplanMs = 25;
-
-struct Input {
-  int side = 0;  // Next body peak, NOT the departing peak or raw motor polarity.
-  float angle_deg = NAN, rate_dps = NAN, accel_dps2 = NAN;
-  float fore_aft_deg = NAN, left_deg = NAN, right_deg = NAN;
-  float left_rate_dps = NAN, right_rate_dps = NAN;
-  float initial_current_ma = NAN, goal_current_ma = NAN;  // Aligned to side.
-  uint16_t cap_ms = 0;
-};
-
 struct Decision {
   Reason reason = Reason::Invalid;
   int side = 0;
@@ -40,80 +22,6 @@ struct Decision {
 };
 
 namespace detail {
-struct Contact {float x_mm, z_mm;};
-struct Pose {Contact left, right; float cg_x_mm, cg_z_mm;};
-
-// Exact bounded minimum of the circular arc reconstructed in
-// tools/analyze_energy_neutral_v14.py. Minimize z_world analytically over
-// the 150 mm circle and the two longitudinal sole edges, skipping mesh scans.
-inline Contact contact(bool right, float foot_pitch_deg, float s, float c) {
-  const float cx = right ? .997904f : -1.002092f;
-  const float a = foot_pitch_deg * kRad, ca = std::cos(a), sa = std::sin(a);
-  const float cy = sa >= 0 ? -28.f : 27.f;
-  const float tangent = 150.f * s / std::sqrt(s*s+c*c*ca*ca);
-  const float u = right ? std::fmax(5.f,std::fmin(45.f,tangent))
-                        : std::fmax(-45.f,std::fmin(-5.f,tangent));
-  const float x = cx + u;
-  const float z = sa*cy + ca*(67.09089f-std::sqrt(22500.f-u*u));
-  return {c*x+s*z, -s*x+c*z};
-}
-
-inline Pose pose(float left, float right, float pitch, float roll) {
-  const float s = std::sin(roll*kRad), c = std::cos(roll*kRad);
-  const float cg = kCgAboveHingeMm*std::cos(pitch*kRad);
-  return {contact(false,left+pitch,s,c), contact(true,right+pitch,s,c), s*cg, c*cg};
-}
-
-inline float gap(const Pose& p) {return p.left.z_mm-p.right.z_mm;}
-inline float height(const Pose& p) {return p.cg_z_mm-std::fmin(p.left.z_mm,p.right.z_mm);}
-
-inline Pose forecast(const Input& in, float ms) {
-  const float t = ms*.001f;
-  return pose(in.left_deg+in.left_rate_dps*t, in.right_deg+in.right_rate_dps*t,
-              in.fore_aft_deg, in.angle_deg+in.rate_dps*t);
-}
-
-inline float withinAngle(float angle, float rate, float bound, float limit_ms) {
-  if (rate == 0) return limit_ms;
-  const float edge = std::copysign(bound,rate);
-  return std::fmin(limit_ms,1000.f*(edge-angle)/rate);
-}
-
-// Nominal event clock uses current body rate and observed foot velocities.
-// Energy feasibility uses observed acceleration separately; even a predicted
-// coast stall can therefore have an event to plan towards. Candidate work
-// does not retime the nominal foot path within this single shooting step.
-inline bool findTransfer(const Input& in, float& crossing_ms, Pose& at, Pose& beyond) {
-  const float exit_ms = 1000.f*kExitDeg/std::fabs(in.rate_dps);
-  float limit = withinAngle(in.angle_deg,in.rate_dps,15.f,kForecastLimitMs);
-  limit = withinAngle(in.left_deg,in.left_rate_dps,20.f,limit);
-  limit = withinAngle(in.right_deg,in.right_rate_dps,20.f,limit);
-  const float last = limit-exit_ms;
-  if (!(last>0) || in.side*gap(forecast(in,0)) >= 0) return false;
-  float lo = 0;
-  while (lo < last) {
-    float hi = std::fmin(lo+kReplanMs,last);
-    if (in.side*gap(forecast(in,hi)) >= 0) {
-      // 25 ms maximum bracket, uncertainty below 0.1 ms for the assumed path.
-      for (unsigned i=0;i<8;++i) {
-        const float mid = .5f*(lo+hi);
-        if (in.side*gap(forecast(in,mid)) >= 0) hi=mid; else lo=mid;
-      }
-      crossing_ms=hi;
-      at=forecast(in,hi);
-      beyond=forecast(in,hi+exit_ms);
-      return in.side*gap(beyond)>0;
-    }
-    lo=hi;
-  }
-  return false;
-}
-
-inline bool validGeometry(const Input& in) {
-  return (in.side==1 || in.side==-1) && std::fabs(in.angle_deg)<=15 &&
-    std::fabs(in.fore_aft_deg)<=10 && std::fabs(in.left_deg)<=20 && std::fabs(in.right_deg)<=20;
-}
-
 inline bool valid(const Input& in, const lateral_energy::CurrentTable& table) {
   return table.ready && std::isfinite(table.tau) && table.tau>0 && validGeometry(in) &&
     std::fabs(in.left_rate_dps)<=180 && std::fabs(in.right_rate_dps)<=180 &&
@@ -122,18 +30,6 @@ inline bool valid(const Input& in, const lateral_energy::CurrentTable& table) {
     in.goal_current_ma>0 && in.cap_ms<=walking_energy_policy::kMaxPulseMs;
 }
 }  // namespace detail
-
-inline float supportGap(float left_deg,float right_deg,float fore_aft_deg,float angle_deg) {
-  return detail::gap(detail::pose(left_deg,right_deg,fore_aft_deg,angle_deg));
-}
-
-// At the inner lateral edge the unconstrained tangent of the circular sole
-// reaches |u|=5 mm (radius 150 mm). This event is defined by the receiving
-// foot's CAD arc and pitch, independently of body ZERO and load sensing.
-inline float arcEntryDeg(int side, float receiving_pitch_deg) {
-  const float ca=std::cos(receiving_pitch_deg*kRad);
-  return side*std::atan2(5.f*ca,std::sqrt(22500.f-25.f))/kRad;
-}
 
 struct Progress {
   void observe(uint32_t peak_ms, uint32_t packet, const Input& in, bool geometry_valid) {
@@ -284,18 +180,11 @@ inline Decision select(const lateral_energy::CurrentTable& current,const Input& 
   }
   const float travel = speed*out.transfer_ms*.001f;
   out.transfer_deg = in.angle_deg+in.side*travel;
-  const auto from = in.side>0 ? at.left : at.right;
-  const auto to = in.side>0 ? at.right : at.left;
+  detail::PivotTransfer handoff;
+  if (!detail::projectPivotTransfer(at,in.side,handoff)) return out;
+  const float retain=handoff.retained_fraction;
+  const float pre_scale=handoff.incoming_j_per_dps2;
   const auto exit_foot = in.side>0 ? beyond.right : beyond.left;
-  const float ax=at.cg_x_mm-from.x_mm, az=at.cg_z_mm-from.z_mm;
-  const float bx=at.cg_x_mm-to.x_mm, bz=at.cg_z_mm-to.z_mm;
-  const float pre_r2=ax*ax+az*az, post_r2=bx*bx+bz*bz;
-  const float alignment=ax*bx+az*bz;
-  if (!(alignment>0 && pre_r2>0 && post_r2>0)) return out;
-  // Inelastic handoff of a point mass: project its incoming tangential
-  // velocity onto the new pivot tangent. Feet/roller inertia and slip omitted.
-  const float retain=std::fmin(1.f,alignment*alignment/(pre_r2*post_r2));
-  const float pre_scale=.5f*kMassKg*pre_r2*1e-6f*kRad*kRad;
   const float ex=beyond.cg_x_mm-exit_foot.x_mm, ez=beyond.cg_z_mm-exit_foot.z_mm;
   const float minimum_exit_j=.5f*kMassKg*(ex*ex+ez*ez)*1e-6f*kRad*kRad*kCarryDps*kCarryDps;
   const float delta_u_j=kMassKg*kGravity*.001f*(detail::height(beyond)-detail::height(at));

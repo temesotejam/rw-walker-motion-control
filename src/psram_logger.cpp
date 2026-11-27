@@ -26,7 +26,7 @@ extern ExperimentRunner runner;
 #include "control_trials/fixed_foot/one_peak_energy_inverse.h"
 #include "models/wheel_work_energy_control.h"
 #include "models/walking_energy_loss.h"
-#include "walking/walking_energy_policy.h"
+#include "walking/wheel_input.h"
 
 static constexpr uint16_t RWLOG_FORMAT_VERSION = 56;
 static constexpr uint32_t RWLOG_FLAG_CRC32 = 1U << 0;
