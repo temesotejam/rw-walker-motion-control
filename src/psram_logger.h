@@ -9,7 +9,6 @@
 #include "solver_audit.h"
 #include "upright_reference.h"
 #include "lateral_cg_energy.h"
-#include "adaptive_lateral_cg.h"
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
 #include "foot_fast_policy.h"
 #endif

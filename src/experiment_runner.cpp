@@ -1,9 +1,9 @@
 #if FOOT_EARLY_TRIAL
-#include "early_clock.h"
+#include "walking_start.h"
 #include "esp_timer.h"
 #endif
-#include "control_angle_reference.h"
-#include "walking_current_direction.h"
+#include "upright_reference.h"
+#include "walking_pulse.h"
 #include "experiment_runner.h"
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
 #include "compact_json_table.h"
@@ -21,17 +21,13 @@
 #include <initializer_list>
 
 #include "upright_pose_guide.h"
-#include "upright_reference_store.h"
 #include "direct_q_solver.h"
-#include "negative_probe_batch.h"
-#include "negative_probe_extended_batch.h"
-#include "positive_current_batch.h"
+#include "work_probes.h"
 #include "one_peak_energy_inverse.h"
 #include "wheel_work_energy_control.h"
-#include "unmodeled_walk_coast.h"
+#include "walking_energy_loss.h"
 #include "foot_span_candidate.h"
-#include "weak_side_assist.h"
-#include "walking_positive_cap.h"
+#include "walking_side_assist.h"
 #include "peak_mpc.h"
 
 namespace {

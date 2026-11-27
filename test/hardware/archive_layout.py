@@ -9,7 +9,7 @@ HEADER = struct.Struct("<8sHHIQ4I9H5I8I")
 BLOCK_BYTES = 16384
 
 
-def pack_archive(path, out, target_free, target_largest, write):
+def pack_archive(path, out_src, target_free, target_largest, write):
     data = Path(path).read_bytes()
     if len(data) < HEADER.size + 4:
         raise ValueError("Truncated RWLOG")
@@ -42,7 +42,7 @@ def pack_archive(path, out, target_free, target_largest, write):
     add_section(metadata, BLOCK_BYTES)
     split = len(blob)
     add_section(samples, BLOCK_BYTES // row_size * row_size)
-    asset = out / "archive.deflate"
+    asset = out_src.parent / "archive.deflate"
     write(asset, blob)
     constants = dict(BlockBytes=BLOCK_BYTES, RunId=h[3], MetadataSize=meta_len,
                      MetadataCrc=zlib.crc32(metadata), SamplesCrc=zlib.crc32(samples),
@@ -51,7 +51,7 @@ def pack_archive(path, out, target_free, target_largest, write):
               "constexpr uint8_t kHeader[] = {" + ",".join(map(str, data[:HEADER.size])) + "};\n")
     for key, value in constants.items():
         header += f"constexpr uint32_t k{key} = {value}u;\n"
-    write(out / "src" / "archive_layout.h", (header + "}\n").encode())
+    write(out_src / "archive_layout.h", (header + "}\n").encode())
     if '"' in asset.as_posix():
         raise ValueError("Assembly asset path must not contain double quotes")
     # An incbin dependency alone is not tracked by every SCons assembler.
@@ -60,6 +60,6 @@ def pack_archive(path, out, target_free, target_largest, write):
            '.section .rodata.motorfree_archive,"a",@progbits\n.balign 4\n'
            '.global replay_blob_start\n.global replay_blob_end\nreplay_blob_start:\n'
            f'.incbin "{asset.as_posix()}"\nreplay_blob_end:\n')
-    write(out / "src" / "archive_blob.S", asm.encode())
+    write(out_src / "archive_blob.S", asm.encode())
     print(f"Archived {len(data)} bytes (run {h[3]}, start {start}, {count} samples); "
           f"{len(blob)} bytes in test-only image; CRC32 {crc:08x}; SHA256 {hashlib.sha256(data).hexdigest()}")

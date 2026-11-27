@@ -1,6 +1,6 @@
 #include "periodic_foot_stream.h"
 #if defined(FOOT_PERIODIC_V38) && FOOT_PERIODIC_V38
-#include "foot_control_range.h"
+#include "foot_calibration.h"
 PeriodicFootStream periodicFeet;
 static String angleJson(float angle) { return isfinite(angle) ? String(angle,3) : String("null"); }
 void PeriodicFootStream::begin() { rows_ = static_cast<Row*>(ps_malloc(capacity*sizeof(Row))); }

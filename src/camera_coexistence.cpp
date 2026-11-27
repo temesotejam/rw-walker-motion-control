@@ -4,12 +4,11 @@
 #include "runtime_diagnostics.h"
 #include "foot_fast_policy.h"
 #include "foot_image_rows.h"
-#include "camera_speed_profile.h"
+#include "camera_sensor_profile.h"
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
 #include "camera_row_overlap.h"
 #endif
 #if defined(FOOT_CAPTURE_V23) && FOOT_CAPTURE_V23
-#include "camera_capture_clock.h"
 #include "soc/lcd_cam_struct.h"
 #endif
 

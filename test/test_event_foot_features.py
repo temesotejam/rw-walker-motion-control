@@ -114,8 +114,10 @@ class CausalFeaturesTest(unittest.TestCase):
         self.assertEqual(features.at(event), before)
 
     def test_available_v37_archives(self):
-        archive = _project.ROOT / "analysis" / "2026-11-17-walking"
-        root = Path(os.environ.get("WALKER_TEST_TRIALS", archive))
+        trial_directory = os.environ.get("WALKER_TEST_TRIALS")
+        if not trial_directory:
+            self.skipTest("Supply the two v37 recordings to test/run.py using --rwlog")
+        root = Path(trial_directory)
         cases = {"46492793": (51, 2), "201405726": (86, 8)}
         for case, (decisions, assists) in cases.items():
             path = root / case / "metadata.json"

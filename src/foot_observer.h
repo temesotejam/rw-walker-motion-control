@@ -2,29 +2,26 @@
 #include "camera_coexistence.h"
 #include "run_control_worker.h"
 #include "psram_string.h"
-#include "foot_zero.h"
+#include "foot_calibration.h"
 #include "white_marker_tracker.h"
 #if defined(FOOT_HISTOGRAM_V32) && FOOT_HISTOGRAM_V32
-#include "foot_latency_histogram.h"
+#include "foot_fast_policy.h"
 #endif
 #if defined(FOOT_ROW_OVERLAP_V24) && FOOT_ROW_OVERLAP_V24
 #include "camera_row_overlap.h"
 #endif
 #if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
-#include "foot_lower_rows.h"
+#include "foot_image_rows.h"
 #endif
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
 #include "foot_image_rows.h"
 #include "foot_fast_policy.h"
 #endif
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
-#include "foot_phase_prediction.h"
-#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
-#include "foot_local_prediction.h"
-#endif
+#include "foot_motion_prediction.h"
 #endif
 #if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
-#include "foot_pose_prediction.h"
+#include "../analysis/cad-shadow/foot_pose_prediction.h"
 #endif
 
 struct FootFrame {

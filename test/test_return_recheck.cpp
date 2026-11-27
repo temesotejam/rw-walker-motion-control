@@ -3,7 +3,7 @@
 #define SUPPORT_TRANSFER_STALL_V3 1
 #define WALKING_RETURN_HISTORY 1
 #include "return_observation_policy.h"
-#include "half_cycle_energy_budget.h"
+#include "walking_return_energy.h"
 #include <cassert>
 
 using namespace return_observation_policy;

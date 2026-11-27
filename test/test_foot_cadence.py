@@ -6,7 +6,7 @@ CODE=r'''
 #include <cassert>
 #include <iostream>
 #include <string>
-#include "foot_latency_histogram.h"
+#include "foot_fast_policy.h"
 int main(){
  FootLatencyHistogram h;
  h.record(100,1000,true);h.record(100,25000,false);h.record(100,51000,true);

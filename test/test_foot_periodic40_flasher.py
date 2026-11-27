@@ -22,11 +22,11 @@ class InstallerTests(unittest.TestCase):
         directory = self.root / "flasher"
         self.page = directory / flasher.PAGE
         self.page.mkdir(parents=True)
-        for file in ("index.html", "manifest.json", *flasher.SCRIPTS):
+        for file in ("index.html", "manifest.json"):
             shutil.copyfile(ROOT / "flasher" / file, directory / file)
         (directory / "foot-periodic40").mkdir()
         shutil.copyfile(ROOT / "flasher/foot-periodic40/index.html", directory / "foot-periodic40/index.html")
-        for file in ("index.html", "manifest.json"):
+        for file in ("index.html", "manifest.json", *flasher.SCRIPTS):
             shutil.copyfile(ROOT / "flasher" / flasher.PAGE / file, self.page / file)
         self.build = self.root / ".pio/build" / flasher.ENVIRONMENT
         self.build.mkdir(parents=True)
@@ -76,11 +76,9 @@ class InstallerTests(unittest.TestCase):
             flasher.prepare(self.root, self.boot_app)
         self.assertEqual(flasher.check(self.root), known)
 
-    def test_packaging_failure_rolls_back_changed_helpers(self):
+    def test_packaging_failure_rolls_back_changed_images(self):
         known = flasher.prepare(self.root, self.boot_app)
-        helper = self.root / "flasher/soft-boot.js"
-        original = helper.read_bytes()
-        helper.write_bytes(original + b"\n// new helper")
+        (self.build / "bootloader.bin").write_bytes(self.image + b"new bootloader")
         (self.build / "firmware.bin").write_bytes(self.application + b"modified build")
         replace = flasher.os.replace
 
@@ -92,13 +90,13 @@ class InstallerTests(unittest.TestCase):
         with patch.object(flasher.os, "replace", side_effect=fail_firmware):
             with self.assertRaises(PermissionError):
                 flasher.prepare(self.root, self.boot_app)
-        helper.write_bytes(original)
         self.assertEqual(flasher.check(self.root), known)
 
     def test_update_retires_previous_images_away_from_cached_installer_urls(self):
         old = [Path("support-transfer/firmware/carry1-manifest.json"),
                Path("support-transfer/firmware/carry1-a03957520afb5c9be6364efa366b592799a9011963c036eadf2d973d059c6d5e.bin"),
-               Path("foot-periodic40/firmware/firmware.bin")]
+               Path("foot-periodic40/firmware/firmware.bin"),
+               *(Path("foot-periodic40", name) for name in flasher.SCRIPTS)]
         for relative in old:
             source = self.root / "flasher" / relative
             source.parent.mkdir(parents=True, exist_ok=True)

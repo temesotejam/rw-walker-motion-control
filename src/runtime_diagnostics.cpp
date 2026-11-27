@@ -1,8 +1,6 @@
 #include "runtime_diagnostics.h"
 #if defined(ARDUINO_ARCH_ESP32)
 #include "diagnostic_journal.h"
-#include "stack_scan_policy.h"
-#include "usb_diag_control.h"
 #include <Arduino.h>
 #include <esp_attr.h>
 #include <esp_system.h>

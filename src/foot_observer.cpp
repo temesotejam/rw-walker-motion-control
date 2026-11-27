@@ -3,9 +3,8 @@
 #if defined(CAMERA_FRAME_READY_V21) && CAMERA_FRAME_READY_V21
 #include "camera_frame_ready.h"
 #endif
-#include "foot_range_diagnostics.h"
-#include "foot_control_range.h"
 #include "foot_calibration_diagnostics.h"
+#include "foot_calibration.h"
 #include "runtime_diagnostics.h"
 #include "foot_angle_estimator.h"
 #include "foot_fast_policy.h"
@@ -13,7 +12,7 @@
 #include "esp_timer.h"
 #include <new>
 #if defined(CAD_SUPPORT_SHADOW) && CAD_SUPPORT_SHADOW
-#include "cad_support.h"
+#include "../analysis/cad-shadow/cad_support.h"
 #endif
 
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20

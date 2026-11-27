@@ -50,7 +50,9 @@ def patch(root, library):
         'policy_header_sha256': hashlib.sha256(policy).hexdigest(),
         'policy': 'updateIMU_both_overloads_and_invSqrt_O2_no_fast_math_IRAM;unchanged_upstream_function_bodies',
     }
-    (root / 'madgwick-build-patch.json').write_text(json.dumps(provenance, indent=2) + '\n')
+    records = root / '.pio/build-records'
+    records.mkdir(parents=True, exist_ok=True)
+    (records / 'madgwick-build-patch.json').write_text(json.dumps(provenance, indent=2) + '\n')
     print('Madgwick hot-code annotations verified:', provenance['patched_header_sha256'])
     return provenance
 

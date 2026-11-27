@@ -23,8 +23,7 @@ FLAGS = (
 
 def main():
     legacy = camera_pipeline.fixture()
-    code = '#include "foot_latency_histogram.h"\n' + legacy
-    code = code.replace(
+    code = legacy.replace(
         "assert(foot_fast_policy::kArchiveCapacity==1280);",
         "assert(foot_fast_policy::kArchiveCapacity==2048 && foot_fast_policy::kWorkerPeriodUs==20000);",
     )

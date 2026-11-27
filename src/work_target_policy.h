@@ -1,5 +1,6 @@
 #pragma once
 #include <cmath>
+
 namespace work_target_policy {
 inline bool valid(float target) { return target==8.f || target==10.f || target==12.f; }
 inline bool packageAllowed(float target,unsigned brake_ms,int current_ma,bool old_adaptation) {
@@ -21,5 +22,14 @@ inline float previousCeiling(float target) { return target+2.f; }
 inline float observationCeiling(float target) { return target==12.f ? 15.f : 13.f; }
 inline unsigned negativeFeedbackIndex(float target,bool assist) {
   return assist && target!=12.f ? 3u : 2u;
+}
+}
+
+namespace work_start_policy {
+inline bool referenceAllowed(bool absolute_work, bool saved_reference_valid) {
+  return absolute_work || saved_reference_valid;
+}
+inline bool ready(bool controller_ready, bool fresh, bool imu_ok, bool motor_ok, bool exporter_ready) {
+  return controller_ready && fresh && imu_ok && motor_ok && exporter_ready;
 }
 }

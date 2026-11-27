@@ -23,10 +23,7 @@ rw_camera_overlap_stats_t rw_camera_lower_overlap_stats(void);
 #endif
 #ifdef __cplusplus
 }
-#include "foot_upper_rows.h"
-#if defined(FOOT_NATIVE_STREAM_V26) && FOOT_NATIVE_STREAM_V26
-#include "foot_lower_rows.h"
-#endif
+#include "foot_image_rows.h"
 namespace camera_row_overlap {
 using Consumer=void(*)(const foot_image_rows::GrayRowView&,uint64_t,uint32_t,void*);
 // Initialize once at boot, before the foot consumer starts; storage outlives it.

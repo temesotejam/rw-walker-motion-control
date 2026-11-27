@@ -32,7 +32,7 @@ def check_page(root):
     if (f"<code>{BUILD_ID}</code>" not in html or f'manifest="manifest.json{VERSION_QUERY}"' not in html
             or html.count("<esp-web-install-button ") != 1):
         raise ValueError(f"Installer page does not identify {BUILD_ID}")
-    if any(f'src="{name}"' not in html for name in SCRIPTS):
+    if any(f'src="{name}"' not in html or not (directory / name).is_file() for name in SCRIPTS):
         raise ValueError("Installer page is missing a helper script")
     for filename, prefix in (("index.html", ""), ("foot-periodic40/index.html", "../")):
         redirect = (flasher / filename).read_text(encoding="utf-8")
@@ -101,9 +101,6 @@ def check(root=ROOT):
     directory = check_page(root)
     parts = {name: (directory / "firmware" / name).read_bytes() for name in PARTS}
     validate_parts(parts)
-    for name in SCRIPTS:
-        if (directory / name).read_bytes() != (directory.parent / name).read_bytes():
-            raise ValueError(f"Packaged helper differs from source: {name}")
     return {name: hashlib.sha256(data).hexdigest() for name, data in parts.items()}
 
 
@@ -114,6 +111,7 @@ def retire_previous_installers(root):
     old_files = [Path(PAGE, "firmware", "carry1-manifest.json"),
                  Path(PAGE, "firmware", "carry1-a03957520afb5c9be6364efa366b592799a9011963c036eadf2d973d059c6d5e.bin")]
     old_files.extend(Path("foot-periodic40", "firmware", name) for name in PARTS)
+    old_files.extend(Path("foot-periodic40", name) for name in SCRIPTS)
     present = [relative for relative in old_files if (public / relative).is_file()]
     if present:
         retired = root / ".pio" / "retired-installers"
@@ -131,8 +129,7 @@ def prepare(root=ROOT, boot_app=None):
     parts = {name: (boot_app or boot_app_path()).read_bytes() if name == "boot_app0.bin"
              else (build / name).read_bytes() for name in PARTS}
     validate_parts(parts)
-    files = {name: (directory.parent / name).read_bytes() for name in SCRIPTS}
-    files.update({f"firmware/{name}": data for name, data in parts.items()})
+    files = {f"firmware/{name}": data for name, data in parts.items()}
     # Validate all inputs before changing the staged installer. Replace each
     # completed file atomically and restore earlier changes on a failed copy.
     (directory / "firmware").mkdir(exist_ok=True)

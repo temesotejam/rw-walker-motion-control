@@ -15,13 +15,10 @@
 #include "control_work_profile.h"
 #include "control_latency.h"
 #include "autonomous_target.h"
-#include "autonomous_input_percent.h"
-#include "autonomous_input_current.h"
-#include "autonomous_brake_limit.h"
+#include "autonomous_settings.h"
 #include "work_target_policy.h"
 #include "upright_reference.h"
 #include "lateral_cg_energy.h"
-#include "adaptive_lateral_cg.h"
 
 // One permanent controller owner, including idle and calibration. HTTP sends
 // commands and consumes POD snapshots; it never calls the live runner/IMU.

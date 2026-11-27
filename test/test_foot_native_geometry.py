@@ -16,7 +16,6 @@ CPP = r'''
 #include <iostream>
 #include <random>
 #include "foot_image_rows.h"
-#include "foot_upper_rows.h"
 #include "white_marker_tracker.h"
 #ifdef _WIN32
 #include <windows.h>

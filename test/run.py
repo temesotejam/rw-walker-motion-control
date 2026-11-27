@@ -1,5 +1,6 @@
 """Run host-side checks for the active walking firmware and its offline tools."""
 import argparse
+from importlib.util import find_spec
 import os
 from pathlib import Path
 import shutil
@@ -26,6 +27,15 @@ def main():
     if not node or not shutil.which("g++"):
         parser.error("Put g++ and Node.js on PATH, or specify an installed Node.js executable with --node.")
     logs = [path.resolve(strict=True) for path in args.rwlog]
+    if not logs:
+        downloads = Path.home() / "Downloads"
+        recordings = [downloads / "energy_control_autonomous_run_1_46492793.rwlog",
+                      downloads / "energy_control_autonomous_run_2_201405726.rwlog"]
+        if all(path.is_file() for path in recordings):
+            logs = recordings
+            print("Using the two v37 recordings found in Downloads.", flush=True)
+        else:
+            print("Optional v37 archive replay skipped: supply both local recordings with --rwlog.", flush=True)
     with tempfile.TemporaryDirectory(prefix="walker-host-") as space:
         tmp = Path(space)
         py = [sys.executable, "-B"]
@@ -38,6 +48,10 @@ def main():
             converted_trials.append(converted)
         event_env = dict(os.environ, WALKER_TEST_TRIALS=str(trial_root)) if logs else None
         checked(*py, "-m", "unittest", "discover", "-s", "test", "-p", "test_event_foot*.py", env=event_env)
+        if find_spec("numpy"):
+            checked(*py, "-m", "unittest", "discover", "-s", "test/simulator", "-t", "test")
+        else:
+            print("Simulator checks skipped: install NumPy to run them.", flush=True)
         for test in ("energy_admission_runner_v19", "energy_admission_metadata_v19", "half_cycle_energy_budget",
                      "foot_pipeline", "foot_native_geometry", "foot_cadence", "rwlog_v46_converter",
                      "foot_periodic40_flasher", "observed_transfers", "support_transfer_audit",
@@ -58,7 +72,7 @@ def main():
             extra = [fixture] if test in ("runtime_download", "runtime_export_retry") else []
             checked(node, ROOT / "test" / f"test_{test}.js", *extra)
         for converted in converted_trials:
-            checked(*py, ROOT / "tools/replay_periodic_foot.py", tmp / "periodic_foot.exe", converted)
+            checked(*py, ROOT / "analysis/measurement/replay_periodic_foot.py", tmp / "periodic_foot.exe", converted)
         for rwlog in logs:
             checked(node, ROOT / "test/test_runtime_download.js", rwlog, "--recorded")
     print("Active host checks passed.")

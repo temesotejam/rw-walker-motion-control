@@ -1,5 +1,4 @@
 #include "work_target_policy.h"
-#include "work_start_policy.h"
 #include "web_ui.h"
 #include "periodic_foot_stream.h"
 #if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
@@ -9,7 +8,6 @@
 #include <freefoot_runtime_web.h>
 #include "runtime_page_encoding.h"
 #include "runtime_diagnostics.h"
-#include "foot_range_diagnostics.h"
 #include "foot_calibration_diagnostics.h"
 #include "foot_support_start.h"
 #include <WiFi.h>

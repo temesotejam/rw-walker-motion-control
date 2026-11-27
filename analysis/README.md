@@ -1,24 +1,32 @@
-# 研究用データの入口
+# 実測データと歩行制御の研究
 
-| 場所 | 残した理由 |
+新しい試行を受け取ったら、[歩行シミュレータ](simulator/simulate.py) で胴体・足の応答を評価し、[walk7の入力再生](simulator/replay_walk7.py) で同じ観測から実機の判定を再現できる。ここで比較できる範囲は、新しい入力を最初に選ぶ時点までの実測軌道に限られる。入力を変えた後の歩幅・進行方向は別の実測で確認する。
+
+## 新しいRWLOGを評価する
+
+リポジトリのルートから実行する。シミュレータはPython 3とNumPyを使う。実機と同じC++の判定を再生するには `g++` もPATHに必要。
+
+```powershell
+$raw = "$env:USERPROFILE/Downloads"
+$trial = "$raw/energy_control_autonomous_run_1_44453706.rwlog"
+python -B analysis/simulator/simulate.py --raw-dir $raw --evaluate-run $trial --json-out analysis/local/evaluation.json
+python -B analysis/simulator/replay_walk7.py --after-first --event-allocation $trial
+```
+
+最初のPythonコマンドでは `--raw-dir` から参照8走（69501075、224021399、69728952、205922296、50784949、52400264、45820669、239670034）を読み、評価用の試行を別に指定する。CRC検査と展開は一時ディレクトリで行う。続く入力再生には指定したRWLOGだけを使う。対象は必要な電流・姿勢・足の時系列を保存した版。全体の再現には上記8走と33125639、216664125を使う。`--part floor` は同梱した床上の計測表だけで実行できる。[シミュレータの評価方法・モデルの仮定](https://github.com/temesotejam/rw-walker-motion-control/blob/481a221e22352d8744a6accf8d1ce4670b6e9bcc/analysis/2026-11-22-walking-simulator/README.md) · [walk7再生の実測結果](https://github.com/temesotejam/rw-walker-motion-control/blob/481a221e22352d8744a6accf8d1ce4670b6e9bcc/analysis/2026-11-25-walk6-replay/README.md)
+
+## 調べたい現象から選ぶ
+
+| 見たいもの | 入口 |
 |---|---|
-| [44453706の実測図](2026-11-25-walk6-logfix1-trial/44453706-motion.png) | 静止後の2回の再始動に対する胴体・左右の足の応答と、2回目から3周期後に再停止するまでの記録。 |
-| [38871004の実測図](2026-11-25-walk6-logfix1-trial/38871004-motion.png) | walk6-logfix1での足の振りの左右差と、3回の補助後に中心を浅く越えて揺り戻した終盤の記録。 |
-| [2026-11-25-walk5-logfix1-trial](2026-11-25-walk5-logfix1-trial/) | 試行34374950で右足の振りが小さく、最後の補助後に中心手前で折り返したときの胴体角と左右足角。 |
-| [補助後の再通電と再始動の再生](2026-11-25-walk6-replay/) | walk7で直近の失速時に選ぶ時刻・幅をwalk6と比較。walk6で静止後に再始動する条件と、試行33863489の[実際の胴体角と足角](2026-11-25-logfix4-trial/33863489-motion.png)も参照できる。 |
-| [2026-11-20-ab-trials](2026-11-20-ab-trials/) | 小歩幅・turn3で右のピークから左へ戻れなかった2走。先行8走の右向き入力・到達ピークとの比較と、新しい到達予測の検証。 |
-| [2026-11-20-smallstep-baseline](2026-11-20-smallstep-baseline/) | 小歩幅で歩いたv14の2走の入力を照合し、直近の2走で最初に入力が変わる時点を比較。次の実走の開始姿勢・実ZEROの集計を含む。 |
-| [2026-11-20-turn2-trial](2026-11-20-turn2-trial/) | 数秒で停止したturn2の2走行。床上の前進量、左への戻りの減速、実際の入力とturn3が選ぶ仕事・通電幅を照合。 |
-| [2026-11-20-turn1-trial](2026-11-20-turn1-trial/) | 52400264の実歩行で両足の前進・曲がり・停止を照合。turn2の操舵と左への戻り補助を6走行で再生。 |
-| [2026-11-20-turn-detection](2026-11-20-turn-detection/) | 5走行の実測で遊脚の位相を確認。turn1が旋回を確定できる時刻、元の指令幅を再現できるか、成立した実入力候補を照合。 |
-| [2026-11-20-carry2-turn](2026-11-20-carry2-turn/) | carry2の実歩行50784949。右足の前振れが小さい区間、床格子に対する左右の前進、相対方位と実通電を照合。 |
-| [2026-11-20-carry1-trials](2026-11-20-carry1-trials/) | v39-carry1の2試行。床格子に対する交互前進と停止、足と胴体の角度、救済通電後の折り返し、carry2の比較。 |
-| [2026-11-20-webfix3-walking](2026-11-20-webfix3-walking/) | v39-webfix3で実測した2試行。床に対する前進、救済入力と折返し、[支持切替後のエネルギー予測とIMU実測](2026-11-20-webfix3-walking/receiving-replay.md)を比較。 |
-| [2026-11-20-support-transfer](2026-11-20-support-transfer/) | v37の2試行でv39の開始時刻と通電幅の候補を再計算した結果。`half_cycles.csv` は各半周期、`summary.json` は試行別の件数と入力ファイルのハッシュ。[予測と実測の読み方](../docs/SUPPORT_TRANSFER_V39.md) |
-| `2026-11-19-event-replay/` | v37の実測2試行の戻り補助10件を、判断時点の足姿勢・仕事・後続イベントで比較した基準結果。再現手順は[解析報告](../docs/EVENT_FOOT_ENERGY_REPLAY_20261119.md)にある。 |
-| `2026-11-17-walking/46492793`、`201405726` | 上記2試行のローカル展開データ。足角の制御受取時刻、実ZERO、反対側ピークを確認できる。 |
-| `2026-11-17-walking/38091117`、`117625571` と `2026-11-13-walking/172594684`、`294107213` | 過去試行との歩容・停止・足振れ比較用。ファームとカメラ条件は各試行の `metadata.json` で確認する。 |
-| `2026-11-18-periodic40/` | v38を直立待機させて、Web画面の有無・設置姿勢と定周期の足角発行を比較したローカル記録。 |
-| `2026-11-11-walking/cad_support_geometry.*`、`2026-11-13-walking/v14_energy_neutral*` | 足姿勢によって支持位置と位置エネルギーの谷が動くという仮説を検討するためのローカル幾何計算結果。[足裏の計算](2026-11-11-walking/analyze_cad_support.py)と[中立点の計算](../tools/analyze_energy_neutral_v14.py)で提供CADから再生成できる。重心・床・足の仮定は[計算の根拠](../docs/ENERGY_NEUTRAL_V14.md)に記載。 |
+| 支持移行に向けた通電の開始・幅と、実測された到達点 | [予測器の再生](support/replay_support_transfer.py)、[実測の採点](support/score_observed_transfers.py)、[操作手順](../docs/SUPPORT_TRANSFER_V39.md) |
+| 足の出方・戻り方と半周期の不足仕事 | [イベントごとのエネルギー再生](support/replay_event_foot_energy.py) |
+| 画像取得、足角度の計算・発行、制御への到着 | [歩行中の足角度計測](measurement/audit_walking_foot_measurements.py)、[時刻の内訳](measurement/analyze_foot_latency.py) |
+| 実測ログ上での定周期足角度 | [定周期推定器の再生](measurement/replay_periodic_foot.py) |
+| 足を振ったときの足裏形状とエネルギー的な中立点 | [中立点の計算](measurement/analyze_energy_neutral_v14.py)、[CADの診断実装](cad-shadow/)、[形状・重心の仮定](../docs/ENERGY_NEUTRAL_V14.md) |
 
-元のRWLOG・動画・CADは提供時の場所にある。ローカル展開データが必要な場合は `python tools/convert_rwlog_to_csv.py <元ログ> --out <展開先>` で作成できる。退避した試行は[整理前の保管先](../README.md#旧版実験データの保管先)から参照できる。
+## 過去の試行を再現する
+
+整理時点でGitに保存していた試行別の解析コード、図表、CSV、旧版の再現手順は日付ごとに確認できる。[過去の研究一覧](https://github.com/temesotejam/rw-walker-motion-control/tree/481a221e22352d8744a6accf8d1ce4670b6e9bcc/analysis) · [試行44453706と38871004の図](https://github.com/temesotejam/rw-walker-motion-control/tree/481a221e22352d8744a6accf8d1ce4670b6e9bcc/analysis/2026-11-25-walk6-logfix1-trial)
+
+このPCの整理前コピーは `C:\Users\arika\Desktop\walker-backups\rw-walker-motion-control_20261127_before_project_cleanup_481a221\project` にある。Git管理外で旧作業ツリーに展開していたデータもコピーしてある。元のRWLOGと動画は提供時の場所にあり、新しい変換結果や図は `analysis/local/` に保存できる。

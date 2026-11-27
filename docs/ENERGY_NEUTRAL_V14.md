@@ -13,7 +13,7 @@
 
 ## 今回計算できたもの
 
-出典は提供GLB `rw_walker_uploaded_assembly.glb`、SHA256 `63be3da5c06b9f198a3d6409b4b0a68ead9c2a638d87f06e7914c40b13693884`。既存の `tools/generate_cad_support.py` と `analysis/2026-11-11-walking/analyze_cad_support.py` と同じ上部X軸ヒンジを用いる。ヒンジのGLB座標はY=-17.578536mm、Z=82.825357mm。足メッシュは05/07。
+出典は提供GLB `rw_walker_uploaded_assembly.glb`、SHA256 `63be3da5c06b9f198a3d6409b4b0a68ead9c2a638d87f06e7914c40b13693884`。既存の `analysis/cad-shadow/generate_cad_support.py` と、当時のCAD支持位置の解析で使った上部X軸ヒンジを用いる。ヒンジのGLB座標はY=-17.578536mm、Z=82.825357mm。足メッシュは05/07。
 
 全質量を機体固定の一点へ集中させる仮定を置き、質量0.1997kg、重力9.80665m/s²、基準重心高さH=120mmを使った。ヒンジから重心への位置は仮にX=Y=0とし、Zは `H-support(neutral)=37.174236mm` へ合わせる。足と脚の移動による重心移動は未同定である。
 
@@ -55,7 +55,7 @@ theta_E = argmin_theta U
 
 位置エネルギー増加の数値は、足をその姿勢に固定して谷から機構ゼロへ動かす場合の値である。実際には足が戻る間に地形そのものが変わるため、この表のJをそのまま必要モータ仕事にしない。
 
-図はローカル成果物 `analysis/2026-11-13-walking/v14_energy_neutral.png`、粗いメッシュとの比較は `v14_energy_neutral_mesh_comparison.png`。数値と全仮定は `v14_energy_neutral.json`。再現にはNumPy、Matplotlib、上記の提供GLBを使う。このPCではリポジトリのルートで `python tools/analyze_energy_neutral_v14.py` を実行する。別の場所に置いたGLBは `--source <GLBのパス>` で指定できる。[計算スクリプト](../tools/analyze_energy_neutral_v14.py)
+図はローカル成果物 `analysis/local/v14_energy_neutral.png`、粗いメッシュとの比較は `v14_energy_neutral_mesh_comparison.png`。数値と全仮定は `v14_energy_neutral.json`。再現にはNumPy、Matplotlib、上記の提供GLBを使う。このPCではリポジトリのルートで `python analysis/measurement/analyze_energy_neutral_v14.py` を実行する。別の場所に置いたGLBは `--source <GLBのパス>` で指定できる。[計算スクリプト](../analysis/measurement/analyze_energy_neutral_v14.py)
 
 ## 経験的エネルギー制御へ組み込む条件
 

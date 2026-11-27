@@ -62,16 +62,11 @@ def fixture():
 #include <sys/time.h>
 #include "foot_image_rows.h"
 #include "foot_fast_policy.h"
-#include "camera_speed_profile.h"
-#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
-#include "camera_native_skip_profile.h"
-#endif
-#include "foot_zero.h"
+#include "camera_sensor_profile.h"
+#include "foot_calibration.h"
 #include "white_marker_tracker.h"
 #include "foot_angle_estimator.h"
-#include "foot_phase_prediction.h"
-#include "foot_local_prediction.h"
-#include "foot_control_range.h"
+#include "foot_motion_prediction.h"
 // Report a failed host check to the caller. The Windows CRT assertion dialog
 // can otherwise leave an unattended test waiting on the user's desktop.
 #undef assert

@@ -24,8 +24,8 @@ PREFIX = r'''
 #include "settled_walking_restart.h"
 #include "periodic_foot_state.h"
 #include "wheel_cycle_guard.h"
-#include "walking_current_direction.h"
-#include "autonomous_input_current.h"
+#include "walking_pulse.h"
+#include "autonomous_settings.h"
 #include "peak_error_adaptation.h"
 #include <cstdio>
 #include <cstdlib>

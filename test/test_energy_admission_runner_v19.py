@@ -1,6 +1,6 @@
 """Exercise real v19 optional support admission and retained ZERO execution.
 
-Uses the v18 fixture's real selector/dispatch/start/timer/stop/finalizer. The
+Uses the production selector, dispatch, start, timer, stop and finalizer. The
 transport and crossing-event producer remain doubles; the fore/aft guard is
 given real identity-quaternion reference observations for this energy test.
 """
@@ -9,12 +9,11 @@ import re
 import subprocess
 import tempfile
 
-ROOT = Path(__file__).resolve().parents[1]
-admission_source_text = (ROOT/'test/fixtures/energy/test_energy_transfer_runner_v18.py').read_text(encoding='utf8')
-admission_fixture_prefix, admission_fixture_tail = admission_source_text.split("\nfixture += r'''\n", 1)
-exec(compile(admission_fixture_prefix, str(ROOT/'test/fixtures/energy/test_energy_transfer_runner_v18.py'), 'exec'), globals())
-fixture = '#include "energy_admission_v19.h"\n#include "fore_aft_motion_guard.h"\n#if WALKING_RIGHT_ARRIVAL\n#include "right_arrival_energy.h"\n#endif\n' + fixture
-fixture += admission_fixture_tail.split('static void ready18(', 1)[0]
+from _project import ROOT
+from fixtures.energy.runner import build_runner_fixture, runner
+
+fixture = build_runner_fixture()
+fixture = '#include "walking_energy_policy.h"\n#include "fore_aft_motion_guard.h"\n#if WALKING_RIGHT_ARRIVAL\n#include "right_arrival_energy.h"\n#endif\n' + fixture
 # Preserve the production emergency-stop pulse path while omitting unrelated
 # LEDs, capture and logger status I/O from this host double.
 fixture = re.sub(r'(enum class ExperimentState\s*\{)([^}]*)(\};)',

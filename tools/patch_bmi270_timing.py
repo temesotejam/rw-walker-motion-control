@@ -52,7 +52,9 @@ def patch(root, library):
                 'patched_sha256': hashlib.sha256(expected).hexdigest(),
                 'header_sha256': hashlib.sha256(header).hexdigest(),
                 'policy': 'STATUS_0x03_selective_DATA_reads;boot_M5GFX_then_exclusive_IDF_interrupt_I2C1;unchanged_conversion_ODR_filters'}
-    (root/'bmi270-build-patch.json').write_text(json.dumps(manifest,indent=2)+'\n')
+    records = root / '.pio/build-records'
+    records.mkdir(parents=True, exist_ok=True)
+    (records / 'bmi270-build-patch.json').write_text(json.dumps(manifest,indent=2)+'\n')
     print('V46u BMI270 transport patch verified:', manifest['patched_sha256'])
     return manifest
 

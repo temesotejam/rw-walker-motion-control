@@ -11,16 +11,13 @@ import subprocess
 import tempfile
 import zlib
 
-import _project  # Add the project tools directory for direct test runs.
+from _project import ROOT
 import convert_rwlog_to_csv as converter
+from fixtures.energy.metadata import build_metadata_fixture, logger, parse
 from fixtures.runtime_rwlog import write_fixture
 
-ROOT = Path(__file__).resolve().parents[1]
-base = ROOT / 'test/fixtures/energy/test_return_energy_metadata_v18.py'
-context = {'__file__': str(base)}
-exec(compile(base.read_text(encoding='utf8').split('\nwith tempfile.TemporaryDirectory', 1)[0], str(base), 'exec'), context)
-parse = context['context']['parse']
-fixture = '#include "fore_aft_motion_guard.h"\n#include "energy_admission_v19.h"\n#include "receiving_arc_aid.h"\n#if WALKING_RETURN_HISTORY\n#include "return_crossing_work.h"\n#endif\n#if WALKING_RIGHT_ARRIVAL\n#include "right_arrival_energy.h"\n#endif\n' + context['fixture']
+fixture = build_metadata_fixture()
+fixture = '#include "fore_aft_motion_guard.h"\n#include "walking_energy_policy.h"\n#include "receiving_arc_aid.h"\n#if WALKING_RETURN_HISTORY\n#include "return_crossing_work.h"\n#endif\n#if WALKING_RIGHT_ARRIVAL\n#include "right_arrival_energy.h"\n#endif\n' + fixture
 fixture = fixture.replace('for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u})',
                           'for(unsigned branch:{0u,15u,19u,20u,21u,22u,23u,24u})')
 fixture = '#include "export_protocol.h"\n#include "foot_fast_policy.h"\n#if WALKING_RETURN_HISTORY\n#include "return_observation_policy.h"\n#endif\n' + fixture
@@ -212,8 +209,8 @@ fixture = fixture.replace('const bool small_step=false;', '''
   const bool small_step=argc>1 && std::string(argv[1])=="small-step";''')
 fixture = fixture.replace('const bool return_energy_mode=true;', 'const bool return_energy_mode=!small_step;')
 fixture = fixture.replace('early_energy_mode=EARLY_ENERGY_MAIN;', 'early_energy_mode=EARLY_ENERGY_MAIN && !small_step;')
-profile_line = next(line for line in context['logger'].splitlines() if 'String(walking_trial::name(walking_profile_))' in line)
-profile_flags = context['logger'].split('  const bool transfer_recheck =', 1)[1].split('#if WALKING_SMALL_STEP_AB', 1)[0]
+profile_line = next(line for line in logger.splitlines() if 'String(walking_trial::name(walking_profile_))' in line)
+profile_flags = logger.split('  const bool transfer_recheck =', 1)[1].split('#if WALKING_SMALL_STEP_AB', 1)[0]
 fixture = fixture.replace('json+="{";', 'json+="{";\n#if WALKING_SMALL_STEP_AB\n'
                           '  auto walking_profile_=small_step ? walking_trial::Profile::SmallStep : walking_trial::forRun(true,8.f,0.f);\n'
                           '#if WALKING_RETURN_HISTORY\n  if(runner.history_trial) walking_profile_=walking_trial::Profile::CarryHistory;\n#endif\n'

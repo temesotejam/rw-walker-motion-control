@@ -1,7 +1,7 @@
 #include "foot_angle_estimator.h"
 
 #include "foot_tracking_config.h"
-#include "foot_calibration_table.h"
+#include "foot_calibration.h"
 #include <math.h>
 
 FootAngleEstimate estimateFootAngle(

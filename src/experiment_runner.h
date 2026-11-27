@@ -23,14 +23,11 @@
 #include <Arduino.h>
 
 #include "beta_phase_controller.h"
-#include "beta_turn_fast_controller.h"
 #include "config.h"
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
 #include "foot_fast_policy.h"
 #endif
-#include "autonomous_input_percent.h"
-#include "autonomous_input_current.h"
-#include "autonomous_brake_limit.h"
+#include "autonomous_settings.h"
 #include "lateral_energy_control.h"
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
 #include "walking_energy_policy.h"
@@ -38,46 +35,37 @@
 #include "psram_archive.h"
 #endif
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
-#include "walking_energy_policy_v15.h"
 #if WALKING_RECOVERY_V6
 #include "settled_walking_restart.h"
 #endif
 #include "walking_return_energy.h"
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
-#include "half_cycle_energy_budget.h"
 #include "return_observation_policy.h"
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
-#include "energy_admission_v19.h"
 #include "fore_aft_motion_guard.h"
 #endif
 #endif
 #endif
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
-#include "energy_pulse_completion.h"
+#include "walking_pulse.h"
 #endif
 #endif
 #include "wheel_work_energy_control.h"
 #include "walking_energy_loss.h"
 #include "low_peak_energy.h"
-#include "wheel_speed_balance.h"
-#include "gradual_start.h"
+#include "wheel_cycle_guard.h"
+#include "walking_start.h"
 #include "foot_balance_adaptive.h"
 #include "foot_energy_balance.h"
 #include "foot_phase_observer.h"
 #include "foot_phase_cap.h"
-#include "foot_fullstride_observer.h"
 #include "foot_span_control.h"
-#include "weak_side_assist.h"
-#include "positive_left_boost.h"
+#include "walking_side_assist.h"
 #include "tilt_priority.h"
-#include "positive_sway_probe.h"
-#include "wheel_cycle_guard.h"
 #include "target12_state_work.h"
 #include "peak_error_adaptation.h"
 #include "upright_reference.h"
 #include "lateral_cg_energy.h"
-#include "adaptive_lateral_cg.h"
-#include "side_energy_feedback.h"
 #include "control_math_cache.h"
 #include "imu_manager.h"
 #include "log_types.h"
@@ -86,12 +74,11 @@
 #include "psram_logger.h"
 #include "roller485_manager.h"
 #include "realtime_code.h"
-#include "tilt_stop.h"
+#include "fore_aft_motion_guard.h"
 
 #include "experiment_status.h"
-#include "gyro_heading_diagnostic.h"
+#include "gyro_steering.h"
 #include "stall_rescue.h"
-#include "early_motion_gate.h"
 #ifndef FOOT_EARLY_TRIAL
 #define FOOT_EARLY_TRIAL 0
 #endif
@@ -101,15 +88,11 @@
 #if ANGLE_EARLY_TRIAL && !FOOT_EARLY_TRIAL
 #error ANGLE_EARLY_TRIAL requires FOOT_EARLY_TRIAL
 #endif
-#include "long_foot_balance.h"
 #include "negative_cap_recovery.h"
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
-#include "foot_phase_prediction.h"
+#include "foot_motion_prediction.h"
 #include "foot_support_policy.h"
 #include "foot_support_deceleration.h"
-#if defined(FOOT_SUPPORT_LOCAL) && FOOT_SUPPORT_LOCAL
-#include "foot_support_pose.h"
-#endif
 #endif
 
 class ExperimentRunner {

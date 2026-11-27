@@ -12,7 +12,7 @@ Node.js が PATH にない場合は `--node "C:\path\to\node.exe"` で指定で�
 python -B test/run.py --rwlog "C:\Users\arika\Downloads\energy_control_autonomous_run_1_46492793.rwlog" --rwlog "C:\Users\arika\Downloads\energy_control_autonomous_run_2_201405726.rwlog"
 ```
 
-この2試行を指定すると、実測ログの CRC を検査して CSV とメタデータに変換し、イベント時点までに制御側へ届いていた足角度と、40 Hz の足角度出力を再生します。変換先は一時ディレクトリです。指定しない場合、イベントと足角度の照合には `analysis/2026-11-17-walking/` にある同じ2試行の変換済みデータを使います。データがそろっていない場合はこの照合だけをスキップします。
+この2試行を指定すると、実測ログの CRC を検査して CSV とメタデータに変換し、イベント時点までに制御側へ届いていた足角度と、40 Hz の足角度出力を再生します。変換先は一時ディレクトリです。引数を省略した場合も、ユーザーの `Downloads` に上記の2ファイルがそろっていれば自動で使います。見つからなければ実測ログ照合をスキップした旨を表示します。
 
 | 対象 | 確認すること |
 | --- | --- |
@@ -22,7 +22,9 @@ python -B test/run.py --rwlog "C:\Users\arika\Downloads\energy_control_autonomou
 | v39支持移行予測 | CAD上の移行点、移行後のエネルギー余裕、電流の立ち上がり、観測用タスクとログ出力。映像照合では計算結果の到着時刻と実際の支持足・方向を検査する。 |
 | 測定と書き込み画面 | Web の表示と開始条件、RWLOG の再取得と CRC、旧形式の変換、書き込み完了の表示と配布物の整合 |
 
-`fixtures/camera_pipeline.py` と `fixtures/arduino/` は、現行ソースを PC 上の模擬カメラ・Arduino 環境で動かすために使います。`fixtures/energy/` には、v19 の判定・記録テストが読み込む既存のシナリオが入っています。ファイル名の旧版番号はシナリオの由来を示します。
+`fixtures/camera_pipeline.py` と `fixtures/arduino/` は、現行ソースを PC 上の模擬カメラ・Arduino 環境で動かすために使います。`fixtures/energy/` の `runner_fixture.cpp` はセンサーと駆動系を、`metadata_fixture.cpp` は測定レコードを模擬します。隣の Python モジュールは、各テンプレート内の目印に本体ソースから読み取った制御・記録処理を差し込みます。
+
+NumPy をインストールした環境ではシミュレーターの回帰試験も実行します。個別に実行するコマンドは `python -B -m unittest discover -s test/simulator -t test` です。
 
 Web のログ取得テストでは `fixtures/runtime_rwlog.py` が変換ツールと同じ v56 ヘッダー・サンプル定義から、768件の架空の足観測と模擬ホイール応答を含む入力を毎回生成します。中断位置は 8192 バイトです。再開後は全バイト・CRC・CSV の行数を照合します。
 
@@ -31,7 +33,7 @@ Web のログ取得テストでは `fixtures/runtime_rwlog.py` が変換ツー�
 専用Wi-Fiで機体に接続し、`--source` にそのアダプターのIPv4アドレスを指定します。
 
 ```powershell
-python -B tools/probe_http_stability.py --source 192.168.4.2 --seconds 180 --min-bytes 2200000 --heap
+python -B test/verification/probe_http_stability.py --source 192.168.4.2 --seconds 180 --min-bytes 2200000 --heap
 ```
 
 約2秒ごとに状態とモータ指令を読み、同じ起動番号であることを確認しながら、測定ページと停止中のカメラ画像を取得します。画像はRWLOGと同じ4 KiB単位の送信処理を通り、各ブロックと画像全体のCRCが一致した分だけを転送量に数えます。`--heap` は5秒ごとに内部RAMの残量を記録します。結果には最初と最後の状態取得時刻、成功回数、失敗した処理と時刻が含まれます。歩行終了後のログ確定から実ファイルの保存までは、別途歩行試行で確認します。

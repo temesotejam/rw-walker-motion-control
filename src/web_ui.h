@@ -5,7 +5,6 @@
 #include "foot_observer.h"
 #include "immutable_export.h"
 #include "export_transport_recovery.h"
-#include "wifi_transport_restart.h"
 
 class WebUi {
  public:

@@ -8,7 +8,6 @@ image to append archived rows at their recorded times. Export normally, then
 POST /clear for another measurement. Only the run ID and CRC vary across runs.
 """
 import argparse
-import hashlib
 from pathlib import Path
 import re
 
@@ -16,8 +15,6 @@ import re
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / ".pio" / "motorfree-fixture"
 SKIP = {"main.cpp", "roller485_manager.cpp", "experiment_runner.cpp", "imu_manager.cpp"}
-RETIRED = {"runtime_web.h", "rwlog_download_diag.cpp", "rwlog_download_diag.h",
-           "tcp_transport_debug.cpp", "tcp_transport_debug.h", "camera_serial_debug.cpp", "camera_serial_debug.h"}
 
 
 def write_changed(path, data):
@@ -34,15 +31,14 @@ def prepare(archive=None, target_free=22000, target_largest=12000, measure=False
     if archive:
         out = ROOT / ".pio" / ("motorfree-measure" if measure else "motorfree-replay")
         suffix = b"-measure-bench" if measure else b"-archive-bench"
-    files = {p.name for p in (ROOT / "src").iterdir() if p.is_file()} - SKIP - RETIRED
-    out_src = out / "src"
-    for name in RETIRED:
-        prior = out_src / name
-        if prior.is_file():
-            backup = out / "retired-src" / hashlib.sha256(prior.read_bytes()).hexdigest() / name
-            backup.parent.mkdir(parents=True, exist_ok=True)
-            prior.replace(backup)
-    unexpected = {p.name for p in out_src.glob("*") if p.is_file()} - files - {"main.cpp"}
+    firmware = ROOT / "src"
+    files = {p.relative_to(firmware).as_posix() for p in firmware.rglob("*") if p.is_file()} - SKIP
+    # The camera HAL refers back to ../../src/. Mirror both source trees under
+    # one root so older benches' src/ copies cannot enter this build.
+    stage = out / "staged"
+    out_src = stage / "src"
+    staged = {p.relative_to(out_src).as_posix() for p in out_src.rglob("*") if p.is_file()}
+    unexpected = staged - files - {"main.cpp"}
     if archive:
         unexpected -= {"archive_layout.h", "archive_blob.S", "motorfree_archive.cpp"}
     if unexpected:
@@ -87,18 +83,19 @@ def prepare(archive=None, target_free=22000, target_largest=12000, measure=False
         write_changed(out_src / name, data)
     if archive:
         from archive_layout import pack_archive
-        pack_archive(archive, out, target_free, target_largest, write_changed)
+        pack_archive(archive, out_src, target_free, target_largest, write_changed)
         source = Path(__file__).with_name("motorfree_archive.cpp")
         write_changed(out_src / source.name, source.read_bytes())
     write_changed(out_src / "main.cpp", Path(__file__).with_name("motorfree_main.cpp").read_bytes())
     for source in (ROOT / "third_party/esp32_camera_f0bb429").rglob("*"):
         if source.is_file():
-            write_changed(out / source.relative_to(ROOT), source.read_bytes())
+            write_changed(stage / source.relative_to(ROOT), source.read_bytes())
     config = (ROOT / "platformio.ini").read_text(encoding="utf-8")
     if config.count("[platformio]") != 1:
         raise RuntimeError("Expected a single [platformio] section")
     relative = out.relative_to(ROOT).as_posix()
-    config = config.replace("[platformio]", f"[platformio]\nsrc_dir = {relative}/src\n"
+    src_dir = out_src.relative_to(ROOT).as_posix()
+    config = config.replace("[platformio]", f"[platformio]\nsrc_dir = {src_dir}\n"
                             f"build_dir = {relative}/build\nlibdeps_dir = .pio/libdeps")
     if archive:
         flags = "  -DMOTORFREE_ARCHIVE=1\n" + ("  -DMOTORFREE_MEASURE=1\n" if measure else "")

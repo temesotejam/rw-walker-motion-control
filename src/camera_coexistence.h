@@ -3,10 +3,7 @@
 #include <Arduino.h>
 #include "esp_camera.h"
 #include "freertos/semphr.h"
-#include "camera_speed_profile.h"
-#if defined(FOOT_NATIVE_SKIP_V25) && FOOT_NATIVE_SKIP_V25
-#include "camera_native_skip_profile.h"
-#endif
+#include "camera_sensor_profile.h"
 
 struct CameraOneShotSnapshot {
   char error[64] = "not_initialized";

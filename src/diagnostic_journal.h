@@ -63,3 +63,49 @@ template<class T, uint32_t Magic> struct Journal {
   }
 };
 }
+
+namespace stack_scan {
+// Owner-local schedule. The supplied scan must run in the task being checked.
+// A deferred scan remains due, so the first idle beat refreshes the lifetime
+// high-water mark. Heartbeats and overflow protection are independent of this.
+struct Schedule {
+  bool seen = false;
+  uint32_t last_ms = 0;
+  template<class Scan>
+  bool sampleIfDue(uint32_t now_ms, bool allowed, Scan scan) {
+    if (!allowed || (seen && static_cast<uint32_t>(now_ms - last_ms) < 1000)) return false;
+    scan();
+    last_ms = now_ms;
+    seen = true;
+    return true;
+  }
+};
+}
+
+namespace usb_diag {
+enum class Command { None, Enable, Disable, Status, Download, WifiRecover, Unknown };
+class Parser {
+ public:
+  Command feed(char c) {
+    if (c == '\r') return Command::None;
+    if (c != '\n') {
+      if (length_ < sizeof(line_) - 1) line_[length_++] = c;
+      else overflow_ = true;
+      return Command::None;
+    }
+    line_[length_] = 0;
+    const Command result = overflow_ ? Command::Unknown :
+        !strcmp(line_, "DIAG ON") ? Command::Enable :
+        !strcmp(line_, "DIAG OFF") ? Command::Disable :
+        !strcmp(line_, "DIAG STATUS") ? Command::Status :
+        !strcmp(line_, "ENTER DOWNLOAD") ? Command::Download :
+        !strcmp(line_, "WIFI RECOVER") ? Command::WifiRecover :
+        length_ ? Command::Unknown : Command::None;
+    length_ = 0; overflow_ = false; return result;
+  }
+ private:
+  char line_[32]{};
+  uint8_t length_ = 0;
+  bool overflow_ = false;
+};
+}

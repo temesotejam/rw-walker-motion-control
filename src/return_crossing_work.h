@@ -1,5 +1,5 @@
 #pragma once
-#include "half_cycle_energy_budget.h"
+#include "walking_return_energy.h"
 #include "receiving_arc_aid.h"
 #include "support_transfer_plan.h"
 #include "wheel_cycle_guard.h"

@@ -1,7 +1,7 @@
 #pragma once
 #include <cmath>
 #include <cstdint>
-#include "foot_control_range.h"
+#include "foot_calibration.h"
 // Shared by the UI and the actual Start command. An angle-looking nominal
 // value before zero lock must not authorize this foot-dependent experiment.
 namespace foot_support_start {

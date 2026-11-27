@@ -9,8 +9,6 @@
 #include <esp_timer.h>
 #include "imu_poll_timer.h"
 #include "imu_acquisition_audit.h"
-#include "imu_startup_boundary.h"
-#include "imu_poll_profile.h"
 #include "realtime_code.h"
 
 struct ImuReading {
