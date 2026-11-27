@@ -1,6 +1,6 @@
 #include <iomanip>
 #include <iostream>
-#include "right_arrival_energy.h"
+#include "walking/support/right_arrival_energy.h"
 
 int main() {
   lateral_energy::Geometry geometry;

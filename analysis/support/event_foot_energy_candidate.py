@@ -11,7 +11,7 @@ from typing import NamedTuple
 from event_foot_features import MAX_FRAME_AGE_US
 
 
-# src/lateral_energy_control.h, coefficients(side). Q in mA s, omega in rad/s.
+# src/models/lateral_energy_control.h, coefficients(side). Q in mA s, omega in rad/s.
 WORK_MODEL = {
     -1: (.03889674250, .2578004825, 35.7375, 91.4938, 12.83679),
     1: (.01259279858, .5522071518, 17.9508, 92.2064, 13.27138),

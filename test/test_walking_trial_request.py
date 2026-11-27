@@ -18,11 +18,11 @@ fixture = '''
 #include <cstdio>
 #include <cstring>
 #include <string>
-#include "walking_trial_profile.h"
-#include "autonomous_target.h"
-#include "autonomous_settings.h"
-#include "work_target_policy.h"
-#include "lateral_cg_energy.h"
+#include "config.h"
+#include "walking/start.h"
+#include "control_setup/run_settings.h"
+#include "models/work_target_policy.h"
+#include "models/lateral_cg_energy.h"
 #define portENTER_CRITICAL(p) ((void)(p))
 #define portEXIT_CRITICAL(p) ((void)(p))
 class Queue {

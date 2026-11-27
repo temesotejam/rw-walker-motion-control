@@ -1,6 +1,6 @@
 #pragma once
 
-#include "walking_energy_policy.h"
+#include "walking/walking_energy_policy.h"
 
 // Research model. Positive lateral motion is towards the CAD right foot.
 // Camera-positive -> CAD-positive, absolute foot zeros and body alignment

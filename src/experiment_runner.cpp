@@ -1,9 +1,9 @@
 #if FOOT_EARLY_TRIAL
-#include "walking_start.h"
+#include "walking/start.h"
 #include "esp_timer.h"
 #endif
 #include "upright_reference.h"
-#include "walking_pulse.h"
+#include "walking/pulse.h"
 #include "experiment_runner.h"
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
 #include "compact_json_table.h"
@@ -13,22 +13,20 @@
 #include "madgwick_pitch.h"
 #include "control_work_profile.h"
 #include "control_latency.h"
-#include "rate_baseline_correction.h"
-#include "previous_peak_control_correction.h"
+#include "models/free_peak_prediction.h"
 #include "runtime_diagnostics.h"
 
 #include <math.h>
 #include <initializer_list>
 
 #include "upright_pose_guide.h"
-#include "direct_q_solver.h"
-#include "work_probes.h"
-#include "one_peak_energy_inverse.h"
-#include "wheel_work_energy_control.h"
-#include "walking_energy_loss.h"
-#include "foot_span_candidate.h"
-#include "walking_side_assist.h"
-#include "peak_mpc.h"
+#include "models/direct_q_solver.h"
+#include "control_trials/work_probes.h"
+#include "control_trials/fixed_foot/one_peak_energy_inverse.h"
+#include "models/wheel_work_energy_control.h"
+#include "models/walking_energy_loss.h"
+#include "control_trials/foot_span_candidate.h"
+#include "control_trials/walking_side_assist.h"
 
 namespace {
 // Called only for an accepted ZERO cross. Keep diagnostic field assembly out
@@ -1118,7 +1116,7 @@ bool ExperimentRunner::startEnergyControlV0Capture() {
 bool ExperimentRunner::setEnergyControlAutonomousTarget(float target_deg) {
   if (running()) { status_.last_error = "energy_target_while_running"; return false; }
   bool selected = false;
-  for (float allowed : Config::ENERGY_CONTROL_AUTONOMOUS_TARGET_CHOICES_DEG) {
+  for (float allowed : autonomous_target::kChoicesDeg) {
     if (fabsf(target_deg - allowed) <= 0.001f) { selected = true; break; }
   }
   if (!selected) { status_.last_error = "energy_target_not_selectable"; return false; }
@@ -5089,37 +5087,6 @@ bool ExperimentRunner::selectFootPhaseOutput(
   return false;
 }
 
-void ExperimentRunner::choosePeakMpc(PsramLogger::EnergyControlAutonomousZeroCrossEvent& event,
-    float fast_v,wheel_work_energy_control::Choice& work_choice,int16_t& selected_current_mA,
-    const lateral_energy::CurrentTable*& selected_current_table) const {
-  if (event.target_peak_deg==8.f && work_choice.valid && !work_choice.low_peak_selected &&
-      work_choice.command_sign==1 && work_choice.width_ms>=30 &&
-      ((event.physical_next_peak_side>0 && work_choice.current_ma==400) ||
-       (event.physical_next_peak_side<0 && work_choice.branch==10))) {
-    bool alternate_supported=false;
-    int16_t alternate_current=selected_current_mA;
-    const lateral_energy::CurrentTable* alternate_table=selected_current_table;
-    const auto alternative=chooseWheelWork(event,fast_v,&alternate_supported,
-        &alternate_current,&alternate_table,work_choice.width_ms-5);
-    if(alternative.valid && alternative.command_sign==work_choice.command_sign &&
-       alternative.current_ma==work_choice.current_ma) {
-      const peak_mpc::State state{event.zero_cross_abs_rate_dps,event.pre_input_wheel_speed_rpm,
-          event.previous_peak_amplitude_deg,static_cast<float>(event.vbat_mV),event.physical_next_peak_side};
-      if(peak_error_adaptation::speedUsable(event.pre_input_wheel_speed_rpm,event.pre_input_wheel_speed_valid,event.pre_input_wheel_speed_age_us)) {
-        const int next_side=-event.physical_next_peak_side;
-        const float next_energy=controlPotential(next_side*gradual_start_.target())*foot_energy_.factor(next_side);
-        const float next_target=controlAngle(next_energy,next_side);
-        const auto result=peak_mpc::choose(state,work_choice.width_ms,alternative.width_ms,event.foot_balance_target_deg,next_target);
-        if(result.valid) {
-          event.mpc_valid=true;event.mpc_alternate=result.alternate;
-          event.mpc_second_peak_deg=result.second_peak;event.mpc_speed_proxy_rpm=result.mean_rpm;
-          if(result.alternate) {work_choice=alternative;selected_current_mA=alternate_current;selected_current_table=alternate_table;}
-        }
-      }
-    }
-  }
-}
-
 bool ExperimentRunner::tryPositiveLeftBoost(
     PsramLogger::EnergyControlAutonomousZeroCrossEvent& event,
     const wheel_work_energy_control::Choice& normal,uint32_t t_test_ms) {
@@ -5587,7 +5554,6 @@ void ExperimentRunner::updateEnergyControlAutonomousAtZeroCross(uint32_t t_test_
           Config::ENERGY_CONTROL_AUTONOMOUS_REASON_PULSE_WIDTH_GUARD;
     finishFootEnergyDecision(event,t_test_ms);rearm_for_next_peak();return;
   }
-  if(work_mode && event.target_peak_deg!=8.f) choosePeakMpc(event,fast_v,work_choice,selected_current_mA,selected_current_table);
   if (work_mode) captureWheelWorkDecision(event,work_choice);
 
   const float goal_current_mA = predictCurrentGoalMa(selected_current_mA,fast_v);
@@ -8644,7 +8610,7 @@ const char* ExperimentRunner::stateName() const {
 #if SUPPORT_TRANSFER_CARRY2
 #include "periodic_foot_stream.h"
 #endif
-#include "walking_energy_runner.inc"
+#include "walking/walking_energy_runner.inc"
 #if WALKING_RECOVERY_V6
-#include "settled_walking_restart_runner.inc"
+#include "walking/recovery/settled_walking_restart_runner.inc"
 #endif

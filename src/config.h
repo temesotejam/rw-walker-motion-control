@@ -294,7 +294,6 @@ static constexpr uint32_t WHEEL_WORK_CONTROL_DURATION_MS = 30000UL;
 static constexpr float ENERGY_CONTROL_AUTONOMOUS_DEFAULT_TARGET_PEAK_DEG = 8.0f;
 static constexpr float ENERGY_CONTROL_AUTONOMOUS_TARGET_MIN_DEG = 8.0f;
 static constexpr float ENERGY_CONTROL_AUTONOMOUS_TARGET_MAX_DEG = 12.0f;
-static constexpr float ENERGY_CONTROL_AUTONOMOUS_TARGET_CHOICES_DEG[3] = {8.0f, 10.0f, 12.0f};
 // This strong kick is startup-only and independent of normal energy control.
 static constexpr int16_t ENERGY_CONTROL_AUTONOMOUS_START_KICK_CURRENT_MA = 300;
 static constexpr uint16_t ENERGY_CONTROL_AUTONOMOUS_START_KICK_PULSE_MS = 100;

@@ -1,24 +1,24 @@
 #pragma once
-#include "walking_trial_profile.h"
+#include "walking/start.h"
 
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <string.h>
+#include "config.h"
 #include "timing_deadline.h"
 #include "runtime_diagnostics.h"
 #include "mekf_attitude_diagnostics.h"
-#include "gyro_steering.h"
+#include "control_trials/gyro_steering.h"
 #if WALKING_TURN_OBSERVER
 #include "gait_turn_observer.h"
 #endif
 #include "control_work_profile.h"
 #include "control_latency.h"
-#include "autonomous_target.h"
-#include "autonomous_settings.h"
-#include "work_target_policy.h"
+#include "control_setup/run_settings.h"
+#include "models/work_target_policy.h"
 #include "upright_reference.h"
-#include "lateral_cg_energy.h"
+#include "models/lateral_cg_energy.h"
 
 // One permanent controller owner, including idle and calibration. HTTP sends
 // commands and consumes POD snapshots; it never calls the live runner/IMU.

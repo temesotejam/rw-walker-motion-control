@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <math.h>
 #include <stdint.h>
-#include "direct_q_solver.h"
+#include "models/direct_q_solver.h"
 #include "compact_json_table.h"
 #include <string.h>
 

@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include "lateral_energy_control.h"
+#include "models/lateral_energy_control.h"
 
 // A separate, bounded launch from rest after a walking cycle has stalled.
 // Real crossings and signed excursions are observations. A queued command

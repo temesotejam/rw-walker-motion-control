@@ -4,10 +4,10 @@
 #define SUPPORT_TRANSFER_CARRY2 1
 #define SUPPORT_TRANSFER_STALL_V3 1
 #define WALKING_RETURN_HISTORY 1
-#include "return_observation_policy.h"
-#include "walking_return_energy.h"
-#include "return_crossing_work.h"
-#include "settled_walking_restart.h"
+#include "walking/support/return_observation_policy.h"
+#include "walking/support/walking_return_energy.h"
+#include "walking/support/return_crossing_work.h"
+#include "walking/recovery/settled_walking_restart.h"
 #include <iomanip>
 #include <iostream>
 #include <string>

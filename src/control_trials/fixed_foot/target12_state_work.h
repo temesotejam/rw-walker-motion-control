@@ -1,5 +1,5 @@
 #pragma once
-#include "wheel_work_energy_control.h"
+#include "models/wheel_work_energy_control.h"
 
 // Fixed-leg target-12 calibration. Runtime features are exclusively the
 // pre-command state and the candidate current integral. Reaction work and

@@ -1,7 +1,7 @@
 #define SUPPORT_TRANSFER_V39 1
 #define SUPPORT_TRANSFER_CARRY2 1
 #define WALKING_RETURN_HISTORY 1
-#include "receiving_arc_aid.h"
+#include "walking/support/receiving_arc_aid.h"
 #include <cassert>
 
 using receiving_arc_aid::ReturnHistory;

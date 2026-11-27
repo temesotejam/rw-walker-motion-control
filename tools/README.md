@@ -16,7 +16,7 @@ python -B tools/convert_rwlog_to_csv.py "$env:USERPROFILE/Downloads/energy_contr
 
 ## ファイル別の役割
 
-手動で使うプログラムと、ビルド時にライブラリを照合するためのファイルを含みます。
+計12件のうち、8件は上記操作・ビルドで使うプログラムと案内、4件は依存ライブラリの照合用原本です。
 
 <details>
 <summary>ログ操作とビルド用ツール（8件）</summary>

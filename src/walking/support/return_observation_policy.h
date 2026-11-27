@@ -1,5 +1,5 @@
 #pragma once
-#include "walking_energy_policy.h"
+#include "walking/walking_energy_policy.h"
 #if SUPPORT_TRANSFER_STALL_V3
 #include "periodic_foot_state.h"
 #include "support_transfer_plan.h"

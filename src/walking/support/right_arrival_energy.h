@@ -1,5 +1,5 @@
 #pragma once
-#include "lateral_energy_control.h"
+#include "models/lateral_energy_control.h"
 
 // Effective arrival potential after a right-going ordinary mechanical ZERO.
 // Source: the eight preceding 2026-11-20 runs, independent of the two A/B runs.

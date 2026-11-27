@@ -16,7 +16,7 @@
 #include "periodic_foot_stream.h"
 #include "immutable_export.h"
 #include "runtime_diagnostics.h"
-#include "foot_support_start.h"
+#include "control_setup/foot_support_start.h"
 
 BoundedWriteWebServer server(Config::HTTP_PORT);
 OneShotCamera camera_probe;

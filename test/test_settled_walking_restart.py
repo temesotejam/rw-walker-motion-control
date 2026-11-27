@@ -21,12 +21,11 @@ PREFIX = r'''
 #define PULSE_LIFECYCLE_FIX 1
 #define EARLY_ENERGY_MAIN 1
 #define WALKING_ADMISSION_V19 1
-#include "settled_walking_restart.h"
+#include "walking/recovery/settled_walking_restart.h"
 #include "periodic_foot_state.h"
-#include "wheel_cycle_guard.h"
-#include "walking_pulse.h"
-#include "autonomous_settings.h"
-#include "peak_error_adaptation.h"
+#include "walking/pulse.h"
+#include "control_setup/run_settings.h"
+#include "models/peak_error_adaptation.h"
 #include <cstdio>
 #include <cstdlib>
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"check failed at line %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
@@ -156,7 +155,7 @@ source = PREFIX + method("bool ExperimentRunner::beginEnergyControlAutonomousPul
 source += method("void ExperimentRunner::updateEnergyControlAutonomousPulse(", "#if defined(FOOT_SUPPORT_ASSIST)")
 source += method("void ExperimentRunner::stopActivePulse(", "float ExperimentRunner::predictedChargeMaS")
 source += method("void ExperimentRunner::stopMotor()", "void ExperimentRunner::setSyncLed")
-source += (ROOT / "src/settled_walking_restart_runner.inc").read_text(encoding="utf-8").split(
+source += (ROOT / "src/walking/recovery/settled_walking_restart_runner.inc").read_text(encoding="utf-8").split(
     "void ExperimentRunner::appendWalkingRestartMetadata")[0] + TEST
 with tempfile.TemporaryDirectory() as tmp:
     test = Path(tmp) / "restart.cpp"
@@ -167,11 +166,11 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # Compile the production writer so a renamed or reordered column cannot
     # silently put the wrong physical event in the exported CSV.
-    writer = (ROOT / "src/settled_walking_restart_runner.inc").read_text(encoding="utf8")
+    writer = (ROOT / "src/walking/recovery/settled_walking_restart_runner.inc").read_text(encoding="utf8")
     writer = writer[writer.index("void ExperimentRunner::appendWalkingRestartMetadata"):]
     test.write_text('''
 #include "psram_string.h"
-#include "settled_walking_restart.h"
+#include "walking/recovery/settled_walking_restart.h"
 #include <cstdio>
 class ExperimentRunner {
 public:

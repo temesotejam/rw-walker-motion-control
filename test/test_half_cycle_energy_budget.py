@@ -8,8 +8,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 CPP = r'''
-#include "walking_return_energy.h"
-#include "walking_pulse.h"
+#include "walking/support/walking_return_energy.h"
+#include "walking/pulse.h"
 #include <cassert>
 #include <iostream>
 namespace b=half_cycle_energy_budget;

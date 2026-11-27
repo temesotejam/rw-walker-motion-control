@@ -1,6 +1,6 @@
 #include "support_transfer_plan.h"
 #define SUPPORT_TRANSFER_STALL_V3 1
-#include "receiving_arc_aid.h"
+#include "walking/support/receiving_arc_aid.h"
 #include <cassert>
 #include <cstdio>
 #include <random>

@@ -20,7 +20,7 @@ def method(name, result):
 
 def production_sections():
     header = (ROOT / 'src/experiment_runner.h').read_text(encoding='utf8')
-    energy = (ROOT / 'src/walking_energy_runner.inc').read_text(encoding='utf8')
+    energy = (ROOT / 'src/walking/walking_energy_runner.inc').read_text(encoding='utf8')
     # The foot members live in one feature block with nested feature guards.
     start = header.index('  foot_phase_prediction::Projection foot_pose_;')
     foot_members = []

@@ -45,7 +45,7 @@ python -B analysis/simulator/replay_walk7.py --after-first --event-allocation $t
 </details>
 
 <details>
-<summary>実測に基づくシミュレーション（22件）</summary>
+<summary>実測に基づくシミュレーション（23件）</summary>
 
 | ファイル | 役割 |
 | --- | --- |
@@ -61,6 +61,7 @@ python -B analysis/simulator/replay_walk7.py --after-first --event-allocation $t
 | [simulator/foot_phase_check.py](simulator/foot_phase_check.py) | 両足の角速度を加えたときに中心への到達予測が改善するかを調べる。 |
 | [simulator/legacy_check.py](simulator/legacy_check.py) | 旧v14の2試行を、受領時刻・校正・符号が確認できる範囲で新しい基準と比較する。 |
 | [simulator/loss_observer.py](simulator/loss_observer.py) | IMUで観測した減速を使う損失補正を、補助後と惰性で戻る区間で再生する。 |
+| [simulator/peak_mpc.h](simulator/peak_mpc.h) | 過去9走で同定した通電幅と次ピーク・角速度・回転数のモデルを、PCで過去の制御候補と比較するために保管する。 |
 | [simulator/phase_dynamics.py](simulator/phase_dynamics.py) | 足・胴体・エネルギーの情報から左向きの戻り軌道を予測し、試行を分けて実測と比較する。 |
 | [simulator/post_zero_carry.py](simulator/post_zero_carry.py) | 実際に中心を通過した後、受け側足裏の円弧に届くまでの運動を再生する。 |
 | [simulator/receiving_carry.py](simulator/receiving_carry.py) | 左向きの入力判断と受け側足裏の到達候補を、その後の実測運動と対応付ける。 |

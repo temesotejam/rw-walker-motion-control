@@ -1,5 +1,5 @@
 #pragma once
-#include "walking_energy_policy.h"
+#include "walking/walking_energy_policy.h"
 
 // Effective energy observer, not identification of inertia, moving-foot U,
 // gravity-neutral angle or mechanical work. All constants are trial limits.

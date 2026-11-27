@@ -1,8 +1,8 @@
 #pragma once
 #include <cmath>
 #include <cstdint>
-#include "lateral_energy_control.h"
-#include "work_target_policy.h"
+#include "models/lateral_energy_control.h"
+#include "models/work_target_policy.h"
 
 namespace lateral_cg {
 constexpr uint32_t kMagic=0x43475831;

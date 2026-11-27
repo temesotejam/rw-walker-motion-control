@@ -8,7 +8,7 @@ python -B test/run.py
 
 ## ファイル別の役割
 
-各ファイルが対象にする挙動と、PC上の模擬機器や実機を使う試験の違いを示します。普段の回帰試験の入口は [run.py](run.py) です。
+PC上の回帰試験は [run.py](run.py) から実行します。無駆動の実機通信試験は [hardware/](hardware/) に、本体の設定で有効になる制御試験・補正は [src/control_trials/](../src/control_trials/) にあります。
 
 <details>
 <summary>PC上の回帰試験と入口（40件）</summary>

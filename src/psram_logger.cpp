@@ -1,8 +1,8 @@
 #include "compact_json_table.h"
-#include "gyro_steering.h"
+#include "control_trials/gyro_steering.h"
 #include "psram_logger.h"
 #include "periodic_foot_stream.h"
-#include "work_probes.h"
+#include "control_trials/work_probes.h"
 #include "imu_manager.h"
 extern ImuManager imu;
 #include "run_control_worker.h"
@@ -22,11 +22,11 @@ extern ExperimentRunner runner;
 
 
 #include "config.h"
-#include "lateral_energy_control.h"
-#include "one_peak_energy_inverse.h"
-#include "wheel_work_energy_control.h"
-#include "walking_energy_loss.h"
-#include "walking_energy_policy.h"
+#include "models/lateral_energy_control.h"
+#include "control_trials/fixed_foot/one_peak_energy_inverse.h"
+#include "models/wheel_work_energy_control.h"
+#include "models/walking_energy_loss.h"
+#include "walking/walking_energy_policy.h"
 
 static constexpr uint16_t RWLOG_FORMAT_VERSION = 56;
 static constexpr uint32_t RWLOG_FLAG_CRC32 = 1U << 0;

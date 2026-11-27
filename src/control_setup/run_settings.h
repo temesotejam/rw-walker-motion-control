@@ -47,3 +47,24 @@ inline bool parse(const char* text, uint16_t& result) {
   result = static_cast<uint16_t>(value); return true;
 }
 } // namespace autonomous_brake_limit
+
+namespace autonomous_target {
+constexpr float kChoicesDeg[] = {8.0f, 10.0f, 12.0f};
+inline bool selectable(float value) {
+  for (float allowed : kChoicesDeg)
+    if (value == allowed) return true;
+  return false;
+}
+
+// Validate the entire HTTP argument before accepting a START or pausing HTTP.
+// On failure, leave the caller's previous value untouched.
+inline bool parse(const char* text, float& target_deg) {
+  if (!text || !*text) return false;
+  char* end = nullptr;
+  errno = 0;
+  const float value = std::strtof(text, &end);
+  if (errno || end == text || *end || !selectable(value)) return false;
+  target_deg = value;
+  return true;
+}
+} // namespace autonomous_target

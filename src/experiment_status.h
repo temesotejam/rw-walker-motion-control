@@ -1,7 +1,7 @@
 #pragma once
 #include "log_types.h"
 #include "mekf_attitude_diagnostics.h"
-#include "gyro_steering.h"
+#include "control_trials/gyro_steering.h"
 
 struct ExperimentStatus {
   ExperimentState state = ExperimentState::STARTUP_GYRO_CALIB;

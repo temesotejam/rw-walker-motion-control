@@ -1,8 +1,8 @@
 #pragma once
-#include "walking_return_energy.h"
-#include "receiving_arc_aid.h"
+#include "walking/support/walking_return_energy.h"
+#include "walking/support/receiving_arc_aid.h"
 #include "support_transfer_plan.h"
-#include "wheel_cycle_guard.h"
+#include "walking/pulse.h"
 
 namespace return_crossing_work {
 struct Reference {

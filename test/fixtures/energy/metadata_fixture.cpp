@@ -1,9 +1,9 @@
-#include "walking_return_energy.h"
-#include "walking_pulse.h"
+#include "walking/support/walking_return_energy.h"
+#include "walking/pulse.h"
 
-#include "walking_energy_policy.h"
-#include "walking_energy_loss.h"
-#include "one_peak_energy_inverse.h"
+#include "walking/walking_energy_policy.h"
+#include "models/walking_energy_loss.h"
+#include "control_trials/fixed_foot/one_peak_energy_inverse.h"
 #include <Arduino.h>
 #if EARLY_ENERGY_MAIN
 namespace active_energy=walking_energy_policy_v15;

@@ -1,4 +1,4 @@
-#include "fore_aft_motion_guard.h"
+#include "walking/fore_aft_motion_guard.h"
 #include <cassert>
 #include <iostream>
 #include <iomanip>

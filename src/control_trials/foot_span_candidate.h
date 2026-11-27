@@ -1,5 +1,5 @@
 #pragma once
-#include "wheel_work_energy_control.h"
+#include "models/wheel_work_energy_control.h"
 
 // Re-evaluate one proposed positive-side pulse with the SAME calibrated
 // current response, physical state, biases and branch as the normal selector.

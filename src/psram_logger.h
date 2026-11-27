@@ -1,5 +1,5 @@
 #pragma once
-#include "walking_trial_profile.h"
+#include "walking/start.h"
 
 #include <Arduino.h>
 #include "psram_string.h"
@@ -8,7 +8,7 @@
 #include "log_types.h"
 #include "solver_audit.h"
 #include "upright_reference.h"
-#include "lateral_cg_energy.h"
+#include "models/lateral_cg_energy.h"
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
 #include "foot_fast_policy.h"
 #endif

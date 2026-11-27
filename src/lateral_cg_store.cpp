@@ -1,4 +1,4 @@
-#include "lateral_cg_energy.h"
+#include "models/lateral_cg_energy.h"
 #include <Preferences.h>
 #include <cstring>
 namespace lateral_cg {

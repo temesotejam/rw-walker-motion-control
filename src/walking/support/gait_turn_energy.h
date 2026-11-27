@@ -1,7 +1,7 @@
 #pragma once
 
 #include "gait_turn_observer.h"
-#include "walking_return_energy.h"
+#include "walking/support/walking_return_energy.h"
 
 namespace gait_turn_energy {
 // One-step identification trial on the observed right-foot/negative-yaw pattern.

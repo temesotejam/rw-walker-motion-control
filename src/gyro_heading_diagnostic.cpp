@@ -1,4 +1,4 @@
-#include "gyro_steering.h"
+#include "control_trials/gyro_steering.h"
 
 __attribute__((noinline)) bool GyroHeadingDiagnostic::start(
     float ax, float ay, float az, uint32_t gyro_us, bool bias_ready, bool accel_fresh) {

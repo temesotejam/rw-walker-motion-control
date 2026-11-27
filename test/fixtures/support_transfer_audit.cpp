@@ -36,10 +36,9 @@ uint32_t testMicros() {
 uint64_t esp_timer_get_time() { return host_us; }
 #include <support_transfer_audit.cpp>
 #include "periodic_foot_state.h"
-#include "walking_return_energy.h"
-#include "wheel_cycle_guard.h"
-#include "walking_pulse.h"
-#include "control_math_cache.h"
+#include "walking/support/walking_return_energy.h"
+#include "walking/pulse.h"
+#include "models/control_math_cache.h"
 namespace Config {
 constexpr int MOTOR_DRIVER_POLARITY=-1, ENERGY_CONTROL_AUTONOMOUS_NORMAL_OUTPUT_SIGN=-1;
 constexpr float MODEL_VBAT_REFERENCE_V=7.5f, MODEL_VBAT_MIN_V=6.18f, MODEL_VBAT_MAX_V=8.02f;

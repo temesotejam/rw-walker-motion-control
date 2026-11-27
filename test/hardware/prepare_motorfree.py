@@ -8,6 +8,7 @@ image to append archived rows at their recorded times. Export normally, then
 POST /clear for another measurement. Only the run ID and CRC vary across runs.
 """
 import argparse
+import hashlib
 from pathlib import Path
 import re
 
@@ -35,7 +36,10 @@ def prepare(archive=None, target_free=22000, target_largest=12000, measure=False
     files = {p.relative_to(firmware).as_posix() for p in firmware.rglob("*") if p.is_file()} - SKIP
     # The camera HAL refers back to ../../src/. Mirror both source trees under
     # one root so older benches' src/ copies cannot enter this build.
-    stage = out / "staged"
+    # A source move gets a separate mirror. No older header can shadow an
+    # active include, and existing generated trees stay available for comparison.
+    layout = hashlib.sha256("\n".join(sorted(files)).encode()).hexdigest()[:12]
+    stage = out / "staged" / layout
     out_src = stage / "src"
     staged = {p.relative_to(out_src).as_posix() for p in out_src.rglob("*") if p.is_file()}
     unexpected = staged - files - {"main.cpp"}

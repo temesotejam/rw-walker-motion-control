@@ -1,5 +1,5 @@
 #pragma once
-#include "lateral_energy_control.h"
+#include "models/lateral_energy_control.h"
 
 // Energy-domain walking input selection, separate from the old +/-ms peak
 // adaptation. U is the nominal rocker potential. Passive-rate and inherited

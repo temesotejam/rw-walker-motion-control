@@ -1,10 +1,10 @@
 #pragma once
 #if WALKING_RIGHT_ARRIVAL
-#include "right_arrival_energy.h"
+#include "walking/support/right_arrival_energy.h"
 #endif
 #if WALKING_TURN_OBSERVER
 #include "gait_turn_run.h"
-#include "gait_turn_energy.h"
+#include "walking/support/gait_turn_energy.h"
 #endif
 #if FOOT_PERIODIC_V38
 #include "periodic_foot_state.h"
@@ -12,9 +12,9 @@
 #if SUPPORT_TRANSFER_V39
 #include "support_transfer_audit.h"
 #if SUPPORT_TRANSFER_CARRY2
-#include "receiving_arc_aid.h"
+#include "walking/support/receiving_arc_aid.h"
 #if WALKING_RETURN_HISTORY
-#include "return_crossing_work.h"
+#include "walking/support/return_crossing_work.h"
 #endif
 #endif
 #endif
@@ -27,46 +27,46 @@
 #if defined(FOOT_LOW_LATENCY_V20) && FOOT_LOW_LATENCY_V20
 #include "foot_fast_policy.h"
 #endif
-#include "autonomous_settings.h"
-#include "lateral_energy_control.h"
+#include "control_setup/run_settings.h"
+#include "models/lateral_energy_control.h"
 #if defined(FOOT_SUPPORT_ENERGY) && FOOT_SUPPORT_ENERGY
-#include "walking_energy_policy.h"
+#include "walking/walking_energy_policy.h"
 #if defined(WALKING_AUDIT_PSRAM) && WALKING_AUDIT_PSRAM
 #include "psram_archive.h"
 #endif
 #if defined(EARLY_ENERGY_MAIN) && EARLY_ENERGY_MAIN
 #if WALKING_RECOVERY_V6
-#include "settled_walking_restart.h"
+#include "walking/recovery/settled_walking_restart.h"
 #endif
-#include "walking_return_energy.h"
+#include "walking/support/walking_return_energy.h"
 #if defined(WALKING_TRANSFER_V18) && WALKING_TRANSFER_V18
-#include "return_observation_policy.h"
+#include "walking/support/return_observation_policy.h"
 #if defined(WALKING_ADMISSION_V19) && WALKING_ADMISSION_V19
-#include "fore_aft_motion_guard.h"
+#include "walking/fore_aft_motion_guard.h"
 #endif
 #endif
 #endif
 #if defined(PULSE_LIFECYCLE_FIX) && PULSE_LIFECYCLE_FIX
-#include "walking_pulse.h"
+#include "walking/pulse.h"
 #endif
 #endif
-#include "wheel_work_energy_control.h"
-#include "walking_energy_loss.h"
-#include "low_peak_energy.h"
-#include "wheel_cycle_guard.h"
-#include "walking_start.h"
-#include "foot_balance_adaptive.h"
-#include "foot_energy_balance.h"
+#include "models/wheel_work_energy_control.h"
+#include "models/walking_energy_loss.h"
+#include "models/low_peak_energy.h"
+#include "walking/pulse.h"
+#include "walking/start.h"
+#include "control_trials/foot_balance_adaptive.h"
+#include "control_trials/foot_energy_balance.h"
 #include "foot_phase_observer.h"
-#include "foot_phase_cap.h"
-#include "foot_span_control.h"
-#include "walking_side_assist.h"
-#include "tilt_priority.h"
-#include "target12_state_work.h"
-#include "peak_error_adaptation.h"
+#include "control_trials/foot_phase_cap.h"
+#include "control_trials/foot_span_control.h"
+#include "control_trials/walking_side_assist.h"
+#include "control_trials/tilt_priority.h"
+#include "control_trials/fixed_foot/target12_state_work.h"
+#include "models/peak_error_adaptation.h"
 #include "upright_reference.h"
-#include "lateral_cg_energy.h"
-#include "control_math_cache.h"
+#include "models/lateral_cg_energy.h"
+#include "models/control_math_cache.h"
 #include "imu_manager.h"
 #include "log_types.h"
 #include "mekf6.hpp"
@@ -74,11 +74,11 @@
 #include "psram_logger.h"
 #include "roller485_manager.h"
 #include "realtime_code.h"
-#include "fore_aft_motion_guard.h"
+#include "walking/fore_aft_motion_guard.h"
 
 #include "experiment_status.h"
-#include "gyro_steering.h"
-#include "stall_rescue.h"
+#include "control_trials/gyro_steering.h"
+#include "walking/support/return_motion.h"
 #ifndef FOOT_EARLY_TRIAL
 #define FOOT_EARLY_TRIAL 0
 #endif
@@ -88,11 +88,10 @@
 #if ANGLE_EARLY_TRIAL && !FOOT_EARLY_TRIAL
 #error ANGLE_EARLY_TRIAL requires FOOT_EARLY_TRIAL
 #endif
-#include "negative_cap_recovery.h"
+#include "control_trials/negative_cap_recovery.h"
 #if defined(FOOT_SUPPORT_ASSIST) && FOOT_SUPPORT_ASSIST
 #include "foot_motion_prediction.h"
-#include "foot_support_policy.h"
-#include "foot_support_deceleration.h"
+#include "walking/support/return_motion.h"
 #endif
 
 class ExperimentRunner {
@@ -583,9 +582,6 @@ private:
       PsramLogger::EnergyControlAutonomousZeroCrossEvent& event,uint32_t t_test_ms,bool* healthy_out);
   bool __attribute__((noinline)) tryTiltPriorityRescue(
       PsramLogger::EnergyControlAutonomousZeroCrossEvent& event,uint32_t t_test_ms);
-  void __attribute__((noinline)) choosePeakMpc(PsramLogger::EnergyControlAutonomousZeroCrossEvent& event,
-      float fast_v,wheel_work_energy_control::Choice& choice,int16_t& current,
-      const lateral_energy::CurrentTable*& table) const;
   void __attribute__((noinline)) applyFootEnergyTarget(PsramLogger::EnergyControlAutonomousZeroCrossEvent& event,uint32_t t_ms);
   void __attribute__((noinline)) finishFootEnergyDecision(PsramLogger::EnergyControlAutonomousZeroCrossEvent& event,uint32_t t_ms);
   void __attribute__((noinline)) capturePendingWheelWork(const PsramLogger::EnergyControlAutonomousZeroCrossEvent& event,

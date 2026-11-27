@@ -1,23 +1,20 @@
-#include "walking_return_energy.h"
-#include "return_observation_policy.h"
+#include "walking/support/walking_return_energy.h"
+#include "walking/support/return_observation_policy.h"
 #include <cstring>
-#include "walking_pulse.h"
-#include "walking_energy_policy.h"
-#include "autonomous_settings.h"
+#include "walking/pulse.h"
+#include "walking/walking_energy_policy.h"
+#include "control_setup/run_settings.h"
 #include "foot_motion_prediction.h"
-#include "foot_support_policy.h"
-#include "foot_support_deceleration.h"
+#include "walking/support/return_motion.h"
 #define FOOT_TREND_CYCLES 2
 #define ANGLE_EARLY_TRIAL 1
 #define WALK_SMOOTH_TRIAL 1
-#include "tilt_priority.h"
-#include "stall_rescue.h"
-#include "foot_balance_adaptive.h"
-#include "walking_side_assist.h"
-#include "negative_cap_recovery.h"
-#include "wheel_cycle_guard.h"
-#include "foot_span_control.h"
-#include "peak_error_adaptation.h"
+#include "control_trials/tilt_priority.h"
+#include "control_trials/foot_balance_adaptive.h"
+#include "control_trials/walking_side_assist.h"
+#include "control_trials/negative_cap_recovery.h"
+#include "control_trials/foot_span_control.h"
+#include "models/peak_error_adaptation.h"
 #include <cassert>
 #include <cmath>
 #include <cstdint>
