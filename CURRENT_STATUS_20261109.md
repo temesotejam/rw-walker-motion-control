@@ -12,6 +12,26 @@
 
 通信は、モータドライバーを含まない実機試験版で1回2,893,231バイトの模擬ログを連続6回保存し、全バイト・CRCを照合済み。通常22.0～24.6秒、別画面を開いて25.5秒、要求を中断して29.1秒、ページを再読み込みして26.2秒。6回とも次の測定に戻り、カメラはPSRAMで有効画像を毎秒48.7～51.3枚取得した（短時間のフレーム数差）。正常に完了した旧版2回は17.7秒と19.7秒。測定終了時はカメラの12,800バイトを通信に返し、再確保できるまでPSRAMで認識を続ける。[検証レポート](C:/Users/arika/Desktop/walker-backups/rw-walker-motion-control_20261127_before_transfer_cleanup/verification/final-six-runs.json)
 
+### 実機に書き込んだ walk7-logfix1 の内訳
+
+11月27日のCOM7での書き戻しは `0x10000` に通常歩行アプリ `firmware.bin` を1本書き込み、ハッシュを検証した。書き込み直後に機体から同じビルド名と `READY_TO_MEASURE` を取得している。保存済みアプリのSHA-256は上記の `34f8e27b…`。アプリ内部のELF識別値も、解析したELF全体のSHA-256 `fa6ae9b40621ea28a4fb48f35c207ae3b41d0d1adde78e7d7387f80c3e516ddc` と一致した。[実機の書き込み記録](C:/Users/arika/Desktop/walker-backups/rw-walker-motion-control_20261127_before_transfer_cleanup/verification/normal-flash.txt) · [起動後に実機が返した状態](C:/Users/arika/Desktop/walker-backups/rw-walker-motion-control_20261127_before_transfer_cleanup/verification/normal-ready.json) · [書き込み版のリンクマップ](C:/Users/arika/Desktop/walker-backups/rw-walker-motion-control_20261127_before_project_cleanup_481a221/project/.pio/build/atoms3cam-foot-periodic40/firmware.map)
+
+| 主な用途 | 当時の自作 `src` ファイル数 | アプリに占めるバイト数 | コンパイルした実装ファイル |
+| --- | ---: | ---: | --- |
+| 歩行入力・エネルギー制御 | 73 | 211,768 | `experiment_runner.cpp`（歩行・再始動処理の `.inc` を取り込む）、`lateral_cg_store.cpp` |
+| ホイール入出力 | 2 | 4,321 | `roller485_manager.cpp` |
+| カメラ画像取得 | 13 | 13,256 | `camera_coexistence.cpp`、`camera_frame_ready_hal.c`、`camera_row_overlap.cpp`、`camera_task_priority_patch.cpp` |
+| 白マーカー認識・足角推定 | 25 | 51,706 | `white_marker_tracker.cpp`、`foot_angle_estimator.cpp`、`foot_observer.cpp`、`periodic_foot_stream.cpp` |
+| IMU・胴体姿勢推定 | 21 | 30,533 | `imu_i2c_transport.cpp`、`imu_manager.cpp`、`mekf6.cpp`、`mekf_attitude_diagnostics.cpp`、`upright_reference_store.cpp` |
+| 歩容観測・支持移行候補の比較 | 10 | 14,424 | `gait_turn_run.cpp`、`gyro_heading_diagnostic.cpp`、`support_transfer_audit.cpp` |
+| Web画面・HTTP・ログ転送 | 12 | 272,014 | `web_ui.cpp`、`bounded_web_server.cpp`、`immutable_export.cpp` |
+| ログ記録・符号化 | 11 | 464,900 | `psram_logger.cpp`、`log_sample_encoder.cpp`、`log_quantization.cpp` |
+| 起動・実行管理・診断 | 15 | 35,531 | `main.cpp`、`control_latency.cpp`、`control_work_profile.cpp`、`runtime_diagnostics.cpp` |
+| SDK・外部ライブラリ・共有領域・配置情報など | — | 1,016,651 | Wi-Fi・カメラ等の下位ドライバー、OSなど |
+| **合計** | **182** | **2,115,104** | **自作のコンパイル単位29本** |
+
+ファイル数は書き込み版のコンパイラ依存記録を使い、C/C++実装29件・ヘッダー151件・取り込み用 `.inc` 2件を主な役割で1回ずつ数えた。容量はアプリに格納された命令と定数・初期値をリンクマップのオブジェクト単位で分類した値で、複数の機能が同居する実装は主な担当に計上した。Web欄には配信用の測定画面189,168バイト（平文とgzip版の合計）が含まれる。測定で発生する記録データはPSRAMに置く。CPU時間はこの集計の対象外。[書き込み時のソース](https://github.com/temesotejam/rw-walker-motion-control/tree/481a221e22352d8744a6accf8d1ce4670b6e9bcc/src)
+
 ## 次の研究目標
 
 足の前振れで接触形状と荷重配分が変化する。荷重移行直後に次の支持側へ進む揺動速度が不足すると予測した半周期で、減速が大きくなる前にホイール反作用を加える。イベント駆動型MPCで比較する操作量は入力開始位相と通電幅。支持が移った後の揺動速度、受動脚の振り出し、左右交互の一歩と前進を評価する。足角からの接地・荷重推定と、変更した入力に対する実機の歩行継続は未検証。
