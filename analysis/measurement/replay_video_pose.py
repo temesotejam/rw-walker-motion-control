@@ -110,8 +110,10 @@ def measured_pose(decoded):
     for frame in sorted(metadata["foot_frames"], key=lambda f: f["frame_us"]):
         if frame["state_id"] != 3 or not frame["timestamp_valid"]:
             continue
-        t = ((frame["frame_us"]-epoch) & 0xffffffff)/1000
-        if t > 600000 or (feet and t <= feet[-1][0]):
+        # A RUN frame can be exposed just before the measurement epoch.
+        delta = (frame["frame_us"]-epoch + 2**31) % 2**32 - 2**31
+        t = delta/1000
+        if abs(t) > 600000 or (feet and t <= feet[-1][0]):
             continue
         angles = [frame[side+"_deg"] if frame["frame_valid"] and frame["zero_ready"] and
                   frame[side+"_valid"] and frame[side+"_control_range_ok"] else np.nan for side in ("left","right")]

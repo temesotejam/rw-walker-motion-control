@@ -51,14 +51,30 @@ jobs:
         run: python analysis/mast3r/install.py --device cpu
       - name: Run pairwise inference
         if: inputs.inference
-        run: python analysis/mast3r/reconstruct_video.py --video analysis/local/test.avi --output analysis/local/inferred --times 0.1 0.6 --device cpu
+        run: python analysis/mast3r/reconstruct_video.py --video analysis/local/test.avi --output analysis/local/inferred --times 0.1 0.6 --crop 96 128 544 352 --device cpu
       - name: Check point cloud and matching outputs
         if: inputs.inference
         run: |
           python - <<'PY'
+          import json
+          import numpy as np
+          from PIL import Image
           from pathlib import Path
-          files = list(Path("analysis/local/inferred").rglob("*.ply"))
-          assert files, "No point cloud produced"
+          root = Path("analysis/local/inferred")
+          summary = json.loads((root / "summary.json").read_text())
+          pair = summary["pairs"][0]
+          assert pair["reciprocal_matches"] > 0 and pair["frames"] == [1, 6], pair
+          directory = root / pair["folder"]
+          for i in (0, 1):
+              with Image.open(directory / f"view{i}.png") as im, np.load(directory / f"view{i}-pointmap.npz") as data:
+                  grid = summary["frames"][i]["network_grid"]
+                  assert grid["source_box_xyxy"] == [96, 128, 544, 352]
+                  assert (grid["width"], grid["height"]) == im.size
+                  assert data["xyz"].shape == (im.height, im.width, 3)
+                  assert data["accepted"].shape == data["confidence"].shape == (im.height, im.width)
+                  points = data["xyz"][data["accepted"]]
+                  assert len(points) and np.isfinite(points).all() and (points[:, 2] > 0).all()
+          files = [directory / "dense.ply", directory / "sparse.ply"]
           counts = []
           for path in files:
               with path.open("rb") as stream:
@@ -67,6 +83,6 @@ jobs:
                       if line.startswith(b"element vertex "):
                           counts.append(int(line.split()[2]))
                           break
-          assert counts and max(counts) > 10, counts
+          assert counts == [pair["points"]["dense"], pair["reciprocal_matches"]], counts
           print("Point counts:", counts)
           PY

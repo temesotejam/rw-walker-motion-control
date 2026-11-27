@@ -17,6 +17,15 @@ NVIDIA GPUを持つマシンでは、新しい保存先に `python analysis/mast
 
 ## 既存の歩行動画で使う
 
+GitHub上で手元の動画を処理する場合は、このリポジトリのCodespaceを開き、エクスプローラーで `analysis/local/` 内に動画を置きます。出力のPLYやCSVは同じエクスプローラーでダウンロードできます。このフォルダーはGit管理外です。[GitHubで作業環境を開く](https://codespaces.new/temesotejam/rw-walker-motion-control)
+
+```bash
+python3 analysis/mast3r/install.py --device cpu
+analysis/local/mast3r/venv/bin/python analysis/mast3r/reconstruct_video.py --video analysis/local/clip.mp4 --times 12.9129 13.0130 --output analysis/local/pair --device cpu
+```
+
+実行環境だけを確認したい場合は、GitHub Actionsで `Run workflow` を選べます。GitHubのCPUランナー上で合成映像の作成、重みの検証、実際の推論、点群ファイルの検査まで行います。[手動実行](https://github.com/temesotejam/rw-walker-motion-control/actions/workflows/mast3r.yml) · [初回の成功記録](https://github.com/temesotejam/rw-walker-motion-control/actions/runs/45986651961)
+
 下記は試行72996579の動画時間12.9129秒と13.0130秒を指定する例です。`--output` には毎回新規または空のフォルダーを指定します。
 
 ```powershell
@@ -27,6 +36,8 @@ NVIDIA GPUを持つマシンでは、新しい保存先に `python analysis/mast
 
 ### 背景と機体を分ける
 
+全景で足板が小さく写る場合は `--crop 176 220 485 335` のように、元画像のピクセルで左上と右下を指定できます。2枚とも同じ範囲を切り出してモデルに渡すため、対応の探索にも影響します。`--masks` は元画像サイズのまま渡し、`--roi` は切り出し後のモデル画像に対して指定します。推論時の切り出し、リサイズ、中央クロップの座標は `summary.json` の各画像の `network_grid` に保存します。
+
 機体の外形マスクがあれば、各時刻1枚の元動画サイズの白黒画像を `--masks frame387-mask.png frame390-mask.png` で渡します。白の領域が機体、黒の領域が背景候補です。上流のリサイズ・中央クロップをマスクにも適用します。矩形で概算する場合は `--roi x0 y0 x1 y1` に、出力の `view0.png`、`view1.png` 上で共通に使える正規化座標（各軸0〜1）を指定します。矩形の内側には機体の隙間に見える床も含まれます。対応する両端が同じ領域にある点と、境界をまたぐ点を区別します。
 
 ### 出力の読み方
@@ -35,6 +46,7 @@ NVIDIA GPUを持つマシンでは、新しい保存先に `python analysis/mast
 | --- | --- |
 | `summary.json` | 元フレームと動画時刻、推論デバイス、点の数。領域ごとに画像上の変位の中央値をモデル画像のピクセル単位で表示 |
 | `pair-00-01/view0.png`, `view1.png` | ネットワークへ入れた座標系の色画像。対応点を描くときの基準 |
+| `view0-pointmap.npz`, `view1-pointmap.npz` | 各PNGと同じ画素格子で参照できる推定座標 `xyz`、信頼度 `confidence`、しきい値を満たした画素 `accepted`。床や足のマスクとの照合用 |
 | `pair-00-01/matches.csv` | 2時刻の対応画素、各点のネットワーク推定三次元座標、点群の信頼度、領域ラベル |
 | `pair-00-01/sparse.ply` | 相互対応を得た1枚目の画素のモデル推定点。CloudCompare等で開けるRGB付きPLY |
 | `pair-00-01/dense.ply` | 両時刻のモデル推定点。各ペアの1枚目のカメラ座標系 |

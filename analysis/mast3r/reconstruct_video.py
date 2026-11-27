@@ -72,7 +72,7 @@ def write_ply(path, xyz, rgb):
         vertices.tofile(stream)
 
 
-def region_mask(frame, shape, roi, mask_path):
+def region_mask(frame, shape, roi, mask_path, crop=None):
     import numpy as np
     from PIL import Image
     h, w = shape
@@ -81,6 +81,9 @@ def region_mask(frame, shape, roi, mask_path):
             original = frame["width"], frame["height"]
             if mask.size != original:
                 raise ValueError(f"Mask dimensions must match original frame: {mask_path}")
+            if crop:
+                mask = mask.crop(crop)
+            original = mask.size
             resized = tuple(round(v*512/max(original)) for v in original)
             x, y = resized[0]//2-w//2, resized[1]//2-h//2
             mask = mask.convert("L").resize(resized, Image.Resampling.NEAREST)
@@ -106,6 +109,8 @@ def export_pair(path, result, pixels, masks, min_conf):
         rgb = np.uint8(np.clip((img+1)*127.5, 0, 255).round())
         Image.fromarray(rgb).save(path / f"view{i}.png")
         ok = np.isfinite(xyz).all(axis=2) & np.isfinite(conf) & (conf >= min_conf) & (xyz[:,:,2]>0)
+        # Keep image indexing for independent CAD / floor checks and threshold sensitivity.
+        np.savez_compressed(path / f"view{i}-pointmap.npz", xyz=xyz, confidence=conf, accepted=ok)
         u, v = xy.T
         h, w = ok.shape
         matches_ok &= ok[v, u] & (u>=3) & (v>=3) & (u<w-3) & (v<h-3)
@@ -160,9 +165,24 @@ def predict(args, frames):
     revision = subprocess.check_output(["git","-c","safe.directory="+source.as_posix(),"-C",str(source),
                                         "rev-parse","HEAD"],text=True).strip()
     model = AsymmetricMASt3R.from_pretrained(str(args.weights.resolve())).eval().to(args.device)
-    images = load_images([str(args.output / f["image"]) for f in frames], size=512)
-    masks = [region_mask(f, im["img"].shape[-2:], args.roi, args.masks[i] if args.masks else None)
+    paths = [args.output / f["image"] for f in frames]
+    if args.crop:
+        from PIL import Image
+        for i, path in enumerate(paths):
+            with Image.open(path) as original:
+                paths[i] = path.with_name(path.stem+"-crop.png")
+                original.crop(args.crop).save(paths[i])
+    images = load_images([str(path) for path in paths], size=512)
+    masks = [region_mask(f, im["img"].shape[-2:], args.roi, args.masks[i] if args.masks else None, args.crop)
              for i, (f, im) in enumerate(zip(frames, images))]
+    for frame, image in zip(frames, images):
+        x0,y0,x1,y1 = args.crop or (0,0,frame["width"],frame["height"])
+        factor = 512 / max(x1-x0,y1-y0)
+        rw,rh = round((x1-x0)*factor), round((y1-y0)*factor)
+        h,w = image["img"].shape[-2:]
+        frame["network_grid"] = dict(width=w, height=h, resized_width=rw, resized_height=rh,
+                                    center_crop_x=rw//2-w//2, center_crop_y=rh//2-h//2,
+                                    source_box_xyxy=[x0,y0,x1,y1])
     pairs = []
     for i in range(len(images)-1):
         result = inference([(images[i],images[i+1])], model, args.device, batch_size=1)
@@ -183,6 +203,8 @@ def main():
     parser.add_argument("--source", type=Path, default=DEFAULT_RUNTIME/"source")
     parser.add_argument("--weights", type=Path, default=DEFAULT_RUNTIME/"model")
     parser.add_argument("--device", choices=("cpu","cuda"), default="cpu")
+    parser.add_argument("--crop", nargs=4, type=int, metavar=("X0","Y0","X1","Y1"),
+                        help="Crop original frames before model resizing. Keep the same box for every frame.")
     parser.add_argument("--prepare-only", action="store_true", help="Test video decoding without weights or PyTorch")
     parser.add_argument("--min-conf", default=1.5, type=float, help="Minimum network point confidence")
     region = parser.add_mutually_exclusive_group()
@@ -204,7 +226,12 @@ def main():
         parser.error("Choose a new or empty output directory")
     args.output.mkdir(exist_ok=True,parents=True)
     frames = extract_frames(args.video,args.times,args.output)
+    if args.crop:
+        x0,y0,x1,y1 = args.crop
+        if any(not (0<=x0<x1<=f["width"] and 0<=y0<y1<=f["height"]) for f in frames):
+            parser.error("Crop must be a non-empty rectangle within every original frame")
     report = dict(video=args.video.name,frames=frames,roi=args.roi,
+                  crop_xyxy=args.crop,
                   masks=[p.name for p in args.masks] if args.masks else None, mode="frames_only")
     manifest = args.output/"summary.json"
     manifest.write_text(json.dumps(report,indent=2,ensure_ascii=False)+"\n",encoding="utf8")
